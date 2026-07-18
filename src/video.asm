@@ -32,6 +32,50 @@ WaitVBlank::
     jr z, .wait
     ret
 
+; Zero all of WRAM ($C000-$DFFF). Real hardware / accurate emulators (mGBA) do
+; NOT zero RAM at power-on, so anything that reads a variable before it's set
+; would see garbage. Clearing once at boot removes that entire class of bug
+; (e.g. an uninitialised wStrKind made BlitStream run over garbage and hang).
+; `xor a` each iteration keeps the fill value 0 despite the counter test.
+ClearRAM::
+    ld hl, _RAM                 ; $C000
+    ld bc, $2000                ; 8 KiB (WRAM0 + the mapped WRAMX bank)
+.loop:
+    xor a, a
+    ld [hl+], a
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .loop
+    ret
+
+; Zero both VRAM banks ($8000-$9FFF x2). LCD must be off. Clears leftover tiles
+; and the unused BG attribute map so nothing stale can ever be displayed.
+ClearVRAM::
+    ld a, 1
+    ldh [rVBK], a               ; bank 1 (attributes / bank-1 tiles)
+    call .bank
+    xor a, a
+    ldh [rVBK], a               ; bank 0 (tiles / map)
+.bank:
+    ld hl, _VRAM                ; $8000
+    ld bc, $2000
+.loop:
+    xor a, a
+    ld [hl+], a
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .loop
+    ret
+
+; Silence the APU. We have no audio yet; power-on APU state is undefined and can
+; emit noise, so turn it fully off (a real sound driver will init it later).
+InitAudio::
+    xor a, a
+    ldh [rNR52], a              ; APU off
+    ret
+
 ; Copy tile graphics into VRAM ($8000). LCD should be off.
 LoadTiles::
     ld hl, Tiles
@@ -69,19 +113,6 @@ LoadPalettes::
     jr nz, .obj
     ret
 
-; Zero shadow OAM (all sprites off-screen).
-ClearShadowOAM::
-    ld hl, wShadowOAM
-    ld bc, wShadowOAM_End - wShadowOAM
-    xor a, a
-.loop:
-    ld [hl+], a
-    dec bc
-    ld a, b
-    or a, c
-    jr nz, .loop
-    ret
-
 ; Install the OAM DMA trampoline into HRAM (DMA must be kicked from HRAM).
 CopyDMARoutine::
     ld hl, DMARoutine
@@ -108,17 +139,24 @@ DMARoutineEnd:
 ; Set BG scroll from the current view. Because the 32x32 BG map is a circular
 ; buffer, the world tile at wViewTX lives in BG column (wViewTX & 31), so the
 ; scroll is just that cell's pixel offset.
+; Scroll the BG to the camera. Base comes from the (snapped) view; wCamLagX/Y
+; add the smooth sub-tile lag computed by ComputeCamLag. Sprites subtract the
+; same lag, so background and sprites share one camera.
 SetScroll::
     ld a, [wViewTX]
     and 31
     add a, a
     add a, a
     add a, a                    ; * 8
+    ld hl, wCamLagX
+    add a, [hl]
     ldh [rSCX], a
     ld a, [wViewTY]
     and 31
     add a, a
     add a, a
     add a, a
+    ld hl, wCamLagY
+    add a, [hl]
     ldh [rSCY], a
     ret

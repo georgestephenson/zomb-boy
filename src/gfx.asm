@@ -115,6 +115,69 @@ Tiles::
     dw `00011000
     dw `01100000
     dw `00000110
+; --- 12: zombie down A (OBJ pal 1; hunched, colour 3 = red eyes) ---
+    dw `00111100
+    dw `01111110
+    dw `01311310
+    dw `01111110
+    dw `00111100
+    dw `01111110
+    dw `01100000
+    dw `00000110
+; --- 13: zombie down B ---
+    dw `00111100
+    dw `01111110
+    dw `01311310
+    dw `01111110
+    dw `00111100
+    dw `01111110
+    dw `00000110
+    dw `01100000
+; --- 14: zombie up A ---
+    dw `00111100
+    dw `01111110
+    dw `01111110
+    dw `01111110
+    dw `00111100
+    dw `01111110
+    dw `01100000
+    dw `00000110
+; --- 15: zombie up B ---
+    dw `00111100
+    dw `01111110
+    dw `01111110
+    dw `01111110
+    dw `00111100
+    dw `01111110
+    dw `00000110
+    dw `01100000
+; --- 16: zombie side A (facing right; flip X for left) ---
+    dw `00111100
+    dw `01111310
+    dw `01111110
+    dw `00111100
+    dw `01111100
+    dw `01110000
+    dw `00011000
+    dw `00000110
+; --- 17: zombie side B ---
+    dw `00111100
+    dw `01111310
+    dw `01111110
+    dw `00111100
+    dw `01111100
+    dw `00011000
+    dw `01100000
+    dw `00000110
+; --- 18: "!" alert bubble (OBJ pal 2) ---
+    dw `00011000
+    dw `00111100
+    dw `00111100
+    dw `00011000
+    dw `00011000
+    dw `00000000
+    dw `00011000
+    dw `00011000
 TilesEnd::
 
 ; CGB palettes: 4 colours each, BGR555, `dw` = little-endian (matches rBCPD).
@@ -133,8 +196,19 @@ BGPalette::
 BGPaletteEnd::
 
 OBJPalette::
+    ; palette 0 — player
     dw ( 0 << 10) | ( 0 << 5) |  0   ; 0 transparent (ignored for OBJ)
     dw ( 6 << 10) | ( 8 << 5) | 31   ; 1 red (body)
     dw ( 3 << 10) | ( 3 << 5) | 20   ; 2 dark red (shading)
     dw (31 << 10) | (31 << 5) | 31   ; 3 white (highlight)
+    ; palette 1 — zombie
+    dw ( 0 << 10) | ( 0 << 5) |  0   ; 0 transparent
+    dw ( 6 << 10) | (20 << 5) |  9   ; 1 sickly green (body)
+    dw ( 3 << 10) | (10 << 5) |  3   ; 2 dark green (shading)
+    dw ( 2 << 10) | ( 2 << 5) | 28   ; 3 red (eyes/blood)
+    ; palette 2 — alert bubble
+    dw ( 0 << 10) | ( 0 << 5) |  0   ; 0 transparent
+    dw ( 4 << 10) | (30 << 5) | 31   ; 1 yellow
+    dw ( 2 << 10) | ( 8 << 5) | 20   ; 2 amber
+    dw (31 << 10) | (31 << 5) | 31   ; 3 white
 OBJPaletteEnd::

@@ -15,15 +15,30 @@ INCLUDE "include/constants.inc"
 SECTION "EntryPoint", ROM0[$0100]
     di
     jp Start
+    ; Reserve the cartridge header ($0104-$014F) so the linker never places code
+    ; here — rgbfix fills it with the logo/title/checksums.
+    ds $0150 - @
 
 SECTION "Main", ROM0[$0150]
 Start:
+    ld sp, $FFFE                    ; explicit stack top (don't trust the boot ROM)
+
     call WaitVBlankLY               ; safe point to turn the LCD off
     xor a, a
     ldh [rLCDC], a
 
+    ; --- boot hygiene: power-on RAM/VRAM/APU/bank state is undefined on real
+    ;     hardware (mGBA), so put everything in a known state before we start.
+    call ClearRAM                   ; zero WRAM  (nothing may rely on zeroed RAM)
+    call ClearVRAM                  ; zero both VRAM banks
+    call InitAudio                  ; silence the APU (no audio yet)
+    ld a, 1
+    ldh [rSVBK], a                  ; map WRAM bank 1 at $D000
+    xor a, a
+    ldh [rVBK], a                   ; VRAM bank 0 for rendering
+
+    ; --- content setup ---
     call LoadTiles
-    call ClearShadowOAM
     call CopyDMARoutine
     call LoadPalettes
 
@@ -31,9 +46,15 @@ Start:
     call UpdateView                 ; derive the camera from the player
     call InitMap                    ; generate the initial 32x32 map + attrs
 
-    xor a, a
-    ldh [rVBK], a                   ; ensure VRAM bank 0 for normal rendering
-    call DrawPlayerSprite
+    ; seed the RNG (must be non-zero) and spawn wandering zombies.
+    ; wGameMode / wStrKind etc. are already 0 from ClearRAM.
+    ld a, $AC
+    ld [wRngState], a
+    ld a, $E1
+    ld [wRngState+1], a
+    call InitZombies
+
+    call DrawEntities
     ld a, HIGH(wShadowOAM)
     call hOAMDMA                    ; clean OAM before the first visible frame
     call SetScroll
@@ -54,12 +75,22 @@ Start:
 ; -----------------------------------------------------------------------------
 MainLoop:
     call ReadInput
+    ld a, [wGameMode]
+    and a, a                        ; MODE_OVERWORLD == 0
+    jr nz, .alert
+    ; --- overworld ---
     call UpdatePlayer
     call UpdateView
     ld a, [wMoveDir]
     and a, a
     call nz, GenStrip               ; build incoming column/row (outside VBlank)
-    call DrawPlayerSprite
+    call UpdateZombies              ; wander + line-of-sight (may trigger alert)
+    jr .draw
+.alert:
+    call UpdateAlert                ; "!" countdown -> placeholder battle
+.draw:
+    call ComputeCamLag              ; shared sub-tile camera offset (BG + sprites)
+    call DrawEntities
 
     call WaitVBlank
     ; --- VBlank window ---

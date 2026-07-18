@@ -4,6 +4,10 @@
 # Build output
 build/
 
+# Python (test harness) cache
+__pycache__/
+*.pyc
+
 # Editor / OS cruft
 *.swp
 .DS_Store

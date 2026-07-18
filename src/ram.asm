@@ -30,20 +30,41 @@ wPrevKeys::         ds 1
 wMoveCooldown::     ds 1
 
 ; Player animation / movement
-wMoveDir::          ds 1               ; DIR_* set by UpdatePlayer this frame
-wFacing::           ds 1               ; 0 down, 1 up, 2 side
+wMoveDir::          ds 1               ; DIR_* set at a step start (drives streaming)
+wFacing::           ds 1               ; EFACE_* (0 down,1 up,2 left,3 right)
 wWalkFrame::        ds 1               ; 0/1 walk-cycle frame
-wFlip::             ds 1               ; OAM attr (OAMF_XFLIP for facing left)
+wPlayerState::      ds 1               ; PSTATE_* (idle / turning / walking)
+wStepOffset::       ds 1               ; 0..STEP_TOTAL progress into the current step
+wStepDir::          ds 1               ; EFACE_* being walked
+wTurnTimer::        ds 1               ; frames left of the turn-in-place delay
+; Sub-tile camera lag (signed px) added to SCX/SCY while the player mid-steps.
+; The SAME value is subtracted from every world sprite so they stay glued to the
+; scrolling background (else they appear to slide/zoom relative to the world).
+wCamLagX::          ds 1
+wCamLagY::          ds 1
 wCurTile::          ds 1               ; scratch: last generated tile type
 
 ; VRAM streaming: one column/row of fresh tiles queued for the next VBlank.
 ; Buffer holds quads {addrLo, addrHi, tile, attr} so the VBlank blit is tight.
 wStrKind::          ds 1               ; 0 = nothing pending, 1 = pending
 wStrLen::           ds 1               ; number of quads
+wStrDone::          ds 1               ; quads already blitted (chunked across frames)
 wStrIsCol::         ds 1               ; 1 = vertical strip, 0 = horizontal
 wStrI::             ds 1               ; fill-loop counter
 wBufPtr::           ds 2               ; fill-loop write pointer
 wStrBuf::           ds 24 * 4          ; up to 24 quads
+
+; Entities (zombies) + supporting scratch.
+SECTION "Entities", WRAM0
+wRngState::         ds 2               ; 16-bit LFSR (must stay non-zero)
+wGameMode::         ds 1               ; MODE_*
+wZombIdx::          ds 1               ; loop index into wZombies
+wAlertZombie::      ds 1               ; index of the zombie that spotted you
+wLosCount::         ds 1               ; occlusion-walk counter (survives Gen calls)
+wScrX::             ds 1               ; scratch: on-screen sprite X
+wScrY::             ds 1               ; scratch: on-screen sprite Y
+wEnt::              ds ENT_SIZE        ; the entity currently being processed
+wZombies::          ds MAX_ZOMBIES * ENT_SIZE
 
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ

@@ -96,10 +96,21 @@ scroll updates — so there's no seam or one-frame latency.
   attributes caused stray white tiles. `InitMap` writes bank-1 attributes for
   every cell; streaming writes them per tile. If you add BG tiles, set their
   palette in `AttrTable` (world.asm).
+- **Never rely on zeroed RAM/VRAM.** Real hardware and mGBA leave memory as
+  garbage at power-on (PyBoy zeros it, which *hides* these bugs). Boot clears all
+  WRAM (`ClearRAM`) and both VRAM banks (`ClearVRAM`) in `Start`; any new state
+  must either be cleared there or explicitly initialized before first read. The
+  `test/integration/test_boot_hygiene.py` poison tests guard this. Boot also sets
+  `sp` explicitly, silences the APU, and fixes the WRAM/VRAM banks.
 - **Saturating 8-bit math, no wrap.** Meters/stats clamp to `0..255`. This is a
   memory-safety rule from the design; tests must cover both ends.
 - **Build is warning-clean** under `-Weverything` (see `ASMFLAGS`). Keep it that
-  way; a new warning is a smell.
+  way; a new warning is a smell. (A rgbfix "Overwrote a non-zero byte in the
+  Nintendo logo/title" warning means a section drifted into the cartridge header
+  — the `ds $0150 - @` in `EntryPoint` reserves $0104–$014F to prevent this.)
+- **Unique SECTION names.** Every `SECTION "..."` name must be unique across all
+  files (WRAM and ROM alike), or the linker errors.
+- **`JR` reaches ±127 bytes.** Long loops need conditional `JP` for the back-edge.
 - **The generator and its reference model must stay in lockstep.** If you change
   `GenTileType`/`Hash8` in `world.asm`, update `test/model/worldgen_model.py` to
   match byte-for-byte and re-run it.

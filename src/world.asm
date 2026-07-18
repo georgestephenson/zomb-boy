@@ -309,7 +309,9 @@ GenStrip::
     dec a
     ld [wStrI], a
     jr nz, .loop
-    ld a, 1
+    xor a, a
+    ld [wStrDone], a           ; nothing blitted yet
+    inc a
     ld [wStrKind], a           ; mark buffer ready for BlitStream
     ret
 
@@ -326,54 +328,75 @@ GS_LoadView:
     ret
 
 ; -----------------------------------------------------------------------------
-; BlitStream: push the queued strip into VRAM. Call only during VBlank.
-; Two passes so we flip VRAM banks once each, not per tile.
+; BlitStream: push up to BLIT_CHUNK quads of the queued strip into VRAM. Call
+; once per VBlank; a whole strip is spread across a few VBlanks (see BLIT_CHUNK).
+; Two passes over the chunk so VRAM banks flip once each, not per tile.
 ; -----------------------------------------------------------------------------
 BlitStream::
     ld a, [wStrKind]
     and a, a
     ret z
+    ; chunk = min(wStrLen - wStrDone, BLIT_CHUNK)
+    ld a, [wStrLen]
+    ld b, a
+    ld a, [wStrDone]
+    ld c, a                     ; c = done
+    ld a, b
+    sub c                       ; a = remaining (> 0 while kind set)
+    cp BLIT_CHUNK
+    jr c, .haveCount
+    ld a, BLIT_CHUNK
+.haveCount:
+    ld d, a                     ; d = chunk count (preserved across passes)
+    ; HL = wStrBuf + done*4  (done*4 <= 80, fits one byte)
+    ld a, c
+    add a, a
+    add a, a
+    ld c, a
+    ld b, 0                     ; BC = done*4
+    ld hl, wStrBuf
+    add hl, bc
     ; pass 1 — tile ids into bank 0
     xor a, a
     ldh [rVBK], a
-    ld de, wStrBuf
-    ld a, [wStrLen]
-    ld b, a
+    push hl                     ; save chunk start for pass 2
+    ld e, d                     ; e = loop counter
 .p1:
-    ld a, [de]
-    inc de
-    ld l, a
-    ld a, [de]
-    inc de
-    ld h, a
-    ld a, [de]
-    inc de                      ; tile
-    ld [hl], a
-    inc de                      ; skip attr
-    dec b
+    ld a, [hl+]                 ; addr low
+    ld c, a
+    ld a, [hl+]                 ; addr high
+    ld b, a                     ; BC = VRAM address
+    ld a, [hl+]                 ; tile
+    ld [bc], a
+    inc hl                      ; skip attr
+    dec e
     jr nz, .p1
+    pop hl                      ; chunk start
     ; pass 2 — attributes into bank 1
     ld a, 1
     ldh [rVBK], a
-    ld de, wStrBuf
-    ld a, [wStrLen]
-    ld b, a
+    ld e, d
 .p2:
-    ld a, [de]
-    inc de
-    ld l, a
-    ld a, [de]
-    inc de
-    ld h, a
-    inc de                      ; skip tile
-    ld a, [de]
-    inc de                      ; attr
-    ld [hl], a
-    dec b
+    ld a, [hl+]                 ; addr low
+    ld c, a
+    ld a, [hl+]                 ; addr high
+    ld b, a
+    inc hl                      ; skip tile
+    ld a, [hl+]                 ; attr
+    ld [bc], a
+    dec e
     jr nz, .p2
     xor a, a
     ldh [rVBK], a              ; back to bank 0
-    ld [wStrKind], a           ; clear pending
+    ; done += chunk; clear pending when the whole strip is out
+    ld a, [wStrDone]
+    add a, d
+    ld [wStrDone], a
+    ld hl, wStrLen
+    cp [hl]
+    ret c                       ; more to blit next VBlank
+    xor a, a
+    ld [wStrKind], a
     ret
 
 ; -----------------------------------------------------------------------------
