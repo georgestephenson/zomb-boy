@@ -6,17 +6,42 @@ DEF CONSTANTS_INC EQU 1
 
 ; --- World generation -------------------------------------------------------
 DEF WORLD_SEED     EQU $A5
-DEF WATER_THRESH   EQU 34          ; coarse-hash < this -> water (~13%)
+
+; Biome ids (a coarse, domain-warped field selects one per region; each biome
+; sets which features appear and how dense). Keep in lockstep with the biome()
+; thresholds in worldgen_model.py.
+DEF BIOME_CITY     EQU 0
+DEF BIOME_PLAINS   EQU 1
+DEF BIOME_FOREST   EQU 2
+DEF BIOME_MARSH    EQU 3
+
+; Per-biome water cutoffs on the shared (octaveA+octaveB)>>1 field (lower =
+; wetter). Marsh is mostly water; plains/forest get only rare small ponds.
+DEF WATER_MARSH    EQU 116
+DEF WATER_FOREST   EQU 24
+DEF WATER_PLAINS   EQU 20
+; Per-biome 2x2-tree anchor cutoffs (hash >= this -> a tree). Lower = denser.
+DEF TREE_FOREST    EQU 176
+DEF TREE_MARSH     EQU 236
+DEF TREE_PLAINS    EQU 248
 
 ; --- Tile type ids (also the VRAM tile index for background tiles) ----------
 DEF TILE_GRASS     EQU 0
 DEF TILE_BRUSH     EQU 1
-DEF TILE_TREE      EQU 2           ; solid
-DEF TILE_WALL      EQU 3           ; solid
+DEF TILE_FLOWER    EQU 2
+DEF TILE_DIRT      EQU 3
 DEF TILE_WATER     EQU 4           ; solid
 DEF TILE_ROAD      EQU 5
-; Player OBJ tiles: down A/B = 6/7, up = 8/9, side = 10/11
-DEF TILE_PLAYER_BASE EQU 6
+DEF TILE_WALL      EQU 6           ; solid
+DEF TILE_FLOOR     EQU 7           ; house interior
+DEF TILE_DOOR      EQU 8           ; house doorway (passable)
+DEF TILE_MARSH     EQU 9           ; marsh ground
+DEF TILE_TREE_TL   EQU 10          ; 2x2 tree quadrants (all solid)
+DEF TILE_TREE_TR   EQU 11
+DEF TILE_TREE_BL   EQU 12
+DEF TILE_TREE_BR   EQU 13
+; Player OBJ tiles: down A/B = 14/15, up = 16/17, side = 18/19
+DEF TILE_PLAYER_BASE EQU 14
 
 ; --- Screen / camera --------------------------------------------------------
 DEF VIEW_COLS      EQU 20          ; 160/8 visible tile columns
@@ -34,10 +59,12 @@ DEF STEP_TOTAL     EQU 16
 DEF STEP_SPEED     EQU 1
 DEF TURN_DELAY     EQU 7           ; frames to "turn in place" before walking
 
-; Tiles pushed to VRAM per VBlank. A strip's blit is spread across several
-; VBlanks because the incoming edge only slides fully into view over STEP_TOTAL
-; frames — keeps VBlank work well under budget (no VRAM corruption on hardware).
-DEF BLIT_CHUNK     EQU 6
+; Tiles pushed to VRAM per VBlank. With the CPU in double-speed mode the VBlank
+; window holds twice as many cycles, so a whole strip (<= VIEW_COLS = 20 quads,
+; ~670 cycles over two passes) now fits in a single VBlank alongside OAM DMA.
+; Blitting the full strip at once means the incoming edge lands the same frame
+; the scroll updates (no seam) and no partial-strip state is ever visible.
+DEF BLIT_CHUNK     EQU 20
 
 ; Player movement state (wPlayerState)
 DEF PSTATE_IDLE    EQU 0
@@ -93,9 +120,9 @@ DEF ZOMBIE_RUN_MAX EQU 5           ; max steps in a run
 DEF SIGHT_RANGE    EQU 5           ; tiles a zombie can see straight ahead
 DEF ALERT_FRAMES   EQU 45          ; how long the "!" shows before the battle
 
-; --- Sprite tiles (continue after the player's 6..11) -----------------------
-DEF TILE_ZOMBIE_BASE EQU 12        ; down A/B=12/13, up=14/15, side=16/17
-DEF TILE_BUBBLE    EQU 18          ; the "!" alert bubble
+; --- Sprite tiles (continue after the player's 14..19) ----------------------
+DEF TILE_ZOMBIE_BASE EQU 20        ; down A/B=20/21, up=22/23, side=24/25
+DEF TILE_BUBBLE    EQU 26          ; the "!" alert bubble
 
 ; --- OAM slot assignment (shadow OAM entry index) ---------------------------
 DEF OAM_PLAYER     EQU 0

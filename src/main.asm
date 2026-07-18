@@ -23,6 +23,36 @@ SECTION "Main", ROM0[$0150]
 Start:
     ld sp, $FFFE                    ; explicit stack top (don't trust the boot ROM)
 
+    ; --- detect console, stash in HRAM (ClearRAM below only wipes WRAM) --------
+    ; Probe the VRAM-bank register: on CGB it's writable, so bank 0 reads back
+    ; with bit0 = 0; on DMG rVBK is unmapped and reads $FF (bit0 = 1). (The boot
+    ; ROM's A = $11/$01 handoff also works on hardware, but this probe is robust
+    ; regardless of how we were launched.) Everything CGB-only is gated on the
+    ; flag so the ROM also runs on an original Game Boy, in grayscale.
+    xor a, a
+    ldh [rVBK], a
+    ldh a, [rVBK]
+    and 1                           ; 0 = CGB, 1 = DMG
+    xor 1                           ; -> 1 = CGB, 0 = DMG
+    ldh [hIsCGB], a
+    and a
+    jr z, .noSpeed                  ; DMG: skip double-speed (STOP would hang it)
+
+    ; --- CGB double-speed CPU ---------------------------------------------
+    ; The biome generator does a lot of hashing per tile; at normal speed the
+    ; full-map InitMap at boot and the per-step GenStrip are heavy. Double speed
+    ; halves all CPU-bound work (boot generation *and* the VBlank blit budget).
+    ; Interrupts are still disabled here (`di` at $0100), which STOP requires.
+    ldh a, [rKEY1]
+    bit 7, a                        ; already running double-speed?
+    jr nz, .noSpeed
+    ld a, $30
+    ldh [rP1], a                    ; deselect joypad lines (required before STOP)
+    ld a, 1
+    ldh [rKEY1], a                  ; arm the speed switch
+    stop                            ; performs the switch, then resumes
+.noSpeed:
+
     call WaitVBlankLY               ; safe point to turn the LCD off
     xor a, a
     ldh [rLCDC], a

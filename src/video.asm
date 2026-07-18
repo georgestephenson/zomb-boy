@@ -112,6 +112,14 @@ LoadPalettes::
     ldh [rOCPD], a
     dec b
     jr nz, .obj
+    ; DMG fallback palettes. On CGB (in CGB mode) the hardware ignores these and
+    ; uses the BCPD/OCPD colours above; on an original Game Boy they are the ONLY
+    ; palettes, so without them sprites render as solid black. 4 grey shades.
+    ld a, %11100100                 ; BG:  0->light .. 3->dark
+    ldh [rBGP], a
+    ld a, %10011100                 ; OBJ: outline dark, face light, body mid
+    ldh [rOBP0], a                  ; player
+    ldh [rOBP1], a                  ; zombie
     ret
 
 ; Install the OAM DMA trampoline into HRAM (DMA must be kicked from HRAM).

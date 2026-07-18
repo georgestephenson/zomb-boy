@@ -80,8 +80,29 @@ scroll updates — so there's no seam or one-frame latency.
 - Moving one tile only invalidates the **single incoming column/row**, so we
   regenerate just that edge — this is what makes the world endless. Every visible
   cell is always current; off-screen margin cells may be stale but aren't shown.
-- Terrain is layered in `GenTileType`: water (coarse `>>2` noise) → road grid
-  (`x&15==0 || y&15==0`) → per-tile scatter (trees/walls/brush) → grass.
+- **`Hash8` is a permutation-table value-noise hash** (256-byte `PermTable`,
+  page-aligned so an index is just `ld l,a`). Seeded by `(WORLD_SEED + salt)`;
+  callers put the coord-transformed inputs in `wHX/wHY` and pass a salt in `B`.
+  It replaced an ad-hoc add/xor/swap hash that produced **diagonal streaks**.
+- **`GenTileType` is biome-driven.** A coarse, domain-warped `CalcBiome` field
+  (~64-tile cells) picks city / plains / forest / marsh; each biome assembles its
+  own features from shared noise fields (`WaterField`, `TreeQuad`), so water
+  clusters in marsh, roads+houses in city, trees in forest — not uniform noise.
+  Trees are **2×2** (a `TreeQuad` anchor + per-cell quadrant tile); houses are one
+  optional building per 16×16 chunk (`HouseTile`: wall perimeter + floor + door,
+  inset off the road grid). Domain-warped 2-octave water gives organic ponds.
+- **Multi-tile features are decided from a consistent anchor so they never clip:**
+  the terrain biome is sampled at the **2×2 block** anchor (`wGen & $FFFE`) so a
+  tree's four quadrants always agree, and houses gate on the **16×16 chunk** anchor
+  (`wGen & $FFF0`) so a whole building shares one biome. Trees are placed **before**
+  water so a pond can't bite a quadrant out of a tree. If you add a multi-tile
+  feature, anchor its decision the same way (and floor the biome sample to match).
+- **The generator is CPU-heavy** (~2 biome samples + several field hashes/tile).
+  That's why boot (`InitMap`, 1024 tiles) and per-step `GenStrip` run under **CGB
+  double-speed** (enabled in `Start`, *gated on running on CGB*). Double-speed also
+  lets `BLIT_CHUNK` push a whole strip in one VBlank. If you add per-tile work,
+  watch boot time (the integration tests boot at `settle=150` frames — keep
+  `InitMap` well under that; on DMG there's no double-speed so it's ~2x slower).
 
 ### Audio (audio.asm + vendored hUGEDriver)
 - Music uses **hUGEDriver**, vendored (committed, public domain) under
@@ -123,6 +144,19 @@ scroll updates — so there's no seam or one-frame latency.
   attributes caused stray white tiles. `InitMap` writes bank-1 attributes for
   every cell; streaming writes them per tile. If you add BG tiles, set their
   palette in `AttrTable` (world.asm).
+- **Dual-mode: colour on CGB, grayscale on DMG.** The cart is CGB-*compatible*
+  (`-c`/`$80`, not CGB-only), so it also runs on an original Game Boy. `Start`
+  probes `rVBK` to set `hIsCGB` (1=CGB, 0=DMG; in HRAM so `ClearRAM` can't wipe
+  it). **Every CGB-only operation must be gated on `hIsCGB`:** double-speed (the
+  `stop` would hang a DMG) and the bank-1 attribute writes (on DMG `rVBK` is
+  ignored, so an attribute write lands on the tile id in bank 0 and corrupts the
+  map). DMG uses the classic `rBGP`/`rOBP0`/`rOBP1` palettes (set in
+  `LoadPalettes`; without them sprites are solid black). Per-tile BG colour is a
+  CGB-only feature, so DMG is single-palette 4-shade grayscale — that's inherent.
+  PyBoy can't emulate DMG mode for a CGB-flagged ROM, so the harness forces CGB;
+  `test/integration/test_dmg.py` patches the detection to exercise the DMG code
+  path (no hang, BG uncorrupted, palettes set). True grayscale look = verify on
+  mGBA/hardware.
 - **Never rely on zeroed RAM/VRAM.** Real hardware and mGBA leave memory as
   garbage at power-on (PyBoy zeros it, which *hides* these bugs). Boot clears all
   WRAM (`ClearRAM`) and both VRAM banks (`ClearVRAM`) in `Start`; any new state
@@ -154,9 +188,12 @@ scroll updates — so there's no seam or one-frame latency.
 
 ## Watch out for
 
-- **VBlank budget.** `BlitStream` writes up to a 20-tile row × 2 passes plus OAM
-  DMA, all in VBlank. It currently fits at normal speed, but if you add per-frame
-  VRAM work and see edge tearing, switch to **GBC double-speed** for headroom.
+- **VBlank budget.** `BlitStream` pushes a whole strip (up to a 20-tile row × 2
+  passes, `BLIT_CHUNK = 20`) plus OAM DMA in one VBlank. We now run in **GBC
+  double-speed** (see the world-gen notes), which doubles the VBlank cycle budget,
+  so the full-strip blit fits comfortably. PyBoy won't reproduce VBlank-overrun
+  tearing — if you add per-frame VRAM work, sanity-check the budget by hand /
+  `make run`. If it ever overruns, lower `BLIT_CHUNK` to re-chunk across VBlanks.
 - **`ld a, b : or c` clear loops** rely on the byte count being < 256 (high byte
   stays 0). Fine for the current buffers; re-check if a cleared region grows.
 - Commit messages: **do not** add Claude as an author/co-author (user's global

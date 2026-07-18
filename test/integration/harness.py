@@ -44,7 +44,11 @@ def load_symbols():
 class Game:
     def __init__(self, settle=150, poison=None):
         assert os.path.exists(ROM), f"ROM not built: {ROM} (run `make` first)"
-        self.pyboy = PyBoy(ROM, window="null", sound_emulated=False)
+        # The ROM is now CGB-compatible ($80 header) so it also runs on DMG; force
+        # CGB here since these tests validate the colour/double-speed path. (PyBoy
+        # doesn't faithfully emulate DMG mode for a CGB-flagged ROM, so the DMG
+        # fallback is verified on hardware/mGBA, not here.)
+        self.pyboy = PyBoy(ROM, window="null", sound_emulated=False, cgb=True)
         self.sym = load_symbols()
         self._held = set()
         # Simulate real-hardware / mGBA power-on garbage: PyBoy zeros RAM, so

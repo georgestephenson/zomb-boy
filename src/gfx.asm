@@ -1,6 +1,8 @@
 ; =============================================================================
 ; gfx.asm — tile graphics and CGB palettes.
 ; Backtick literals: each digit is a 2bpp colour index (0-3) for one pixel.
+; Tile ids are defined in constants.inc; this table must stay in that order
+; (id == VRAM tile index). BG tiles 0..13, then sprites 14..26.
 ; =============================================================================
 INCLUDE "include/constants.inc"
 
@@ -25,24 +27,24 @@ Tiles::
     dw `10101010
     dw `00010001
     dw `01000100
-; --- 2: tree (BG pal 0, solid) ---
-    dw `00222000
-    dw `02233220
-    dw `22333322
-    dw `23333332
-    dw `22333322
-    dw `02233220
-    dw `00033000
-    dw `00033000
-; --- 3: wall / rock (BG pal 0, solid) ---
-    dw `22222222
-    dw `23232323
-    dw `22222222
-    dw `32323232
-    dw `22222222
-    dw `23232323
-    dw `22222222
-    dw `32323232
+; --- 2: flower (BG pal 0, passable) — little blossoms on grass ---
+    dw `01000010
+    dw `13100131
+    dw `01000010
+    dw `00000000
+    dw `00010000
+    dw `00131000
+    dw `00010000
+    dw `00000000
+; --- 3: dirt (BG pal 2, passable) — bare city ground, faint speckle ---
+    dw `00010000
+    dw `00000010
+    dw `01000000
+    dw `00000100
+    dw `00100000
+    dw `00000001
+    dw `00010000
+    dw `01000000
 ; --- 4: water (BG pal 1, solid) ---
     dw `00000000
     dw `10001000
@@ -52,7 +54,7 @@ Tiles::
     dw `01000100
     dw `00010000
     dw `00000000
-; --- 5: road (BG pal 0, passable) ---
+; --- 5: road (BG pal 2, passable) ---
     dw `22222222
     dw `21222212
     dw `22222222
@@ -61,8 +63,80 @@ Tiles::
     dw `21222212
     dw `22222222
     dw `22122122
+; --- 6: wall / rock (BG pal 2, solid) ---
+    dw `22222222
+    dw `23232323
+    dw `22222222
+    dw `32323232
+    dw `22222222
+    dw `23232323
+    dw `22222222
+    dw `32323232
+; --- 7: floor (BG pal 2, passable) — house interior planks ---
+    dw `11111111
+    dw `11111111
+    dw `22222222
+    dw `11111111
+    dw `11111111
+    dw `22222222
+    dw `11111111
+    dw `11111111
+; --- 8: door (BG pal 2, passable) — dark doorway in the wall ---
+    dw `33333333
+    dw `32222223
+    dw `32222223
+    dw `32222223
+    dw `32222223
+    dw `32222223
+    dw `32222223
+    dw `33333333
+; --- 9: marsh ground (BG pal 3, passable) — murky, mottled ---
+    dw `00000000
+    dw `00100200
+    dw `00000000
+    dw `02001000
+    dw `00000000
+    dw `00010020
+    dw `00000000
+    dw `00200001
+; --- 10: tree top-left (BG pal 0, solid) ---
+    dw `00000333
+    dw `00033311
+    dw `00331111
+    dw `00311011
+    dw `03311101
+    dw `03110110
+    dw `03111101
+    dw `03111111
+; --- 11: tree top-right (BG pal 0, solid) ---
+    dw `33300000
+    dw `11333000
+    dw `11113300
+    dw `11111300
+    dw `11111330
+    dw `11111130
+    dw `11111130
+    dw `11111130
+; --- 12: tree bottom-left (BG pal 0, solid) ---
+    dw `03111111
+    dw `03311111
+    dw `00311111
+    dw `00331133
+    dw `00033333
+    dw `00000333
+    dw `00000033
+    dw `00000033
+; --- 13: tree bottom-right (BG pal 0, solid) ---
+    dw `11111130
+    dw `11111330
+    dw `11111300
+    dw `33113300
+    dw `33333000
+    dw `33300000
+    dw `33000000
+    dw `33000000
 ; Character sprites: colour 1 = black (outline + eyes), 2 = face, 3 = body.
-; --- 6: player down A (OBJ pal 0; face skin, body red) ---
+; --- 14: player down A (OBJ pal 0; face skin, body red) ---
     dw `00111100
     dw `01333310
     dw `01222210
@@ -73,7 +147,7 @@ Tiles::
     dw `01311310
 ; Walk cycle: A = arms out (row5) + feet apart (row7);
 ;             B = arms swung down (hands drop to row6) + feet together.
-; --- 7: player down B ---
+; --- 15: player down B ---
     dw `00111100
     dw `01333310
     dw `01222210
@@ -82,7 +156,7 @@ Tiles::
     dw `01111110
     dw `13333331
     dw `00133100
-; --- 8: player up A (back of head; no eyes) ---
+; --- 16: player up A (back of head; no eyes) ---
     dw `00111100
     dw `01333310
     dw `01222210
@@ -91,7 +165,7 @@ Tiles::
     dw `13111131
     dw `11333311
     dw `01311310
-; --- 9: player up B ---
+; --- 17: player up B ---
     dw `00111100
     dw `01333310
     dw `01222210
@@ -100,7 +174,7 @@ Tiles::
     dw `01111110
     dw `13333331
     dw `00133100
-; --- 10: player side A (right profile: narrow head, cap brim juts fwd;
+; --- 18: player side A (right profile: narrow head, cap brim juts fwd;
 ;         one eye. Flip X for left — brim always leads the walk) ---
     dw `00111000
     dw `01333100
@@ -110,7 +184,7 @@ Tiles::
     dw `13111131
     dw `11333311
     dw `01311310
-; --- 11: player side B ---
+; --- 19: player side B ---
     dw `00111000
     dw `01333100
     dw `01333331
@@ -119,7 +193,7 @@ Tiles::
     dw `01111110
     dw `13333331
     dw `00133100
-; --- 12: zombie down A (OBJ pal 1; hunched, face green, body brown) ---
+; --- 20: zombie down A (OBJ pal 1; hunched, face green, body brown) ---
     dw `00000000
     dw `00111100
     dw `01333310
@@ -128,7 +202,7 @@ Tiles::
     dw `13111131
     dw `11333311
     dw `01311310
-; --- 13: zombie down B ---
+; --- 21: zombie down B ---
     dw `00000000
     dw `00111100
     dw `01333310
@@ -137,7 +211,7 @@ Tiles::
     dw `01111110
     dw `13333331
     dw `00133100
-; --- 14: zombie up A (no eyes) ---
+; --- 22: zombie up A (no eyes) ---
     dw `00000000
     dw `00111100
     dw `01333310
@@ -146,7 +220,7 @@ Tiles::
     dw `13111131
     dw `11333311
     dw `01311310
-; --- 15: zombie up B ---
+; --- 23: zombie up B ---
     dw `00000000
     dw `00111100
     dw `01333310
@@ -155,7 +229,7 @@ Tiles::
     dw `01111110
     dw `13333331
     dw `00133100
-; --- 16: zombie side A (hunched right profile, one eye; flip X for left) ---
+; --- 24: zombie side A (hunched right profile, one eye; flip X for left) ---
     dw `00000000
     dw `00111000
     dw `01333100
@@ -164,7 +238,7 @@ Tiles::
     dw `13111131
     dw `11333311
     dw `01311310
-; --- 17: zombie side B ---
+; --- 25: zombie side B ---
     dw `00000000
     dw `00111000
     dw `01333100
@@ -173,7 +247,7 @@ Tiles::
     dw `01111110
     dw `13333331
     dw `00133100
-; --- 18: "!" alert bubble (OBJ pal 2) ---
+; --- 26: "!" alert bubble (OBJ pal 2) ---
     dw `00011000
     dw `00111100
     dw `00111100
@@ -189,14 +263,24 @@ TilesEnd::
 BGPalette::
     ; palette 0 — land
     dw (12 << 10) | (29 << 5) | 21   ; 0 pale green (grass)
-    dw (10 << 10) | (22 << 5) | 12   ; 1 mid green  (brush)
-    dw (15 << 10) | (14 << 5) | 13   ; 2 grey       (wall/road)
-    dw ( 4 << 10) | ( 6 << 5) |  3   ; 3 dark       (outline/foliage)
+    dw (10 << 10) | (22 << 5) | 12   ; 1 mid green  (brush/foliage)
+    dw (15 << 10) | (14 << 5) | 13   ; 2 grey
+    dw ( 4 << 10) | ( 6 << 5) |  3   ; 3 dark       (outline/trunk)
     ; palette 1 — water
     dw (28 << 10) | (24 << 5) | 10   ; 0 light blue
     dw (26 << 10) | (16 << 5) |  4   ; 1 mid blue
     dw (18 << 10) | (10 << 5) |  2   ; 2 deep blue
     dw (31 << 10) | (31 << 5) | 28   ; 3 foam
+    ; palette 2 — city (roads/walls/floors/dirt)
+    dw (14 << 10) | (19 << 5) | 22   ; 0 tan/khaki ground
+    dw (16 << 10) | (16 << 5) | 16   ; 1 mid grey
+    dw (10 << 10) | ( 9 << 5) |  9   ; 2 dark grey
+    dw ( 4 << 10) | ( 3 << 5) |  3   ; 3 near-black
+    ; palette 3 — marsh (murky ground/reeds)
+    dw ( 8 << 10) | (14 << 5) | 11   ; 0 olive murk
+    dw ( 6 << 10) | (11 << 5) |  7   ; 1 dark green
+    dw ( 4 << 10) | ( 9 << 5) | 12   ; 2 brown
+    dw ( 3 << 10) | ( 5 << 5) |  3   ; 3 dark
 BGPaletteEnd::
 
 OBJPalette::

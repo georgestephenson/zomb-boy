@@ -75,9 +75,9 @@ AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o
 # --- Toolchain flags --------------------------------------------------------
 # -Weverything: surface every warning; asm bugs are costly on real hardware.
 ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
-# rgbfix: -C = GBC-only, -v = fix header, -p 0xFF = pad, -m/-r default MBC set
-# in the fix target once we know the cart type. Title <= 11 chars for GBC.
-FIXFLAGS        := -C -v -p 0xFF -t ZOMBBOY
+# rgbfix: -c = GBC-compatible ($80, runs on DMG too — the ROM detects the console
+# at boot and falls back to grayscale), -v = fix header, -p 0xFF = pad. Title <= 11.
+FIXFLAGS        := -c -v -p 0xFF -t ZOMBBOY
 
 # Emulator used by `make run`. Defaults to the vendored, pinned mGBA (auto-
 # fetched on first `make run`). Override to use your own, e.g.

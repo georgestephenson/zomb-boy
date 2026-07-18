@@ -29,4 +29,5 @@ def test_player_sprite_present_and_centered(game):
     p = game.sprite(0)
     # Player is fixed near screen centre (SPR_X=80, SPR_Y=88 in OAM coords).
     assert p["y"] == 88 and p["x"] == 80, f"player sprite misplaced: {p}"
-    assert p["tile"] < 12, f"player using a non-player tile: {p['tile']}"
+    # Player OBJ tiles are 14..19 (TILE_PLAYER_BASE..).
+    assert 14 <= p["tile"] < 20, f"player using a non-player tile: {p['tile']}"

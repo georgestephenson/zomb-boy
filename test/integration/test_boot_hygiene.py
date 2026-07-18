@@ -22,8 +22,10 @@ def _run(poison):
         x1 = g.s16("wPlayerWX")
         # unused OAM slots hidden (no garbage sprites regardless of RAM state)
         garbage = [s for s in range(10, 40) if g.sprite(s)["y"] != 0]
-        # BG map is valid terrain (VRAM was sanitized, not showing poison)
-        bad_tiles = sum(1 for a in range(0x9800, 0x9C00) if g.r8(a) > 5)
+        # BG map is valid terrain (VRAM was sanitized, not showing poison).
+        # Valid BG tile ids are 0..13 (grass..tree quadrants); anything higher
+        # is a sprite tile or garbage leaking into the map.
+        bad_tiles = sum(1 for a in range(0x9800, 0x9C00) if g.r8(a) > 13)
         return lcd_on, x0, x1, garbage, bad_tiles
     finally:
         g.close()

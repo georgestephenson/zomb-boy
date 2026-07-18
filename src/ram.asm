@@ -20,8 +20,17 @@ wViewTY::           ds 2               ; ... and row (= player - centre offset)
 ; Scratch inputs to the tile generator (16-bit world coords) and hash.
 wGenX::             ds 2
 wGenY::             ds 2
-wHX::               ds 2
-wHY::               ds 2
+wHX::               ds 2               ; hash input X (already coord-transformed)
+wHY::               ds 2               ; hash input Y
+wWX::               ds 2               ; domain-warped X used by water/biome passes
+wWY::               ds 2               ; domain-warped Y
+wBiX::              ds 2               ; biome-sample anchor X (chunk- or block-floored)
+wBiY::              ds 2               ; biome-sample anchor Y
+; House pass scratch (city biome): building size + this tile's offset into it.
+wHW::               ds 1               ; house width
+wHH::               ds 1               ; house height
+wHDX::              ds 1               ; this tile's dx within the house bbox
+wHDY::              ds 1               ; ... and dy
 
 ; Input
 wCurKeys::          ds 1               ; held this frame (1 = pressed)
@@ -68,4 +77,6 @@ wZombies::          ds MAX_ZOMBIES * ENT_SIZE
 
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ
+hIsCGB::            ds 1               ; 1 = Game Boy Color, 0 = DMG (set at boot,
+                                       ; lives in HRAM so ClearRAM can't wipe it)
 hOAMDMA::           ds 16              ; OAM DMA trampoline (copied here at boot)
