@@ -98,7 +98,7 @@ brief asked for.
 ## 6. Memory-safety notes
 
 - Combat state lives in a **dedicated scratch region** allocated only during battle
-  ([01 §6](01-technical-feasibility.md#6-wram-budget-the-ram-that-matters-frame-to-frame)),
+  ([01 §6](01-technical-feasibility.md#6-memory-budget--plan-for-the-whole-game-now)),
   and is fully cleared on entry so no stale data from a previous fight leaks in
   (tested).
 - All stat math saturates; equip slots are bounds-checked (you cannot equip into a

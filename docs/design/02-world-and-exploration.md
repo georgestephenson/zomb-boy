@@ -59,7 +59,7 @@ because everything is still `f(seed, coords)`.
 Only a small neighborhood is "live" in WRAM at once.
 
 - The **active window** is the 3×3 chunks centered on the player's current chunk
-  (5×5 if the budget allows — see WRAM table in [01 §6](01-technical-feasibility.md#6-wram-budget-the-ram-that-matters-frame-to-frame)).
+  (5×5 if the budget allows — see WRAM table in [01 §6](01-technical-feasibility.md#6-memory-budget--plan-for-the-whole-game-now)).
 - When the player crosses a chunk boundary, we **generate the newly-entered ring**
   of chunks and **discard the ring left behind**. This is a scrolling ring buffer,
   not a full reload.

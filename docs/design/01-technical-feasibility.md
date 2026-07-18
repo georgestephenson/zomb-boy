@@ -122,23 +122,81 @@ BARRIER"). The important correctness property — **no integer overflow on world
 coordinates** — is enforced by clamping in one place and covered by tests (see
 [06](06-testing-and-memory-safety.md)).
 
-## 6. WRAM budget (the RAM that matters frame-to-frame)
+## 6. Memory budget — plan for the *whole* game now
 
-A rough first-pass allocation of the 32 KB WRAM. This is a design target, not final:
+This is the discipline that keeps us out of trouble: **we budget memory for every
+subsystem the finished game needs up front**, not just what's built today. GBC
+memory is small and non-negotiable, and it's easy to build the overworld to fit
+32 KB and then discover there's no room left for the HUD, a pause menu, walking
+zombies/survivors, the audio engine, and the battle/encounter UIs. If we allocate
+for all of it now, each subsystem lands in space we already reserved instead of
+forcing a painful refactor.
 
-| Region | Budget | Purpose |
-|--------|-------:|---------|
-| Player + save-shadow | ~1 KB | Stats, inventory, position, loadout, RNG state |
-| Active chunk window | ~4–6 KB | The 3×3 (or 5×5) chunks around the player, decompressed to tiles |
-| Entity list | ~1 KB | On-screen zombies/survivors/items (position, type, state) |
-| Combat state | ~0.5 KB | Only allocated during battles |
-| Dialogue/grammar scratch | ~0.5 KB | Only during survivor conversations |
-| Rendering buffers (shadow OAM, tile queue) | ~1 KB | DMA'd shadow OAM, VRAM update queue |
-| Stack | ~256 B | Watched by a canary in tests |
-| Free / headroom | remainder | Deliberately kept large |
+The subsystems that must fit — **each one needs a home in WRAM, VRAM, and OAM
+before we write it**:
 
-Combat, dialogue, and generation are **mutually exclusive modes**, so their scratch
-regions can overlap (a union), which keeps peak WRAM use low.
+- **In-game HUD** — health / food / sleep meters (always on screen).
+- **In-game pause menu** — inventory, loadout swap, save.
+- **Walking zombie & survivor characters** — overworld actors with their own
+  sprites and AI/patrol state, several on screen at once.
+- **Music + sound effects** — an audio engine (hUGEDriver-style) with persistent
+  channel state and SFX that can interrupt music.
+- **Battle UI** — a full mode transition: HUD → combat layout, enemy + player
+  sprites, menus, damage numbers.
+- **Survivor encounter UI** — dialogue box, generated text, four response
+  choices, affinity readout.
+
+### 6a. WRAM (32 KB) — the frame-to-frame RAM
+
+| Region | Budget | Lifetime | Purpose |
+|--------|-------:|----------|---------|
+| Player + save-shadow | ~1 KB | always | Stats, inventory, position, loadout, RNG |
+| Active world window | ~4–6 KB | always | Streamed tiles around the player (see §2 streaming) |
+| Overworld entity list | ~1 KB | always | Zombies/survivors/items on screen (pos, type, AI state) |
+| HUD state | ~0.25 KB | always | Meter values, dirty flags, HUD sprite shadow |
+| Audio engine state | ~0.5 KB | always | Channel state, current song/SFX pointers, mixer flags |
+| Rendering buffers | ~1 KB | always | Shadow OAM (256-aligned), VRAM update queue, streaming buffer |
+| Stack | ~256 B | always | Canary-guarded in tests |
+| **Mode scratch (union)** | ~1 KB | one mode at a time | Pause menu **or** battle state **or** encounter/dialogue scratch |
+| Free / headroom | remainder | — | Kept deliberately large |
+
+The **always-resident** rows (HUD, audio, entities) are the ones people forget to
+budget — they cost even when you're just walking. The **mode scratch** row is a
+deliberate **union**: the pause menu, a battle, and a survivor conversation are
+mutually exclusive, so they overlay the same region and we only pay for the
+largest. Same for generation scratch. Peak WRAM stays low precisely because we
+decided this layout on purpose.
+
+### 6b. VRAM (16 KB, 2 banks) — often the *tighter* constraint
+
+Tile memory is only 384 background + 256 sprite tile slots (shared regions), so we
+allocate the tile map early:
+
+- **Persistent tiles:** terrain set, player + a few overworld actor sprites, HUD
+  digits/icons + font. These stay loaded during overworld play.
+- **Mode-swapped tiles:** entering a battle or encounter **reloads** a bank of
+  tiles (combat backdrop, enemy art, UI frame) over the overworld sprite/BG tiles,
+  then restores on exit. The transition is where we spend a few frames (fade out,
+  swap VRAM, fade in) — planned as a first-class step, not an afterthought.
+- Bank 1 also holds BG **attributes** (per-tile palette) — already in use.
+
+### 6c. OAM (40 sprites, 10 per scanline)
+
+The overworld must share 40 hardware sprites across: the player, several walking
+zombies/survivors, and any HUD sprites. This is a hard cap, so the entity system
+gets a **sprite-slot allocator** and must respect the 10-per-line limit (tested).
+Battle/encounter modes get the full 40 back because the overworld actors aren't
+drawn there.
+
+### 6d. ROM (up to 8 MB, MBC5) — plentiful but organized
+
+Code, tile art, text/word-banks, and music data are **banked**. ROM isn't the
+scarce resource, but banking is planned so audio data, UI graphics, and map/entity
+tables live in predictable banks rather than wherever they land.
+
+**Takeaway:** the scarce resources are WRAM, VRAM, and OAM — and we've now reserved
+space in each for every subsystem above. New features build into their reservation;
+they don't get to discover there's no room left.
 
 ## 7. Bottom line
 
