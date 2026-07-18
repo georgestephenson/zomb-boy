@@ -1,95 +1,111 @@
 #!/usr/bin/env python3
-"""Host-side reference model of the ROM's tile generator.
+"""Host-side reference model of the ROM's tile generator (src/world.asm).
 
-This mirrors GenTileType in src/main.asm *byte for byte* (same 8-bit ops, same
-thresholds). It serves two purposes described in
+Mirrors GenTileType / Hash8 *byte for byte* (same 8-bit ops, same thresholds,
+same layering: water -> roads -> scatter). Purposes, per
 docs/design/06-testing-and-memory-safety.md:
 
-  * Layer C differential testing — later, a headless emulator run will compare
-    the ROM's generated map against this model over random coordinates.
-  * A fast sanity check we can run today (no emulator needed): is the terrain
-    distribution what we intended, and is the player's start tile passable?
+  * Layer-C differential testing seed (a headless emulator can later compare the
+    ROM's map against this).
+  * A no-emulator sanity check today: is the terrain mix what we intended, and
+    is the player's start tile passable?
 
-Keep this in lockstep with the assembly. If GenTileType changes, change this.
+Keep in lockstep with src/world.asm. If the generator changes, change this too.
 """
 
 WORLD_SEED = 0xA5
-WORLD_W = 32
-WORLD_H = 32
+WATER_THRESH = 34
 
-TILE_GRASS, TILE_BRUSH, TILE_TREE, TILE_WALL = 0, 1, 2, 3
-FIRST_SOLID = TILE_TREE  # tiles >= this block movement
+TILE_GRASS, TILE_BRUSH, TILE_TREE, TILE_WALL, TILE_WATER, TILE_ROAD = range(6)
+SOLID = {TILE_TREE, TILE_WALL, TILE_WATER}
 
 U8 = 0xFF
+U16 = 0xFFFF
 
 
 def swap_nibbles(a: int) -> int:
     return ((a << 4) | (a >> 4)) & U8
 
 
+def hash8(x: int, y: int) -> int:
+    """Mirror of Hash8: 8-bit avalanche of (xl,xh,yl,yh) + seed."""
+    xl, xh = x & U8, (x >> 8) & U8
+    yl, yh = y & U8, (y >> 8) & U8
+    a = WORLD_SEED
+    a = (a + xl) & U8
+    a ^= yl
+    h = a
+    a = swap_nibbles(a)
+    a = (a + xh) & U8
+    a ^= yh
+    a ^= h
+    h = a
+    a = swap_nibbles(a)
+    a = (a + xl) & U8
+    a ^= yl
+    return a
+
+
 def gen_tile_type(x: int, y: int) -> int:
-    """Exact replica of GenTileType (B=x, C=y -> A)."""
-    a = (x + WORLD_SEED) & U8      # add a, WORLD_SEED
-    d = a                          # ld d, a
-    a = (y + d) & U8               # ld a,c : add a,d
-    a ^= d                         # xor a, d
-    d = a                          # ld d, a
-    a = swap_nibbles(a)            # swap a
-    a ^= d                         # xor a, d
-    a = (a + x) & U8               # add a, b
-    a ^= y                         # xor a, c
-    # thresholds
-    if a < 200:
-        return TILE_GRASS
-    if a < 232:
-        return TILE_BRUSH
-    if a < 248:
+    """Mirror of GenTileType. x,y are 16-bit world tile coords."""
+    x &= U16
+    y &= U16
+    # water: coarse (>>2) noise
+    if hash8((x >> 2) & U16, (y >> 2) & U16) < WATER_THRESH:
+        return TILE_WATER
+    # roads: 1-tile grid every 16 tiles
+    if (x & 0x0F) == 0 or (y & 0x0F) == 0:
+        return TILE_ROAD
+    # scatter
+    f = hash8(x, y)
+    if f >= 248:
+        return TILE_WALL
+    if f >= 236:
         return TILE_TREE
-    return TILE_WALL
+    if f >= 222:
+        return TILE_BRUSH
+    return TILE_GRASS
 
 
-def find_start(tx=WORLD_W // 2, ty=WORLD_H // 2):
-    """Mirror InitPlayer: from centre, step right until a passable tile."""
-    x = tx
-    for _ in range(WORLD_W):  # bounded, like the ROM
-        if gen_tile_type(x, ty) < FIRST_SOLID:
-            return x, ty
-        x = x + 1 if x + 1 < WORLD_W else 1
-    return x, ty
+def find_start():
+    """Mirror InitPlayer: from (0,0), step +X to the first passable tile."""
+    x = 0
+    for _ in range(64):
+        if gen_tile_type(x, 0) not in SOLID:
+            return x, 0
+        x += 1
+    return x, 0
 
 
 def main() -> int:
-    counts = {TILE_GRASS: 0, TILE_BRUSH: 0, TILE_TREE: 0, TILE_WALL: 0}
-    for y in range(WORLD_H):
-        for x in range(WORLD_W):
+    names = {TILE_GRASS: "grass", TILE_BRUSH: "brush", TILE_TREE: "tree ",
+             TILE_WALL: "wall ", TILE_WATER: "water", TILE_ROAD: "road "}
+    counts = {t: 0 for t in names}
+    N = 256  # sample a 256x256 region
+    for y in range(N):
+        for x in range(N):
             counts[gen_tile_type(x, y)] += 1
-    total = WORLD_W * WORLD_H
+    total = N * N
 
-    names = {TILE_GRASS: "grass", TILE_BRUSH: "brush",
-             TILE_TREE: "tree ", TILE_WALL: "wall "}
-    print(f"World: {WORLD_W}x{WORLD_H} = {total} tiles, seed=0x{WORLD_SEED:02X}")
+    print(f"Sampled {N}x{N} = {total} tiles, seed=0x{WORLD_SEED:02X}")
     for t, n in counts.items():
-        print(f"  {names[t]} : {n:4d}  ({100*n/total:5.1f}%)")
+        print(f"  {names[t]} : {n:6d}  ({100*n/total:5.1f}%)")
 
     ok = True
+    passable = sum(counts[t] for t in (TILE_GRASS, TILE_BRUSH, TILE_ROAD))
+    if passable < total * 0.5:
+        print("FAIL: less than half the world is walkable"); ok = False
+    for t in (TILE_WATER, TILE_ROAD):
+        if counts[t] == 0:
+            print(f"FAIL: no {names[t].strip()} generated at all"); ok = False
 
-    # 1. Mostly-open world: grass should dominate and solids stay a minority.
-    passable = counts[TILE_GRASS] + counts[TILE_BRUSH]
-    solid = counts[TILE_TREE] + counts[TILE_WALL]
-    if passable < solid:
-        print("FAIL: world is more solid than passable"); ok = False
-    if counts[TILE_GRASS] < total * 0.5:
-        print("FAIL: grass is less than half the world"); ok = False
-
-    # 2. Player must start on a passable tile.
     sx, sy = find_start()
     st = gen_tile_type(sx, sy)
     print(f"Start tile: ({sx},{sy}) -> {names[st].strip()}")
-    if st >= FIRST_SOLID:
+    if st in SOLID:
         print("FAIL: start tile is solid"); ok = False
 
-    # 3. Determinism: same coords twice -> same tile.
-    if any(gen_tile_type(3, 7) != gen_tile_type(3, 7) for _ in range(1000)):
+    if any(gen_tile_type(5, 9) != gen_tile_type(5, 9) for _ in range(1000)):
         print("FAIL: generator not deterministic"); ok = False
 
     print("PASS: generator model checks passed" if ok else "FAILURES above")
