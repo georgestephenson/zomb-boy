@@ -6,11 +6,12 @@
 # (gitignored) and builds from that — nothing needs to be installed globally.
 #
 #   make            Build the ROM (auto-installs the pinned toolchain first)
-#   make tools      Just install the pinned toolchain + includes
-#   make run        Build, then launch the ROM in $(EMULATOR)
+#   make tools      Just install the pinned build toolchain + includes
+#   make emulator   Install the pinned Mesen2 emulator (~38 MB)
+#   make run        Build, then play the ROM (auto-installs the emulator)
 #   make test       Build + run the memory-safety / logic test ROMs
 #   make clean      Remove build output (keeps the downloaded toolchain)
-#   make distclean  Remove build output AND the downloaded toolchain
+#   make distclean  Remove build output AND all downloaded tools
 # =============================================================================
 
 # --- Pinned dependency versions ---------------------------------------------
@@ -21,6 +22,9 @@
 # classic, widely-documented names our source is written against.
 RGBDS_VERSION   := 1.0.1
 HWINC_REF       := v4.12.0
+# SourMesen/Mesen2 release tag. Open source (GPLv3), self-contained Linux ELF.
+# Used both to play the ROM (make run) and for headless Lua tests (make test).
+EMU_VERSION     := 2.1.1
 
 # --- Repo-local toolchain paths ---------------------------------------------
 TOOLS_DIR       := .tools
@@ -30,6 +34,8 @@ RGBLINK         := $(RGBDS_DIR)/rgblink
 RGBFIX          := $(RGBDS_DIR)/rgbfix
 RGBGFX          := $(RGBDS_DIR)/rgbgfx
 HWINC           := $(TOOLS_DIR)/include/hardware.inc
+EMU_DIR         := $(TOOLS_DIR)/emulator
+MESEN           := $(EMU_DIR)/Mesen
 
 # --- Project layout ---------------------------------------------------------
 SRC_DIR         := src
@@ -53,25 +59,33 @@ ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
 # in the fix target once we know the cart type. Title <= 11 chars for GBC.
 FIXFLAGS        := -C -v -p 0xFF -t ZOMBBOY
 
-# Emulator used by `make run` — override on the CLI, e.g.
+# Emulator used by `make run`. Defaults to the vendored, pinned Mesen2 (auto-
+# fetched on first `make run`). Override to use your own, e.g.
 #   make run EMULATOR=sameboy
-EMULATOR        ?= $(firstword $(shell command -v sameboy mesen emulicious bgb 2>/dev/null) echo)
+EMULATOR        ?= $(MESEN)
 
 # =============================================================================
 # Targets
 # =============================================================================
-.PHONY: all tools run test clean distclean
+.PHONY: all tools emulator run test clean distclean
 
 all: $(ROM)
 
 # --- Dependency bootstrap ---------------------------------------------------
+# `tools` installs just the build toolchain (fast). The ~38 MB emulator is a
+# separate target, auto-fetched by `make run`/`make test` when needed.
 tools: $(RGBASM) $(HWINC)
+
+emulator: $(MESEN)
 
 $(RGBASM):
 	./tools/fetch-rgbds.sh $(RGBDS_VERSION) $(RGBDS_DIR)
 
 $(HWINC):
 	./tools/fetch-hardware-inc.sh $(HWINC_REF) $(HWINC)
+
+$(MESEN):
+	./tools/fetch-emulator.sh $(EMU_VERSION) $(EMU_DIR)
 
 # --- Build ------------------------------------------------------------------
 # Every object depends on the toolchain + includes being present (order-only),
@@ -93,15 +107,15 @@ $(ROM): $(OBJS)
 -include $(OBJS:.o=.d)
 
 # --- Run / test -------------------------------------------------------------
+# Launch the ROM. When using the default (vendored) emulator, fetch it first if
+# missing. If the user overrode EMULATOR with their own, just run that.
 run: $(ROM)
-	@if [ -z "$(EMULATOR)" ] || [ "$(EMULATOR)" = "echo" ]; then \
-		echo "No emulator found. Install SameBoy/Mesen/Emulicious or set EMULATOR=..."; \
-	else \
-		$(EMULATOR) $(ROM); \
-	fi
+	@if [ "$(EMULATOR)" = "$(MESEN)" ] && [ ! -x "$(MESEN)" ]; then $(MAKE) --no-print-directory emulator; fi
+	@echo ">> launching $(EMULATOR) $(ROM)"
+	$(EMULATOR) $(ROM)
 
-test: $(RGBASM) $(HWINC)
-	./tools/run-tests.sh
+test: $(RGBASM) $(HWINC) $(MESEN)
+	EMU_TEST=$(MESEN) ./tools/run-tests.sh
 
 # --- Cleanup ----------------------------------------------------------------
 clean:
