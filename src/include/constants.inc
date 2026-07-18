@@ -132,5 +132,145 @@ DEF OAM_BUBBLE     EQU 9           ; the alert bubble
 ; --- Game mode --------------------------------------------------------------
 DEF MODE_OVERWORLD EQU 0
 DEF MODE_ALERT     EQU 1           ; "!" showing, about to battle
+DEF MODE_TALK      EQU 2           ; survivor dialogue screen (talk.asm)
+
+; --- Survivor NPCs (docs/design/05) -----------------------------------------
+DEF MAX_NPCS       EQU 10          ; one of each persona, placed near the start
+; Extra entity-struct fields (offsets 13..15 are unused by zombies)
+DEF EO_PERSONA     EQU 13          ; PERSONA_* id
+DEF EO_AFFIN      EQU 14           ; affinity 0..255 (128 = neutral), saturating
+DEF EO_MET        EQU 15           ; nonzero once you've talked to them —
+                                   ; return visits greet differently
+
+DEF OAM_NPC0       EQU 10          ; NPCs use OAM slots 10..10+MAX_NPCS-1
+
+; Survivor OBJ tiles (static: no walk cycle) + the menu cursor
+DEF TILE_SURV_DOWN EQU 27          ; after the bubble (26)
+DEF TILE_SURV_UP   EQU 28
+DEF TILE_SURV_SIDE EQU 29          ; right profile; X-flip for left
+DEF TILE_CURSOR    EQU 30
+
+; Personas: index into dialogue_data.asm's PersonaTable
+DEF PERSONA_POLICE   EQU 0
+DEF PERSONA_SCIENTIST EQU 1
+DEF PERSONA_CHEER    EQU 2
+DEF PERSONA_MAID     EQU 3
+DEF PERSONA_BIZ      EQU 4
+DEF PERSONA_PREPPER  EQU 5
+DEF PERSONA_MEDIC    EQU 6
+DEF PERSONA_RAIDER   EQU 7
+DEF PERSONA_PREACHER EQU 8
+DEF PERSONA_FARMER   EQU 9
+DEF PERSONA_COUNT    EQU 10
+; Persona record layout (see dialogue_data.asm)
+DEF PERSONA_SIZE   EQU 12
+DEF PO_NAME        EQU 0           ; dw -> 0-terminated name string
+DEF PO_TRAITS      EQU 2           ; 4 signed bytes: T0..T3 (see below)
+DEF PO_NOUNS       EQU 6           ; dw -> noun bank
+DEF PO_TOPICS      EQU 8           ; dw -> topic-template bank
+DEF PO_PAL         EQU 10          ; OBJ palette (3..7; tints are shared —
+                                   ; only 5 hardware palettes are free)
+; Trait axes (signed -60..+60; + = the second-named pole):
+;   T0 WARY<->TRUSTING  T1 GRIM<->HOPEFUL  T2 SELFISH<->GENEROUS  T3 JOKING<->SERIOUS
+; NOTE: |dot(push, traits)| over any tone must stay <= 127 (8-bit math);
+; test/model/dialogue_bounds.py checks this against the built ROM.
+
+; --- Dialogue: reply tones, buckets, thresholds ------------------------------
+; The tone POOL covers every trait axis in both directions; each menu offers a
+; random 4 of these (BuildMenu guarantees at least one non-negative option).
+DEF TONE_NICE      EQU 0
+DEF TONE_FLIRT     EQU 1
+DEF TONE_JOKE      EQU 2
+DEF TONE_RUDE      EQU 3
+DEF TONE_GUARDED   EQU 4
+DEF TONE_CHEER     EQU 5
+DEF TONE_GRIM      EQU 6
+DEF TONE_DEMAND    EQU 7
+DEF TONE_COUNT     EQU 8           ; power of 2: BuildMenu masks Rand with -1
+DEF TONE_SIZE      EQU 6           ; tone record: 4 push bytes + base + pad
+DEF MENU_TRIES     EQU 8           ; redraw budget for the non-negative rule
+
+; Reaction buckets (index the react banks), from the per-round delta
+DEF RB_LOVED       EQU 0           ; delta >= +6
+DEF RB_LIKED       EQU 1           ; delta >= +1
+DEF RB_MEH         EQU 2           ; delta == 0
+DEF RB_DISLIKED    EQU 3           ; delta >= -5
+DEF RB_HATED       EQU 4           ; delta <  -5
+
+; Mood buckets (index opener/adjective banks), from running affinity
+DEF MOOD_HOSTILE   EQU 0           ; affinity <  96
+DEF MOOD_NEUTRAL   EQU 1           ; affinity < 160
+DEF MOOD_WARM      EQU 2           ; affinity >= 160
+
+DEF AFFIN_START    EQU 128
+DEF AFFIN_HOSTILE  EQU 96
+DEF AFFIN_WARM     EQU 160
+; Conversation outcome thresholds (final affinity after TALK_ROUNDS replies)
+DEF AFFIN_REWARD   EQU 148
+DEF AFFIN_FIGHT    EQU 108
+DEF TALK_ROUNDS    EQU 3
+
+DEF OUTCOME_FIGHT  EQU 0
+DEF OUTCOME_PART   EQU 1           ; "flight": neutral parting
+DEF OUTCOME_REWARD EQU 2
+
+; --- Talk screen (SCRN1) layout ---------------------------------------------
+; Text area: 3 rows x 18 cols inside the bottom box (BG rows 12/14/16, col 1).
+DEF TALK_COLS      EQU 18
+DEF TALK_ROWS      EQU 3
+DEF TALK_TEXT_MAX  EQU TALK_COLS * TALK_ROWS   ; 54-byte compose buffer
+DEF TXT_COL0       EQU 1
+DEF TXT_ROW0       EQU 12          ; text rows at 12/14/16 (stride 2 for air)
+DEF BOX_ROW_TOP    EQU 10          ; solid border rows of the text box
+                                   ; (row 11 stays blank: air above the text)
+DEF BOX_ROW_BOT    EQU 17
+DEF NAME_COL       EQU 1           ; name plate position
+DEF NAME_ROW       EQU 1
+DEF TALK_NPC_X     EQU 84          ; OAM position of the NPC on the talk screen
+DEF TALK_NPC_Y     EQU 48
+DEF TALK_ARROW_COL EQU 18          ; "press A" arrow cell (rightmost, last row)
+; Menu: 2x2 grid inside the text area. Grid columns 1/9 hold the labels
+; (grid col 0/8 = the cursor cell); grid rows are text rows 0 and 1.
+DEF MENU_LBL_COL0  EQU 1
+DEF MENU_LBL_COL1  EQU 9
+DEF WORD_MAX       EQU 15          ; compose word scratch hard limit
+
+; Talk state machine
+DEF TS_REVEAL      EQU 0           ; typewriter running
+DEF TS_WAIT       EQU 1            ; text done, waiting for A
+DEF TS_MENU       EQU 2            ; 4-tone menu up
+DEF TPH_GREET      EQU 0
+DEF TPH_REACT      EQU 1
+DEF TPH_OUTCOME    EQU 2
+DEF TPH_PROMPT     EQU 3           ; the NPC's fresh line opening rounds 2+
+DEF REVEAL_SLOW    EQU 2           ; cells revealed per frame (typewriter)
+DEF REVEAL_FAST    EQU 12          ; menu draw / A-skip speed (must stay below
+                                   ; TALKQ_CAP with room for an arrow write)
+DEF TALKQ_CAP      EQU 16          ; VRAM write queue entries (3 bytes each)
+
+; --- Font (BG tiles from id 128 = $8800; expanded from 1bpp at boot) ---------
+DEF FONT_BASE      EQU 128
+; Glyph order: space, A-Z, 0-9, . , ! ? ' -  then icons (below)
+DEF TILE_FACE_HAPPY EQU FONT_BASE + 43
+DEF TILE_FACE_NEUT  EQU FONT_BASE + 44
+DEF TILE_FACE_MAD   EQU FONT_BASE + 45
+DEF TILE_UIBOX      EQU FONT_BASE + 46   ; solid border tile
+DEF TILE_UIARROW    EQU FONT_BASE + 47   ; "press A" indicator
+DEF FONT_GLYPHS     EQU 48
+
+; Dialogue string control codes (must stay below FONT_BASE; no glyph maps here)
+DEF CTRL_END       EQU 0
+DEF CTRL_NOUN      EQU 1           ; expand a random persona-noun into the word
+DEF CTRL_ADJ       EQU 2           ; expand a mood-adjective likewise
+DEF CTRL_SUBJ      EQU 3           ; expand the conversation's SUBJECT noun —
+                                   ; picked once per conversation, so the NPC
+                                   ; keeps talking about the same thing
+
+; Trait-tinted adjectives: |T1| above this shifts the adjective bank one mood
+; step (grim personas speak bleaker, hopeful ones warmer, at equal affinity).
+DEF TINT_THRESH    EQU 17
+
+DEF PAL_BG_UI      EQU 4           ; BG palette for the whole talk screen
+                                   ; (0-3 belong to the biome terrain)
 
 ENDC

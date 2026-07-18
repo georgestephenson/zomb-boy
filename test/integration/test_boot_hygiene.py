@@ -20,8 +20,9 @@ def _run(poison):
         x0 = g.s16("wPlayerWX")
         g.walk("right", 60)
         x1 = g.s16("wPlayerWX")
-        # unused OAM slots hidden (no garbage sprites regardless of RAM state)
-        garbage = [s for s in range(10, 40) if g.sprite(s)["y"] != 0]
+        # unused OAM slots hidden (no garbage sprites regardless of RAM state);
+        # slots 10..19 are the survivor NPCs (test_sprites.py)
+        garbage = [s for s in range(20, 40) if g.sprite(s)["y"] != 0]
         # BG map is valid terrain (VRAM was sanitized, not showing poison).
         # Valid BG tile ids are 0..13 (grass..tree quadrants); anything higher
         # is a sprite tile or garbage leaking into the map.

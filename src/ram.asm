@@ -75,6 +75,48 @@ wScrY::             ds 1               ; scratch: on-screen sprite Y
 wEnt::              ds ENT_SIZE        ; the entity currently being processed
 wZombies::          ds MAX_ZOMBIES * ENT_SIZE
 
+; Survivor NPCs (same 16-byte entity struct; EO_PERSONA/EO_AFFIN in 13/14).
+SECTION "NPC State", WRAM0
+wNPCs::             ds MAX_NPCS * ENT_SIZE
+wNPCIdx::           ds 1               ; loop index into wNPCs
+
+; Talk mode (survivor dialogue screen) — see talk.asm / dialogue.asm.
+SECTION "Talk State", WRAM0
+wTalkNPC::          ds 1               ; index of the NPC we're talking to
+wTalkPersona::      ds 1               ; its PERSONA_* (cached from the struct)
+wTalkState::        ds 1               ; TS_*
+wTalkPhase::        ds 1               ; TPH_*
+wTalkRound::        ds 1               ; replies given so far (0..TALK_ROUNDS)
+wTalkDelta::        ds 1               ; signed affinity delta of the last reply
+wTalkMood::         ds 1               ; MOOD_* (recomputed as affinity moves)
+wTalkOutcome::      ds 1               ; OUTCOME_* (valid in TPH_OUTCOME)
+wTalkSubject::      ds 1               ; noun-bank index the conversation orbits
+wTalkTone::         ds 1               ; TONE_* just picked (drives react tags)
+wTalkMet::          ds 1               ; EO_MET as it was BEFORE this talk
+wTalkCursor::       ds 1               ; menu cursor 0..3 (bit0 = col, bit1 = row)
+wMenuTones::        ds 4               ; the TONE_* offered in each menu slot
+wMenuTries::        ds 1               ; BuildMenu redraw counter
+; Typewriter reveal: walks wTalkText into VRAM via the write queue.
+wRevPos::           ds 1               ; next cell to reveal (0..TALK_TEXT_MAX)
+wRevCol::           ds 1               ; its column / row (avoids div by 18)
+wRevRow::           ds 1
+wRevSpeed::         ds 1               ; cells enqueued per frame
+; Grammar composer scratch (dialogue.asm)
+wTalkCol::          ds 1               ; compose write position: column 0..17
+wTalkRow::          ds 1               ; ... and row 0..2
+wWordLen::          ds 1
+wWordBuf::          ds WORD_MAX + 1    ; current word (incl. glued punctuation)
+wLastNoun::         ds 1               ; repeat-pick guards (bank indexes)
+wLastTopic::        ds 1
+; The 3x18 text grid (font tile ids). wTalkGuard is a canary: set to $C5 on
+; talk entry and never written again — the composer is bounds-checked and the
+; integration tests assert it survives (docs/design/05 §3 memory safety).
+wTalkText::         ds TALK_TEXT_MAX
+wTalkGuard::        ds 1
+; VRAM write queue: logic fills (bounded), the talk VBlank path drains fully.
+wTalkQN::           ds 1               ; entries used this frame
+wTalkQ::            ds TALKQ_CAP * 3   ; {addrHi, addrLo, value}
+
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ
 hIsCGB::            ds 1               ; 1 = Game Boy Color, 0 = DMG (set at boot,

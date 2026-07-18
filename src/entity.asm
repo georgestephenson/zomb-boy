@@ -212,6 +212,9 @@ UpdateZombieAI:
     call CheckZombieAt          ; don't stack on another zombie
     and a, a
     jr nz, .blocked
+    call CheckNPCAt             ; nor shuffle onto a survivor
+    and a, a
+    jr nz, .blocked
     call EntFromGen             ; commit new position
     ; start the visual slide from the tile it just left
     ld a, [wEnt + EO_DIR]
@@ -327,10 +330,11 @@ UpdateAlert::
 ; =============================================================================
 ; Rendering
 ; =============================================================================
-; DrawEntities: player sprite (slot 0) + all visible zombies (+ bubble).
+; DrawEntities: player sprite (slot 0) + all visible zombies (+ bubble) + NPCs.
 DrawEntities::
     call DrawPlayerSprite
     call DrawZombies
+    call DrawNPCs
     ret
 
 ; DrawZombies: hide the entity sprite slots, then draw each active + on-screen
@@ -399,8 +403,8 @@ HideEntitySprites:
 
 ; EntScreenPos: A = 1 if wEnt is within the visible window; sets wScrX/wScrY
 ; (OAM coords). Uses diff = entity - view; on-screen iff high byte 0 and low
-; byte < VIEW_COLS/ROWS.
-EntScreenPos:
+; byte < VIEW_COLS/ROWS. Shared with npc.asm (works off wEnt).
+EntScreenPos::
     ld a, [wEnt + EO_WXLO]
     ld e, a
     ld a, [wEnt + EO_WXHI]
@@ -541,8 +545,12 @@ DrawBubble:
 ; Small helpers
 ; =============================================================================
 ; CopyEntityIn / CopyEntityOut: A = index. Copies between wZombies[idx] and wEnt.
+; The pool-generic versions (CopyPoolIn/Out, DE = pool base) are shared with the
+; survivor NPCs (npc.asm) — same struct, different pool.
 CopyEntityIn::
-    call EntAddr                ; A=idx -> HL = &wZombies[idx] (clobbers DE)
+    ld de, wZombies
+CopyPoolIn::
+    call EntAddr                ; A=idx, DE=base -> HL = &pool[idx]
     ld de, wEnt                 ; copy entity -> wEnt
     ld b, ENT_SIZE
 .loop:
@@ -553,7 +561,9 @@ CopyEntityIn::
     jr nz, .loop
     ret
 CopyEntityOut::
-    call EntAddr                ; A=idx -> HL = &wZombies[idx] (clobbers DE)
+    ld de, wZombies
+CopyPoolOut::
+    call EntAddr                ; A=idx, DE=base -> HL = &pool[idx]
     ld de, wEnt                 ; copy wEnt -> entity  (DE=src, HL=dst)
     ld b, ENT_SIZE
 .loop:
@@ -564,7 +574,7 @@ CopyEntityOut::
     jr nz, .loop
     ret
 
-; EntAddr: A = index -> HL = wZombies + index * 16.
+; EntAddr: A = index, DE = pool base -> HL = base + index * 16.
 EntAddr:
     ld l, a
     ld h, 0
@@ -572,11 +582,10 @@ EntAddr:
     add hl, hl
     add hl, hl
     add hl, hl                  ; * 16
-    ld de, wZombies
     add hl, de
     ret
 
-ClearEnt:
+ClearEnt::
     ld hl, wEnt
     ld b, ENT_SIZE
     xor a, a
@@ -748,7 +757,7 @@ Neg16HL:
     ret
 
 ; AddSByteAt16: HL -> 16-bit LE var; A = signed byte to add.
-AddSByteAt16:
+AddSByteAt16::
     ld c, a                     ; save byte
     add a, [hl]
     ld [hl+], a                 ; low += byte; carry set for high

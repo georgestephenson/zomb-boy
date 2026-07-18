@@ -92,6 +92,25 @@ LoadTiles::
     jr nz, .copy
     ret
 
+; Expand the 1bpp font/UI glyphs to 2bpp at $8800 (tile FONT_BASE). Writing the
+; row byte to both bitplanes maps set pixels to colour 3 (ink) on colour 0
+; (paper) — see BG palette PAL_BG_UI. LCD must be off.
+LoadFont::
+    ld hl, Font1bpp
+    ld de, _VRAM + FONT_BASE * 16
+    ld bc, Font1bppEnd - Font1bpp
+.copy:
+    ld a, [hl+]
+    ld [de], a                  ; bitplane 0
+    inc de
+    ld [de], a                  ; bitplane 1
+    inc de
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .copy
+    ret
+
 ; Load CGB BG palettes (BGPalette..End) and OBJ palette 0 (OBJPalette..End).
 LoadPalettes::
     ld a, BCPSF_AUTOINC

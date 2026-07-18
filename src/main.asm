@@ -69,6 +69,7 @@ Start:
 
     ; --- content setup ---
     call LoadTiles
+    call LoadFont                   ; expand the 1bpp font to $8800 (FONT_BASE)
     call CopyDMARoutine
     call LoadPalettes
 
@@ -76,13 +77,14 @@ Start:
     call UpdateView                 ; derive the camera from the player
     call InitMap                    ; generate the initial 32x32 map + attrs
 
-    ; seed the RNG (must be non-zero) and spawn wandering zombies.
+    ; seed the RNG (must be non-zero) and spawn wandering zombies + survivors.
     ; wGameMode / wStrKind etc. are already 0 from ClearRAM.
     ld a, $AC
     ld [wRngState], a
     ld a, $E1
     ld [wRngState+1], a
     call InitZombies
+    call InitNPCs
 
     call InitSound                  ; power on the APU + start the demo song
 
@@ -109,6 +111,8 @@ MainLoop:
     call UpdateSound                ; advance music one tick (once/frame, pre-VBlank)
     call ReadInput
     ld a, [wGameMode]
+    cp MODE_TALK
+    jr z, .talk
     and a, a                        ; MODE_OVERWORLD == 0
     jr nz, .alert
     ; --- overworld ---
@@ -118,6 +122,10 @@ MainLoop:
     and a, a
     call nz, GenStrip               ; build incoming column/row (outside VBlank)
     call UpdateZombies              ; wander + line-of-sight (may trigger alert)
+    call CheckTalkStart             ; A at a survivor -> EnterTalk (MODE_TALK)
+    ld a, [wGameMode]
+    cp MODE_TALK
+    jr z, MainLoop                  ; EnterTalk presented its own frame
     jr .draw
 .alert:
     call UpdateAlert                ; "!" countdown -> placeholder battle
@@ -131,4 +139,13 @@ MainLoop:
     call hOAMDMA
     call SetScroll
     call BlitStream                 ; push the queued strip into VRAM
+    jr MainLoop
+
+; --- talk mode: dialogue logic, then a lighter VBlank (no scroll/stream) ---
+.talk:
+    call UpdateTalk                 ; state machine; fills the VRAM write queue
+    call WaitVBlank
+    ld a, HIGH(wShadowOAM)
+    call hOAMDMA
+    call DrainTalkQ                 ; typewriter/menu writes, bounded
     jr MainLoop

@@ -52,26 +52,86 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 
 | Module | Responsibility |
 |--------|----------------|
-| `main.asm` | Entry ($0100), boot init, main loop |
+| `main.asm` | Entry ($0100), boot init, main loop (`wGameMode` dispatch) |
 | `world.asm` | Tile generator, map init, BG streaming (the engine) |
 | `player.asm` | Movement, collision, camera, sprite |
-| `video.asm` | VBlank sync, OAM DMA, palettes, scroll; VBlank IRQ vector |
+| `entity.asm` | Zombie AI + LOS; the shared 16-byte entity struct + pool helpers |
+| `npc.asm` | Survivor NPCs: spawn, world render, occupancy, A-press talk trigger |
+| `talk.asm` | Dialogue screen (MODE_TALK): SCRN1 UI, state machine, VRAM queue |
+| `dialogue.asm` | Grammar composer (bounded) + persona/tone affinity math |
+| `dialogue_data.asm` | Personas, word banks, templates (ROMX; charmap strings) |
+| `battle.asm` | Placeholder battle transition (flash) |
+| `rng.asm` | 16-bit LFSR (`Rand`) — dynamic behaviour, NOT worldgen |
+| `video.asm` | VBlank sync, OAM DMA, palettes, font loader, scroll; VBlank IRQ vector |
 | `input.asm` | Joypad read with edge detection |
 | `audio.asm` | Music seam over vendored hUGEDriver (`InitSound`/`UpdateSound`) |
-| `gfx.asm` | Tile + palette data |
+| `gfx.asm` | Tile + palette data; 1bpp font (expanded to $8800 at boot) |
 | `ram.asm` | **All** WRAM/HRAM variables (one place) |
 | `util.asm` | 16-bit LE pointer math (`Inc16Ptr`/`Dec16Ptr`/`Add16Ptr`) |
 | `include/constants.inc` | Shared `EQU` constants |
+| `include/charmap.inc` | ASCII → font-tile `charmap` (dialogue strings only) |
 
 ### Main loop (main.asm)
 Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
 ```
-UpdateSound → ReadInput → UpdatePlayer → UpdateView → (GenStrip if moved) → DrawPlayerSprite
-WaitVBlank → OAM DMA → SetScroll → BlitStream
+overworld: UpdateSound → ReadInput → UpdatePlayer → UpdateView → (GenStrip if moved)
+           → UpdateZombies → CheckTalkStart → ComputeCamLag → DrawEntities
+           WaitVBlank → OAM DMA → SetScroll → BlitStream
+talk mode: UpdateSound → ReadInput → UpdateTalk (fills wTalkQ)
+           WaitVBlank → OAM DMA → DrainTalkQ
 ```
 `GenStrip` builds the incoming edge into a WRAM buffer (heavy, outside VBlank);
 `BlitStream` pushes it to VRAM (tight, inside VBlank) in the **same frame** the
 scroll updates — so there's no seam or one-frame latency.
+
+### Dialogue (npc/talk/dialogue*, docs/design/05)
+- The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on
+  SCRN0 is untouched, so exit is just an LCDC flip + `SetScroll`. Entry builds
+  the UI with the **LCD off inside VBlank** (never `WaitVBlank` while it's off —
+  no IRQ fires) after flushing any half-blitted world strip. Its bank-1
+  attribute pass is `hIsCGB`-gated (on DMG those writes would hit the tile map).
+- **Font** is 1bpp in `gfx.asm`, expanded at boot to tiles `FONT_BASE` (128+,
+  $8800). Dialogue strings are authored via `charmap.inc`, so they assemble
+  straight to tile ids; control bytes `CTRL_NOUN`/`CTRL_ADJ` mark grammar slots.
+- The composer writes into the 3×18 grid `wTalkText` through a **word buffer +
+  greedy wrap** (`FlushWord` is the bounds check — nothing may write past the
+  grid; `wTalkGuard` is a tested canary). Slot expansions glue into the current
+  token ("THE ",CTRL_NOUN,"." → `BADGE.`), so nouns/adjectives must be
+  single words. **`test/model/dialogue_bounds.py` walks the banks in the built
+  ROM and proves every composable line fits — run it after ANY data change.**
+- All talk-mode VRAM writes go through `wTalkQ` (logic fills ≤16/frame, VBlank
+  drains all) — the typewriter reveal, menus and face changes ride this queue.
+- **Round rhythm:** every round is NPC sentence → your reply → NPC reaction.
+  The greeting opens round 1; rounds 2+ open with a **prompt** line
+  (`ComposePrompt`, continuation openers + topic). Reactions are a bucket quip
+  plus a **tone tag** answering the specific tone picked (`ToneTagsLiked`/
+  `Disliked` by the delta's sign). After `TALK_ROUNDS` replies, final affinity
+  picks fight/part/reward.
+- **Convincingness tricks** (all data + a few bytes of state):
+  * *Subject threading* — each conversation fixes one noun (`wTalkSubject`);
+    `CTRL_SUBJ` slots emit it, `CTRL_NOUN` slots stay random (and are guarded
+    against repeating), so the NPC audibly talks *about something*.
+  * *Trait-tinted adjectives* — `EmitAdj` shifts the mood bank one step
+    bleaker/warmer when |T1| ≥ `TINT_THRESH`: the maid grumbles in hostile
+    vocabulary at neutral affinity, the preacher beams.
+  * *Return greetings* — `EO_MET` (struct offset 15) flips on first talk;
+    repeat visits greet from the continuation bank ("STILL HERE?").
+- **Tones:** a pool of `TONE_COUNT` (8) covering every trait axis both ways
+  (NICE FLIRT JOKE RUDE GUARDED CHEER GRIM DEMAND). Each menu offers a random
+  **4 distinct** of them (`BuildMenu` → `wMenuTones`; picking applies
+  `wMenuTones[cursor]`), redrawn until at least one option has a non-negative
+  delta for the persona — there is always a playable move. Tests poke
+  `wMenuTones[0]` to sidestep menu randomness.
+- Affinity is per-NPC (`EO_AFFIN`, 0..255 **saturating**), persists across
+  conversations in WRAM; `delta = clamp(dot(tone push, persona traits)>>2, ±16)
+  + tone base`. The integration tests hold a lockstep copy of the police
+  traits + the 8-tone table — keep `test_talk.py` in sync with
+  `dialogue_data.asm`.
+- **OBJ palettes are the persona cap for distinct tints:** only palettes 3..7
+  are free (player/zombie/bubble own 0-2), so with 10 personas the tints are
+  shared via each record's `PO_PAL`. Persona *data* is cheap (~200 bytes each,
+  in ROMX); OAM allows `MAX_NPCS` more sprites (slots start at `OAM_NPC0`) —
+  mind the 10-sprites-per-scanline hardware limit if raising it further.
 
 ### The endless-world trick (world.asm)
 - World coords are **16-bit signed tile** coordinates (`wPlayerWX/WY`).
@@ -185,6 +245,22 @@ scroll updates — so there's no seam or one-frame latency.
 - **A new module:** create `src/<name>.asm` (the Makefile globs `src/**/*.asm`),
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
+- **A new persona:** data-only. In `dialogue_data.asm` add a `PersonaTable`
+  record (name, 4 traits in -60..+60, noun + topic banks, `PO_PAL` — pick any
+  OBJ palette 3..7, shared tints are fine), bump `PERSONA_COUNT`/`MAX_NPCS` +
+  a spawn offset in `npc.asm`. Then `make && python3
+  test/model/dialogue_bounds.py` — it enforces the authoring rules
+  (single-word nouns, every line fits 3×18, |dot| ≤ 127, palette range,
+  label length) **including winnability**: some tone's delta must be ≥ +7 so
+  three perfect replies reach `AFFIN_REWARD`.
+- **A new reply tone:** add a `ToneTable` record (push vector + base) and a
+  ≤7-char label in `dialogue_data.asm`, bump `TONE_COUNT` — but keep it a
+  **power of 2** (`BuildMenu` masks `Rand`), and rerun the bounds model
+  (winnability shifts for every persona).
+- **New dialogue text:** only charmap'd characters (`A-Z 0-9 . , ! ? ' -`);
+  hyphenate multi-word nouns; in topics use `CTRL_SUBJ` for the continuity
+  slot (~half the templates) and `CTRL_NOUN` for variety; rerun the bounds
+  model.
 
 ## Watch out for
 

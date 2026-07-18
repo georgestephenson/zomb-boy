@@ -199,6 +199,9 @@ TryStartStep:
     jr nz, .blocked            ; solid terrain
     call CheckZombieAt         ; a zombie is standing there
     and a, a
+    jr nz, .blocked
+    call CheckNPCAt            ; a survivor is standing there (talk instead)
+    and a, a
     jr z, .ok
 .blocked:
     ; bump — stay idle, keep facing

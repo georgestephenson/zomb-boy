@@ -108,3 +108,36 @@ Each time it's your turn to reply, the game offers **four** options, generated t
 - **First social slice:** compatibility + grammar + 4 choices + gift/fight outcome.
 - **LATER:** trading, party members, survivors turning into (infected) zombies,
   reputation across a settlement.
+
+### Status (v0.4): first social slice BUILT
+
+`npc.asm` / `talk.asm` / `dialogue.asm` / `dialogue_data.asm` implement this
+doc with one authoring twist: survivors ship as **named persona presets** —
+ten of them (policeman, scientist, cheerleader, maid, businessman, prepper,
+medic, raider, preacher, farmer) — each a preset trait vector (§2) plus themed
+noun/topic banks (§3), which keeps voices loud and data legible. Persona data
+is ~200 bytes; the practical cap on *distinct looks* is the five free OBJ
+palettes (tints are shared beyond that).
+
+The §4 reply slots draw from an **eight-tone pool** covering every trait axis
+in both directions (NICE, FLIRT, JOKE, RUDE, GUARDED, CHEER, GRIM, DEMAND);
+each menu deals a random four with at least one non-punishing option
+guaranteed — context-sensitive *wording* of replies stays LATER. A
+conversation runs greeting + **3 rounds** of *their sentence → your reply →
+their reaction* (rounds 2+ open with a fresh generated prompt line) +
+resolution by affinity thresholds (§5).
+
+The generator earns its "convincing" with four cheap tricks: each conversation
+fixes a **subject noun** the templates keep returning to; reactions append a
+**tone tag** that answers the specific reply picked ("WISE." vs "SO TENSE.");
+the §3 personality-weighting ships as **trait-tinted adjective banks** (grim
+personas draw bleaker words at equal affinity); and NPCs **remember meeting
+you** — return visits skip the stranger hello and pick the thread back up.
+
+Still placeholder: the **gift** hands over no item yet (no inventory), and
+**hostile** plays the battle-flash stand-in — both resolve and announce
+correctly, ready to wire up. Random encounters, procedural spawning across the
+world, the persistent relationship table (needs the save system) and the
+player's own drifting personality vector are also still LATER. The §3 bounded-
+buffer requirement is enforced by `test/model/dialogue_bounds.py` against the
+built ROM plus a runtime canary tested in `test_talk.py`.

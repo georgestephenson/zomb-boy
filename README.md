@@ -4,9 +4,10 @@ A monster-battler-style **Game Boy Color** game where the "creatures" are zombie
 and the world is an **endless, procedurally-generated** survival landscape.
 Written in Z80 (SM83) assembly with [RGBDS](https://rgbds.gbdev.io/).
 
-> Status: **v0.2** — you can walk a genuinely infinite, streaming world (grass,
-> water, roads, trees, walls) with a 4-direction animated character and tile
-> collision. Combat, survival, and survivors are designed but not yet built.
+> Status: **v0.4** — an infinite streaming world with wandering zombies
+> (line-of-sight alerts) and **talkable survivors**: five personas who speak in
+> procedurally generated sentences, react to your tone, and end a conversation
+> as a friend, a stranger, or a fight. Real combat and items are next.
 
 ## Quickstart
 
@@ -24,7 +25,7 @@ make clean    # remove build output
 Requirements: Linux x86_64, plus `make`, `curl`, `sha256sum`, `unzip`. To use
 your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
 
-## What works today (v0.2)
+## What works today (v0.4)
 
 - **Endless world.** 16-bit world coordinates; terrain is a deterministic
   function of `(seed, x, y)`, so it's "infinite" without storing anything — the
@@ -34,29 +35,54 @@ your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
   **road grid** — all generated per-tile.
 - **Movement.** Grid-based walking with tile collision; 4-direction, 2-frame
   walk animation. The player stays centered while the world scrolls under it.
+- **Zombies.** Wandering shufflers with line-of-sight; get spotted and a "!"
+  alert triggers the (placeholder) battle transition.
+- **Survivors & dialogue.** Ten personas (policeman, scientist, cheerleader,
+  maid, businessman, prepper, medic, raider, preacher, farmer) stand in the
+  world; face one, press **A**, and a dialogue screen opens. Every round is
+  *their* generated sentence → your reply → their reaction: lines come from a
+  template + word-bank grammar flavoured by personality and mood, and each
+  menu deals a random four replies from an eight-tone pool (NICE, FLIRT, JOKE,
+  RUDE, GUARDED, CHEER, GRIM, DEMAND — always at least one they won't punish).
+  Affinity shifts per their trait vector; after three rounds the conversation
+  resolves: reward, part ways, or fight. Each conversation orbits a fixed
+  subject noun, reactions answer the specific tone you picked, grim souls
+  reach for bleaker words than hopeful ones — and survivors remember you:
+  return visits skip the hello. (The businessman respects DEMAND. The raider
+  warms to RUDE. The prepper trusts only the GUARDED.)
 - **Music.** A demo tune plays via [hUGEDriver](https://github.com/SuperDisk/hUGEDriver)
   (vendored, public domain) — the audio pipeline is wired end-to-end. Compose your
   own with `make hugetracker`; details in `vendor/hUGEDriver/PROVENANCE.md`.
 
-Not yet: combat, food/sleep, survivors, houses/rivers, save system. See the
-roadmap below and the design docs.
+Not yet: real turn-based combat, items/gifts, food/sleep, houses/rivers, save
+system. See the roadmap below and the design docs.
 
 ## Project structure
 
 ```
 Makefile                 Pinned toolchain + build/run/test targets
 src/
-  main.asm               Entry point, boot init, main loop
+  main.asm               Entry point, boot init, main loop (mode dispatch)
   world.asm              Terrain generation + BG streaming (the engine)
   player.asm             Movement, collision, camera, sprite
-  video.asm              VBlank, OAM DMA, palettes, scroll
+  entity.asm             Zombies: wandering AI, line-of-sight, entity structs
+  npc.asm                Survivor NPCs: spawning, rendering, talk trigger
+  talk.asm               The dialogue screen: UI, state machine, VRAM queue
+  dialogue.asm           Grammar composer + persona/tone compatibility math
+  dialogue_data.asm      Personas, word banks, sentence templates (ROMX)
+  battle.asm             Placeholder battle transition (flash)
+  rng.asm                16-bit LFSR for dynamic behaviour
+  audio.asm              Music seam over the vendored hUGEDriver
+  video.asm              VBlank, OAM DMA, palettes, font loader, scroll
   input.asm              Joypad read
-  gfx.asm                Tile + palette data
+  gfx.asm                Tile + palette data, 1bpp text font
   ram.asm                All WRAM/HRAM variable declarations
   util.asm               16-bit pointer math helpers
   include/constants.inc  Shared constants (tile ids, screen, pad bits, ...)
+  include/charmap.inc    ASCII -> font tile mapping for dialogue strings
 docs/design/             The design docs — what we're building and why
 test/model/              Host-side reference models (Python) of pure ROM logic
+test/integration/        Headless PyBoy tests (memory / OAM / VRAM assertions)
 tools/                   Fetch scripts for the pinned toolchain + emulator
 ```
 
@@ -79,11 +105,14 @@ Assembly gives raw memory access, so correctness is a first-class concern.
 Current coverage:
 
 - **Reference models** ([`test/model/`](test/model/)) replicate pure ROM logic
-  (e.g. the tile generator) in Python and assert on its behavior —
-  `python3 test/model/worldgen_model.py`.
-- **On-target test ROMs** run headless in an emulator: designed in
-  [doc 06](docs/design/06-testing-and-memory-safety.md), wired to `make test`,
-  not yet populated.
+  in Python and assert on its behavior: `worldgen_model.py` mirrors the tile
+  generator byte-for-byte, and `dialogue_bounds.py` walks the word banks in the
+  **built ROM** and proves every composable sentence fits the bounded text
+  buffer (the doc-06 string-safety target).
+- **Headless integration tests** ([`test/integration/`](test/integration/))
+  boot the ROM in PyBoy and assert on memory, OAM and the tilemap: movement,
+  collision, streaming, zombies, sprite hygiene, the full dialogue flow, and
+  poison-boot checks that nothing depends on zeroed power-on RAM.
 
 ## Roadmap
 
@@ -92,12 +121,14 @@ Built in vertical slices (see [doc 02 §6](docs/design/02-world-and-exploration.
 - [x] v0.1 — controllable player on a generated world
 - [x] v0.2 — endless streaming world, water + roads, walk animation
 - [x] Music playback (hUGEDriver + hUGETracker pipeline, demo song)
+- [x] v0.3 — wandering zombies with line-of-sight → battle trigger (placeholder)
+- [x] v0.4 — survivors: 10 personas, grammar dialogue, 8-tone random menus,
+      affinity, 3-round outcomes
+- [ ] Gift items + real survivor combat (wire the outcome placeholders up)
 - [ ] Houses + rivers (multi-tile / connected structures)
-- [ ] First zombie with line-of-sight → battle trigger
 - [ ] Turn-based combat (2 weapons + 2 skills)
 - [ ] Save system (battery SRAM diffs)
 - [ ] Food/sleep survival pressure
-- [ ] Survivors (compatibility + grammar dialogue)
 
 ## License / attribution
 

@@ -26,6 +26,7 @@ fi
 
 echo "== reference-model checks =="
 "$PY" "$ROOT/test/model/worldgen_model.py"
+"$PY" "$ROOT/test/model/dialogue_bounds.py"
 
 echo
 echo "== headless integration tests =="

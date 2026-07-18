@@ -1,14 +1,16 @@
 """Sprite hygiene — regression test for the "white squiggle" (garbage sprites).
 
-We only ever draw the player (slot 0), zombies (1..8) and the alert bubble (9).
-All other OAM slots must stay hidden (Y == 0). A bug in ClearShadowOAM once left
-slots 10..39 holding a stale counter ramp -> visible garbage on hardware.
+We only ever draw the player (slot 0), zombies (1..8), the alert bubble (9)
+and survivor NPCs (10..19). All other OAM slots must stay hidden (Y == 0). A
+bug in ClearShadowOAM once left slots holding a stale counter ramp -> visible
+garbage on hardware.
 """
+FIRST_UNUSED_SLOT = 20  # after OAM_NPC0 (10) + MAX_NPCS
 
 
 def _assert_unused_hidden(game):
     bad = []
-    for slot in range(10, 40):
+    for slot in range(FIRST_UNUSED_SLOT, 40):
         s = game.sprite(slot)
         if s["y"] != 0:
             bad.append((slot, s))
@@ -31,3 +33,20 @@ def test_player_sprite_present_and_centered(game):
     assert p["y"] == 88 and p["x"] == 80, f"player sprite misplaced: {p}"
     # Player OBJ tiles are 14..19 (TILE_PLAYER_BASE..).
     assert 14 <= p["tile"] < 20, f"player using a non-player tile: {p['tile']}"
+
+
+def test_npc_sprites_use_survivor_tiles_and_palettes(game):
+    """Regression: NPCTileAttr once clobbered DrawNPCs' OAM pointer, so
+    visible NPCs kept tile 0 (grass) / palette 0 — near-invisible ghosts.
+    Every on-screen NPC must use a survivor tile and an OBJ palette 3..7."""
+    seen = 0
+    for slot in range(10, 20):  # OAM_NPC0 .. +MAX_NPCS
+        s = game.sprite(slot)
+        if s["y"] == 0:
+            continue  # off-screen / culled
+        seen += 1
+        assert s["tile"] in (27, 28, 29), \
+            f"NPC slot {slot} has non-survivor tile {s['tile']}: {s}"
+        assert 3 <= (s["attr"] & 0x07) <= 7, \
+            f"NPC slot {slot} has bad OBJ palette: {s}"
+    assert seen >= 2, "expected several NPCs visible near the start"
