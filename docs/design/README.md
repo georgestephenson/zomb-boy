@@ -1,6 +1,6 @@
 # Zomb Boy — Design Docs
 
-A Pokémon-style Game Boy **Color** game where the "creatures" are zombies and the
+A monster-battler-style Game Boy **Color** game where the "creatures" are zombies and the
 world is an endless, procedurally-generated survival landscape.
 
 This directory is the single source of truth for *what* we're building and *why*.
@@ -12,7 +12,7 @@ readable before a single line of assembly exists.
 You are a survivor in an endless, procedurally-generated post-apocalyptic world.
 You explore (the world generates as you walk, Minecraft-style, and remembers your
 changes), you manage **food and sleep** to stay alive, you **fight zombies** in
-Pokémon-style encounters using **two equipped weapons and two special skills**,
+monster-battler-style encounters using **two equipped weapons and two special skills**,
 and you meet **other survivors** who talk to you in procedurally-generated
 sentences — befriend them for gifts, or fight them if it goes badly.
 
@@ -24,7 +24,7 @@ sentences — befriend them for gifts, or fight them if it goes badly.
    whether it's possible on GBC. Short answer: yes.)
 2. **Survival pressure.** Food and sleep meters create a reason to keep moving,
    scavenging, and taking risks. (See [03 — Survival](03-survival.md).)
-3. **Legible combat.** Two weapons + two skills, Pokémon-legible turn structure,
+3. **Legible combat.** Two weapons + two skills, monster-battler-legible turn structure,
    readable on a 160×144 screen. (See [04 — Combat](04-combat-weapons-skills.md).)
 4. **People are systems, not scripts.** Survivors are generated: a compatibility
    model plus a grammar generator make each conversation feel authored without

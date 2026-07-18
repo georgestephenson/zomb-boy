@@ -1,6 +1,6 @@
 # 04 — Combat, Weapons & Skills
 
-Pokémon-legible, turn-based encounters against zombies (and hostile survivors).
+Classic monster-battler-legible, turn-based encounters against zombies (and hostile survivors).
 
 ---
 
@@ -13,7 +13,7 @@ Zombies are the "trainers." Each zombie has:
 
 Each tick, awake zombies check whether the player is within the unobstructed sight
 line. If spotted → a short "alert" beat → the encounter begins. This mirrors
-Pokémon trainer aggro and is fully deterministic/testable ("player at these tiles is
+classic monster-battler trainer aggro and is fully deterministic/testable ("player at these tiles is
 seen; behind this wall is not").
 
 Zombies may also **wander** (deterministic patrol from their spawn hash) so the
@@ -39,7 +39,7 @@ A minimal, readable turn loop on the 160×144 screen:
 
 ## 3. The loadout: two weapons + two skills
 
-This is the core "build" expression, echoing Pokémon's four-move slots but split
+This is the core "build" expression, echoing the classic four-move slots but split
 into two categories.
 
 ### Weapons (2 equipped)
@@ -63,7 +63,7 @@ Non-weapon abilities on a **cooldown or charge** (so they're not spammable):
   turn), Scavenge (chance to grab an item mid-fight).
 
 You carry more weapons/skills in inventory but only **2 + 2 are equipped** at once —
-swapping is a between-fights decision (a real choice, like a Pokémon moveset).
+swapping is a between-fights decision (a real choice, like a monster's moveset).
 
 ## 4. Stats (kept small on purpose)
 

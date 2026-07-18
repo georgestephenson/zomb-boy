@@ -7,7 +7,7 @@ the feasibility argument in [01](01-technical-feasibility.md).
 
 ## 1. Coordinate system
 
-- **Tile:** the atomic unit. 8×8 px. The player moves tile-by-tile (Pokémon-style
+- **Tile:** the atomic unit. 8×8 px. The player moves tile-by-tile (classic
   grid movement).
 - **Chunk:** 16×16 tiles. The unit of generation, persistence, and streaming.
 - **Chunk coordinates** are signed 16-bit `(chunkX, chunkY)`. World origin `(0,0)`
