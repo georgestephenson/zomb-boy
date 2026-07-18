@@ -1,43 +1,49 @@
 #!/usr/bin/env bash
 #
-# fetch-emulator.sh — download a pinned Mesen2 emulator into the repo.
+# fetch-emulator.sh — download a pinned mGBA emulator into the repo.
 #
-# Mesen2 is open source (GPLv3) and its Linux build is a single self-contained
-# native ELF, so we can vendor it as a pinned dev-dependency just like RGBDS.
-# It serves double duty: an interactive GUI to *play* the ROM, and a Lua-
-# scriptable core for the headless memory-safety tests described in
-# docs/design/06-testing-and-memory-safety.md.
+# mGBA is open source (MPL 2.0) and ships a distro-independent AppImage. We
+# vendor it as a pinned dev-dependency just like RGBDS. Because the AppImage
+# needs libfuse2 at runtime (absent on newer distros like Ubuntu 26.04, which
+# ship FUSE 3), we *extract* it at fetch time and run the unpacked AppRun — no
+# FUSE required to play the ROM.
+#
+# (We previously tried Mesen2, but its settings-parsing std::regex path throws
+#  std::bad_cast against very new libstdc++ builds — unusable on Ubuntu 26.04.
+#  mGBA's AppImage bundles its own libs and sidesteps that entirely.)
 #
 # Usage: tools/fetch-emulator.sh <version> <dest-dir>
-#   e.g. tools/fetch-emulator.sh 2.1.1 .tools/emulator
+#   e.g. tools/fetch-emulator.sh 0.10.5 .tools/emulator
 set -euo pipefail
 
 VERSION="${1:?usage: fetch-emulator.sh <version> <dest-dir>}"
 DEST="${2:?usage: fetch-emulator.sh <version> <dest-dir>}"
 
 # --- Pinned artifact --------------------------------------------------------
-# Linux x86_64 only (this repo's build host). The zip contains a single `Mesen`
-# ELF binary. To support ARM64, add its asset name + sha256 and a uname branch.
-ASSET="Mesen_${VERSION}_Linux_x64.zip"
-SHA256="7a9947575cc198209f743fef83fb2b702b786ea705506bdf3f2aea01ab7c1ce9"
-URL="https://github.com/SourMesen/Mesen2/releases/download/${VERSION}/${ASSET}"
+# Linux x86_64 only (this repo's build host). To support ARM64, add its asset
+# name + sha256 and a uname branch.
+ASSET="mGBA-${VERSION}-appimage-x64.appimage"
+SHA256="fdf0a5c1588e1606c38315735cf48a9f9dca3573f32a3947ebc956f8297e85cd"
+URL="https://github.com/mgba-emu/mgba/releases/download/${VERSION}/${ASSET}"
 
 # --- Sanity checks ----------------------------------------------------------
 if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
-    echo "error: pinned Mesen2 is Linux x86_64 only (host is $(uname -s)/$(uname -m))." >&2
+    echo "error: pinned mGBA is Linux x86_64 only (host is $(uname -s)/$(uname -m))." >&2
     echo "       Install any GB/GBC emulator and run: make run EMULATOR=/path/to/it" >&2
     exit 1
 fi
 
-for tool in curl sha256sum unzip; do
+for tool in curl sha256sum; do
     command -v "$tool" >/dev/null || { echo "error: $tool not found" >&2; exit 1; }
 done
 
+# Start from a clean emulator dir (also clears any previous vendored emulator).
+rm -rf "$DEST"
 mkdir -p "$DEST"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-echo ">> fetching Mesen2 $VERSION ($ASSET, ~38 MB)"
+echo ">> fetching mGBA $VERSION ($ASSET, ~25 MB)"
 curl -fsSL "$URL" -o "$tmp/$ASSET"
 
 echo ">> verifying checksum"
@@ -48,9 +54,13 @@ echo "$SHA256  $tmp/$ASSET" | sha256sum -c - >/dev/null || {
     exit 1
 }
 
-echo ">> extracting into $DEST"
-unzip -oq "$tmp/$ASSET" -d "$DEST"
-chmod +x "$DEST/Mesen"
+echo ">> extracting AppImage (avoids the libfuse2 runtime dependency)"
+chmod +x "$tmp/$ASSET"
+# --appimage-extract unpacks into ./squashfs-root in the current dir.
+( cd "$DEST" && "$tmp/$ASSET" --appimage-extract >/dev/null )
+
+APPRUN="$DEST/squashfs-root/AppRun"
+[ -x "$APPRUN" ] || { echo "error: expected runnable $APPRUN after extraction" >&2; exit 1; }
 echo "$VERSION" > "$DEST/.version"
 
-echo ">> Mesen2 $VERSION ready at $DEST/Mesen"
+echo ">> mGBA $VERSION ready at $APPRUN"

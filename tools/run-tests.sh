@@ -4,7 +4,7 @@
 #
 # See docs/design/06-testing-and-memory-safety.md for the strategy. Each test ROM
 # under test/ sets up a scenario, runs a real subsystem routine, and reports
-# pass/fail via the serial port / a result byte. A headless emulator (Mesen2 Lua
+# pass/fail via the serial port / a result byte. A headless emulator (mGBA Lua
 # or SameBoy tester) runs each ROM and this script aggregates the exit codes.
 #
 # Right now there are no test ROMs yet (the engine doesn't exist). This script is
@@ -23,9 +23,9 @@ fi
 
 # --- Emulator discovery (for when real tests exist) -------------------------
 # Prefer a headless-capable emulator. Override with EMU_TEST=/path.
-EMU_TEST="${EMU_TEST:-$(command -v mesen sameboy 2>/dev/null | head -n1 || true)}"
+EMU_TEST="${EMU_TEST:-$(command -v mgba mgba-qt sameboy 2>/dev/null | head -n1 || true)}"
 if [ -z "$EMU_TEST" ]; then
-    echo "warn: no headless emulator found (install Mesen2 or SameBoy)."
+    echo "warn: no headless emulator found (run 'make emulator', or install SameBoy)."
     echo "      Set EMU_TEST=/path/to/emulator to run the test ROMs."
     exit 1
 fi

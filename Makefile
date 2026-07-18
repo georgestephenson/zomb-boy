@@ -22,9 +22,11 @@
 # classic, widely-documented names our source is written against.
 RGBDS_VERSION   := 1.0.1
 HWINC_REF       := v4.12.0
-# SourMesen/Mesen2 release tag. Open source (GPLv3), self-contained Linux ELF.
-# Used both to play the ROM (make run) and for headless Lua tests (make test).
-EMU_VERSION     := 2.1.1
+# mgba-emu/mGBA release tag. Open source (MPL 2.0), distro-independent AppImage
+# (extracted at fetch time so no libfuse2 is needed at runtime). Chosen over
+# Mesen2, whose settings-parsing std::regex crashes (std::bad_cast) on very new
+# libstdc++ builds like Ubuntu 26.04's.
+EMU_VERSION     := 0.10.5
 
 # --- Repo-local toolchain paths ---------------------------------------------
 TOOLS_DIR       := .tools
@@ -35,7 +37,8 @@ RGBFIX          := $(RGBDS_DIR)/rgbfix
 RGBGFX          := $(RGBDS_DIR)/rgbgfx
 HWINC           := $(TOOLS_DIR)/include/hardware.inc
 EMU_DIR         := $(TOOLS_DIR)/emulator
-MESEN           := $(EMU_DIR)/Mesen
+# The runnable binary inside the extracted AppImage.
+EMU_BIN         := $(EMU_DIR)/squashfs-root/AppRun
 
 # --- Project layout ---------------------------------------------------------
 SRC_DIR         := src
@@ -59,10 +62,10 @@ ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
 # in the fix target once we know the cart type. Title <= 11 chars for GBC.
 FIXFLAGS        := -C -v -p 0xFF -t ZOMBBOY
 
-# Emulator used by `make run`. Defaults to the vendored, pinned Mesen2 (auto-
+# Emulator used by `make run`. Defaults to the vendored, pinned mGBA (auto-
 # fetched on first `make run`). Override to use your own, e.g.
 #   make run EMULATOR=sameboy
-EMULATOR        ?= $(MESEN)
+EMULATOR        ?= $(EMU_BIN)
 
 # =============================================================================
 # Targets
@@ -76,7 +79,7 @@ all: $(ROM)
 # separate target, auto-fetched by `make run`/`make test` when needed.
 tools: $(RGBASM) $(HWINC)
 
-emulator: $(MESEN)
+emulator: $(EMU_BIN)
 
 $(RGBASM):
 	./tools/fetch-rgbds.sh $(RGBDS_VERSION) $(RGBDS_DIR)
@@ -84,7 +87,7 @@ $(RGBASM):
 $(HWINC):
 	./tools/fetch-hardware-inc.sh $(HWINC_REF) $(HWINC)
 
-$(MESEN):
+$(EMU_BIN):
 	./tools/fetch-emulator.sh $(EMU_VERSION) $(EMU_DIR)
 
 # --- Build ------------------------------------------------------------------
@@ -110,12 +113,12 @@ $(ROM): $(OBJS)
 # Launch the ROM. When using the default (vendored) emulator, fetch it first if
 # missing. If the user overrode EMULATOR with their own, just run that.
 run: $(ROM)
-	@if [ "$(EMULATOR)" = "$(MESEN)" ] && [ ! -x "$(MESEN)" ]; then $(MAKE) --no-print-directory emulator; fi
+	@if [ "$(EMULATOR)" = "$(EMU_BIN)" ] && [ ! -x "$(EMU_BIN)" ]; then $(MAKE) --no-print-directory emulator; fi
 	@echo ">> launching $(EMULATOR) $(ROM)"
 	$(EMULATOR) $(ROM)
 
-test: $(RGBASM) $(HWINC) $(MESEN)
-	EMU_TEST=$(MESEN) ./tools/run-tests.sh
+test: $(RGBASM) $(HWINC) $(EMU_BIN)
+	EMU_TEST=$(EMU_BIN) ./tools/run-tests.sh
 
 # --- Cleanup ----------------------------------------------------------------
 clean:

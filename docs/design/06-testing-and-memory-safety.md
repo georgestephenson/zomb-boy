@@ -50,9 +50,15 @@ This is the workhorse. We build **separate test ROMs** (sources under `test/`) t
 
 An emulator with a scripting/CLI API runs each test ROM **headless** and checks the
 result — no human, no GUI. Preferred harnesses (see the tools note in the repo):
-- **Mesen2 + Lua:** load ROM, run N frames, read memory, assert, exit with a code.
-  Can also set **memory-access breakpoints** to catch out-of-bounds writes live.
-- **SameBoy tester:** headless run of test ROMs, most cycle-accurate GBC behavior.
+- **mGBA + Lua:** mGBA (our vendored emulator, see the Makefile) exposes a Lua
+  scripting API and a headless CLI — load ROM, run N frames, read memory, assert,
+  exit with a code. This is the default the test harness targets.
+- **SameBoy tester:** headless run of test ROMs, most cycle-accurate GBC behavior —
+  an optional second opinion if you install it.
+
+> Note: we originally planned Mesen2 for its Lua API, but its GUI crashes
+> (`std::bad_cast` in a settings-parsing regex) on very new libstdc++ builds
+> (Ubuntu 26.04), so we switched to mGBA, which also scripts in Lua.
 
 `make test` drives these (see `tools/run-tests.sh`). CI runs the same command.
 
@@ -93,7 +99,7 @@ Every subsystem lands with its tests in the same change. A subsystem is not
 | Purpose | Tool |
 |---------|------|
 | Assemble/link/fix | RGBDS (pinned in repo via `make tools`) |
-| Headless test + memory assertions | Mesen2 (Lua) and/or SameBoy tester |
+| Headless test + memory assertions | mGBA (Lua) and/or SameBoy tester |
 | Illegal-access / bad-timing detection | Emulicious (dev-time) |
 | Interactive debugging | SameBoy debugger |
 
