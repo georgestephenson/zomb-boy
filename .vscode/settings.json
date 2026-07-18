@@ -1,0 +1,8 @@
+{
+  "// note": "Points the RGBDS Z80 extension at our includes so hardware.inc resolves in-editor. The build itself uses -i flags in the Makefile; this is editor-only.",
+  "rgbdsz80.includePath": [
+    "src",
+    ".tools/include",
+    "build/gen"
+  ]
+}

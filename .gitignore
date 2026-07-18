@@ -1,0 +1,9 @@
+# Repo-local pinned toolchain (installed by `make tools`, not committed)
+.tools/
+
+# Build output
+build/
+
+# Editor / OS cruft
+*.swp
+.DS_Store
