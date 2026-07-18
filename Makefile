@@ -117,8 +117,9 @@ run: $(ROM)
 	@echo ">> launching $(EMULATOR) $(ROM)"
 	$(EMULATOR) $(ROM)
 
-test: $(RGBASM) $(HWINC) $(EMU_BIN)
-	EMU_TEST=$(EMU_BIN) ./tools/run-tests.sh
+# Tests need the built ROM (they run it headless in PyBoy), not the GUI emulator.
+test: $(ROM)
+	./tools/run-tests.sh
 
 # --- Cleanup ----------------------------------------------------------------
 clean:

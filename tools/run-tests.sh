@@ -1,35 +1,33 @@
 #!/usr/bin/env bash
 #
-# run-tests.sh — build and run the headless test ROMs.
+# run-tests.sh — the project test suite.
 #
-# See docs/design/06-testing-and-memory-safety.md for the strategy. Each test ROM
-# under test/ sets up a scenario, runs a real subsystem routine, and reports
-# pass/fail via the serial port / a result byte. A headless emulator (mGBA Lua
-# or SameBoy tester) runs each ROM and this script aggregates the exit codes.
+#   1. Host-side reference-model checks (pure generator logic, no emulator).
+#   2. Headless integration tests: boot the built ROM in PyBoy and assert on
+#      memory / OAM / the tilemap (see test/integration/ and
+#      docs/design/06-testing-and-memory-safety.md).
 #
-# Right now there are no test ROMs yet (the engine doesn't exist). This script is
-# a working placeholder that exits cleanly with a clear message, so `make test`
-# is never a broken target. As subsystems land, their test ROMs plug in here.
+# The ROM must already be built (the Makefile's `test` target depends on it).
 set -euo pipefail
 
-TEST_DIR="test"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV="$ROOT/.tools/venv"
+PY="$VENV/bin/python"
 
-if [ ! -d "$TEST_DIR" ] || [ -z "$(find "$TEST_DIR" -name '*.asm' 2>/dev/null)" ]; then
-    echo "No test ROMs yet (test/ is empty)."
-    echo "Testing strategy: docs/design/06-testing-and-memory-safety.md"
-    echo "Nothing to run — exiting 0."
-    exit 0
+# Bootstrap the pinned Python test env on first run.
+if [ ! -x "$PY" ]; then
+    "$ROOT/tools/setup-testenv.sh" "$VENV"
 fi
 
-# --- Emulator discovery (for when real tests exist) -------------------------
-# Prefer a headless-capable emulator. Override with EMU_TEST=/path.
-EMU_TEST="${EMU_TEST:-$(command -v mgba mgba-qt sameboy 2>/dev/null | head -n1 || true)}"
-if [ -z "$EMU_TEST" ]; then
-    echo "warn: no headless emulator found (run 'make emulator', or install SameBoy)."
-    echo "      Set EMU_TEST=/path/to/emulator to run the test ROMs."
+if [ ! -f "$ROOT/build/zombboy.gbc" ]; then
+    echo "error: build/zombboy.gbc not found — run \`make\` first." >&2
     exit 1
 fi
 
-echo "TODO: build test/*.asm into ROMs and run each under $EMU_TEST, asserting"
-echo "      the result byte. Wire this up as the first subsystem lands."
-exit 0
+echo "== reference-model checks =="
+"$PY" "$ROOT/test/model/worldgen_model.py"
+
+echo
+echo "== headless integration tests =="
+cd "$ROOT"
+"$PY" -m pytest test/integration/ -q
