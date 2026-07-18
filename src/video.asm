@@ -69,8 +69,9 @@ ClearVRAM::
     jr nz, .loop
     ret
 
-; Silence the APU. We have no audio yet; power-on APU state is undefined and can
-; emit noise, so turn it fully off (a real sound driver will init it later).
+; Silence the APU at boot. Power-on APU state is undefined and can emit noise, so
+; turn it fully off while we set up; InitSound (audio.asm) powers it back on and
+; starts the music once content is loaded.
 InitAudio::
     xor a, a
     ldh [rNR52], a              ; APU off

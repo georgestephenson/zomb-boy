@@ -34,6 +34,9 @@ your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
   **road grid** — all generated per-tile.
 - **Movement.** Grid-based walking with tile collision; 4-direction, 2-frame
   walk animation. The player stays centered while the world scrolls under it.
+- **Music.** A demo tune plays via [hUGEDriver](https://github.com/SuperDisk/hUGEDriver)
+  (vendored, public domain) — the audio pipeline is wired end-to-end. Compose your
+  own with `make hugetracker`; details in `vendor/hUGEDriver/PROVENANCE.md`.
 
 Not yet: combat, food/sleep, survivors, houses/rivers, save system. See the
 roadmap below and the design docs.
@@ -88,6 +91,7 @@ Built in vertical slices (see [doc 02 §6](docs/design/02-world-and-exploration.
 
 - [x] v0.1 — controllable player on a generated world
 - [x] v0.2 — endless streaming world, water + roads, walk animation
+- [x] Music playback (hUGEDriver + hUGETracker pipeline, demo song)
 - [ ] Houses + rivers (multi-tile / connected structures)
 - [ ] First zombie with line-of-sight → battle trigger
 - [ ] Turn-based combat (2 weapons + 2 skills)

@@ -57,6 +57,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `player.asm` | Movement, collision, camera, sprite |
 | `video.asm` | VBlank sync, OAM DMA, palettes, scroll; VBlank IRQ vector |
 | `input.asm` | Joypad read with edge detection |
+| `audio.asm` | Music seam over vendored hUGEDriver (`InitSound`/`UpdateSound`) |
 | `gfx.asm` | Tile + palette data |
 | `ram.asm` | **All** WRAM/HRAM variables (one place) |
 | `util.asm` | 16-bit LE pointer math (`Inc16Ptr`/`Dec16Ptr`/`Add16Ptr`) |
@@ -65,7 +66,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 ### Main loop (main.asm)
 Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
 ```
-ReadInput → UpdatePlayer → UpdateView → (GenStrip if moved) → DrawPlayerSprite
+UpdateSound → ReadInput → UpdatePlayer → UpdateView → (GenStrip if moved) → DrawPlayerSprite
 WaitVBlank → OAM DMA → SetScroll → BlitStream
 ```
 `GenStrip` builds the incoming edge into a WRAM buffer (heavy, outside VBlank);
@@ -81,6 +82,32 @@ scroll updates — so there's no seam or one-frame latency.
   cell is always current; off-screen margin cells may be stale but aren't shown.
 - Terrain is layered in `GenTileType`: water (coarse `>>2` noise) → road grid
   (`x&15==0 || y&15==0`) → per-tile scatter (trees/walls/brush) → grass.
+
+### Audio (audio.asm + vendored hUGEDriver)
+- Music uses **hUGEDriver**, vendored (committed, public domain) under
+  `vendor/hUGEDriver/` — see its `PROVENANCE.md`. It's *build-input source*, so
+  it's committed, not fetched. The composer tool **hUGETracker** is a pinned dev
+  dependency (`make hugetracker`, into `.tools/`), like the emulator.
+- **The driver copy comes from the hUGETracker bundle, NOT GitHub `master`, and
+  they must stay in lockstep.** The song-data format is a driver↔tracker contract;
+  `master` has already changed it (4-byte tempo vs 1.0.11's 1-byte tempo + order
+  pointer). A format mismatch doesn't error — it plays the song at a garbage tempo
+  (~1 row/sec), which sounds like *a couple of blips then silence*. If music ever
+  regresses to that after a version bump, re-sync the driver from the bundle
+  (`PROVENANCE.md` → "Updating"). Sanity check headlessly: `ticks_per_row` should
+  equal the song's tempo (2 for the demo) and `order_cnt` its count (68).
+- The driver + demo song assemble as **separate objects** with `-i vendor/hUGEDriver/`
+  and **without** `-Weverything` (third-party; upstream's style, not ours). They
+  keep their **own** bundled `hardware.inc` (newer `rAUDxxx` names) — that's fine,
+  each object only needs EQUs at assemble time, independent of our pinned v4.
+- `audio.asm` is the seam: `InitSound` powers the APU on + `hUGE_init`s the song;
+  `UpdateSound` (`hUGE_dosound`) advances one tick. Call `UpdateSound` **once per
+  frame, outside VBlank** (top of the loop) — the loop is frame-locked by
+  `WaitVBlank`, and keeping it out of the VBlank window spares that tight budget.
+- Song data is `ROMX` (bank 1). The cart is still 32 KB ROM-ONLY (banks 0+1, no
+  MBC). If songs grow past bank 1, add `-m`/`-r` to `FIXFLAGS` for a real MBC.
+- To swap the tune: export from hUGETracker as "RGBDS .asm", drop it in
+  `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label.
 
 ## Conventions & invariants (don't break these)
 

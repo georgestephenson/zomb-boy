@@ -31,7 +31,7 @@ Start:
     ;     hardware (mGBA), so put everything in a known state before we start.
     call ClearRAM                   ; zero WRAM  (nothing may rely on zeroed RAM)
     call ClearVRAM                  ; zero both VRAM banks
-    call InitAudio                  ; silence the APU (no audio yet)
+    call InitAudio                  ; silence the APU during setup (InitSound powers it on)
     ld a, 1
     ldh [rSVBK], a                  ; map WRAM bank 1 at $D000
     xor a, a
@@ -54,6 +54,8 @@ Start:
     ld [wRngState+1], a
     call InitZombies
 
+    call InitSound                  ; power on the APU + start the demo song
+
     call DrawEntities
     ld a, HIGH(wShadowOAM)
     call hOAMDMA                    ; clean OAM before the first visible frame
@@ -74,6 +76,7 @@ Start:
 ; the new edge appears the same frame the camera scrolls — no seam, no latency.
 ; -----------------------------------------------------------------------------
 MainLoop:
+    call UpdateSound                ; advance music one tick (once/frame, pre-VBlank)
     call ReadInput
     ld a, [wGameMode]
     and a, a                        ; MODE_OVERWORLD == 0

@@ -7,7 +7,8 @@
 #
 #   make            Build the ROM (auto-installs the pinned toolchain first)
 #   make tools      Just install the pinned build toolchain + includes
-#   make emulator   Install the pinned Mesen2 emulator (~38 MB)
+#   make emulator   Install the pinned mGBA emulator (~25 MB)
+#   make hugetracker Install the pinned hUGETracker music tracker (~4.6 MB)
 #   make run        Build, then play the ROM (auto-installs the emulator)
 #   make test       Build + run the memory-safety / logic test ROMs
 #   make clean      Remove build output (keeps the downloaded toolchain)
@@ -27,6 +28,11 @@ HWINC_REF       := v4.12.0
 # Mesen2, whose settings-parsing std::regex crashes (std::bad_cast) on very new
 # libstdc++ builds like Ubuntu 26.04's.
 EMU_VERSION     := 0.10.5
+# SuperDisk/hUGETracker release tag. The GUI music tracker you compose in; it
+# exports songs in "RGBDS .asm" format that our vendored hUGEDriver plays. A dev
+# tool only (the ROM builds without it), so it's a pinned, checksum-verified
+# fetch into .tools/ like the emulator — not committed. Public domain.
+HUGETRACKER_VERSION := 1.0.11
 
 # --- Repo-local toolchain paths ---------------------------------------------
 TOOLS_DIR       := .tools
@@ -39,6 +45,8 @@ HWINC           := $(TOOLS_DIR)/include/hardware.inc
 EMU_DIR         := $(TOOLS_DIR)/emulator
 # The runnable binary inside the extracted AppImage.
 EMU_BIN         := $(EMU_DIR)/squashfs-root/AppRun
+HUGETRACKER_DIR := $(TOOLS_DIR)/hugetracker
+HUGETRACKER_BIN := $(HUGETRACKER_DIR)/.version   # sentinel: fetch stamps this
 
 # --- Project layout ---------------------------------------------------------
 SRC_DIR         := src
@@ -55,6 +63,15 @@ INCLUDES        := -i $(SRC_DIR)/ -i $(TOOLS_DIR)/include/ -i $(GEN_DIR)/
 SRCS            := $(shell find $(SRC_DIR) -name '*.asm' 2>/dev/null)
 OBJS            := $(patsubst $(SRC_DIR)/%.asm,$(OBJ_DIR)/%.o,$(SRCS))
 
+# --- Vendored audio (hUGEDriver) --------------------------------------------
+# The sound driver + demo song live in vendor/ (committed, public domain — see
+# vendor/hUGEDriver/PROVENANCE.md). They're third-party sources assembled under
+# upstream's conventions, NOT our -Weverything rule, and their includes resolve
+# against their own directory (-i $(HUGE_DIR)/), so they get their own rules and
+# object outputs rather than going through the src/ pattern rule above.
+HUGE_DIR        := vendor/hUGEDriver
+AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o
+
 # --- Toolchain flags --------------------------------------------------------
 # -Weverything: surface every warning; asm bugs are costly on real hardware.
 ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
@@ -70,7 +87,7 @@ EMULATOR        ?= $(EMU_BIN)
 # =============================================================================
 # Targets
 # =============================================================================
-.PHONY: all tools emulator run test clean distclean
+.PHONY: all tools emulator hugetracker run test clean distclean
 
 all: $(ROM)
 
@@ -81,6 +98,10 @@ tools: $(RGBASM) $(HWINC)
 
 emulator: $(EMU_BIN)
 
+# hUGETracker is a standalone dev tool (compose/export music); fetched on demand,
+# never needed to build the ROM. Songs it exports go in vendor/hUGEDriver/songs/.
+hugetracker: $(HUGETRACKER_BIN)
+
 $(RGBASM):
 	./tools/fetch-rgbds.sh $(RGBDS_VERSION) $(RGBDS_DIR)
 
@@ -89,6 +110,9 @@ $(HWINC):
 
 $(EMU_BIN):
 	./tools/fetch-emulator.sh $(EMU_VERSION) $(EMU_DIR)
+
+$(HUGETRACKER_BIN):
+	./tools/fetch-hugetracker.sh $(HUGETRACKER_VERSION) $(HUGETRACKER_DIR)
 
 # --- Build ------------------------------------------------------------------
 # Every object depends on the toolchain + includes being present (order-only),
@@ -100,9 +124,24 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.asm | $(RGBASM) $(HWINC)
 	@mkdir -p $(dir $@)
 	$(RGBASM) $(ASMFLAGS) -M $(@:.o=.d) -MP -MQ $@ -o $@ $<
 
-$(ROM): $(OBJS)
+# Vendored hUGEDriver: driver + demo song. Assembled with the driver's own
+# include dir on the search path (its `include "include/..."` resolves there)
+# and WITHOUT -Weverything — it's third-party code held to upstream's style, and
+# a new upstream warning shouldn't fail our build. Each depends on the whole
+# vendored tree so editing an .inc rebuilds it.
+VENDORED_AUDIO  := $(wildcard $(HUGE_DIR)/hUGEDriver.asm $(HUGE_DIR)/include/*.inc $(HUGE_DIR)/songs/*.asm)
+
+$(OBJ_DIR)/vendor/hUGEDriver.o: $(HUGE_DIR)/hUGEDriver.asm $(VENDORED_AUDIO) | $(RGBASM)
 	@mkdir -p $(dir $@)
-	$(RGBLINK) -o $@ -n $(basename $@).sym -m $(basename $@).map $(OBJS)
+	$(RGBASM) -i $(HUGE_DIR)/ -o $@ $<
+
+$(OBJ_DIR)/vendor/song_demo.o: $(HUGE_DIR)/songs/song_demo.asm $(VENDORED_AUDIO) | $(RGBASM)
+	@mkdir -p $(dir $@)
+	$(RGBASM) -i $(HUGE_DIR)/ -o $@ $<
+
+$(ROM): $(OBJS) $(AUDIO_OBJS)
+	@mkdir -p $(dir $@)
+	$(RGBLINK) -o $@ -n $(basename $@).sym -m $(basename $@).map $(OBJS) $(AUDIO_OBJS)
 	$(RGBFIX) $(FIXFLAGS) $@
 	@echo ">> built $@"
 
