@@ -42,51 +42,71 @@ PersonaTable::
     dw NounsPolice             ; PO_NOUNS
     dw TopicsPolice            ; PO_TOPICS
     db 3, 0                    ; PO_PAL (= 3 + persona id), pad
+    dw QuestsPolice            ; PO_QUESTS
+    db 0, 0                    ; pad to PERSONA_SIZE (16)
     dw NameScientist
     db -20, 20, 0, 40          ; guarded, curious-hopeful, serious
     dw NounsScientist
     dw TopicsScientist
     db 4, 0
+    dw QuestsScientist
+    db 0, 0
     dw NameCheer
     db 30, 50, 10, -50         ; trusting, hopeful, joking
     dw NounsCheer
     dw TopicsCheer
     db 5, 0
+    dw QuestsCheer
+    db 0, 0
     dw NameMaid
     db 10, -30, 56, 20         ; weary but deeply generous
     dw NounsMaid
     dw TopicsMaid
     db 6, 0
+    dw QuestsMaid
+    db 0, 0
     dw NameBiz
     db -30, 30, -40, 10        ; bullish, selfish; respects a hard bargain
     dw NounsBiz
     dw TopicsBiz
     db 7, 0
+    dw QuestsBiz
+    db 0, 0
     dw NamePrepper
     db -50, -20, -30, 30       ; paranoid hoarder; approves of suspicion
     dw NounsPrepper
     dw TopicsPrepper
     db 6, 0
+    dw QuestsPrepper
+    db 0, 0
     dw NameMedic
     db 30, 40, 50, 10          ; open-hearted healer; hates demands
     dw NounsMedic
     dw TopicsMedic
     db 4, 0
+    dw QuestsMedic
+    db 0, 0
     dw NameRaider
     db -40, -40, -50, -30      ; cruel humour; respects savagery
     dw NounsRaider
     dw TopicsRaider
     db 6, 0
+    dw QuestsRaider
+    db 0, 0
     dw NamePreacher
     db 40, 50, 30, 40          ; fervent hope; scandalised by rudeness
     dw NounsPreacher
     dw TopicsPreacher
     db 3, 0
+    dw QuestsPreacher
+    db 0, 0
     dw NameFarmer
     db 20, 10, 40, 30          ; steady, stoic, generous
     dw NounsFarmer
     dw TopicsFarmer
     db 7, 0
+    dw QuestsFarmer
+    db 0, 0
 
 NamePolice:    db "POLICEMAN", CTRL_END
 NameScientist: db "SCIENTIST", CTRL_END
@@ -115,17 +135,121 @@ ToneTable::
     db  0, -1,  0,  1,  -1, 0  ; GRIM    — bleak agreement; bonds with the weary
     db  0,  0, -1,  0,  -2, 0  ; DEMAND  — ask for stuff; the selfish get it
 
-ToneLabels::
-    dw LblNice, LblFlirt, LblJoke, LblRude
-    dw LblGuarded, LblCheer, LblGrim, LblDemand
-LblNice:    db "NICE", CTRL_END
-LblFlirt:   db "FLIRT", CTRL_END
-LblJoke:    db "JOKE", CTRL_END
-LblRude:    db "RUDE", CTRL_END
-LblGuarded: db "GUARDED", CTRL_END
-LblCheer:   db "CHEER", CTRL_END
-LblGrim:    db "GRIM", CTRL_END
-LblDemand:  db "DEMAND", CTRL_END
+; Menu labels are CONTEXT-SENSITIVE: keyed by tone AND the NPC's current mood,
+; with two synonyms each (BuildMenu picks one at random). Soothing a hostile
+; NPC reads as EASY; agreeing with a warm one reads as LOVE IT — the same
+; mechanical tone, phrased for the moment. Labels must be <= 7 chars
+; (LABEL_MAX, a menu cell) — the bounds model enforces it.
+ToneLabelMoods::
+    dw LabelsHostile, LabelsNeutral, LabelsWarm
+LabelsHostile:
+    dw LhNice, LhFlirt, LhJoke, LhRude
+    dw LhGuard, LhCheer, LhGrim, LhDemand
+LabelsNeutral:
+    dw LnNice, LnFlirt, LnJoke, LnRude
+    dw LnGuard, LnCheer, LnGrim, LnDemand
+LabelsWarm:
+    dw LwNice, LwFlirt, LwJoke, LwRude
+    dw LwGuard, LwCheer, LwGrim, LwDemand
+
+LhNice:   db 2
+          dw .f0, .f1
+.f0:      db "EASY", CTRL_END
+.f1:      db "SOOTHE", CTRL_END
+LhFlirt:  db 2
+          dw .f0, .f1
+.f0:      db "CHARM", CTRL_END
+.f1:      db "WINK", CTRL_END
+LhJoke:   db 2
+          dw .f0, .f1
+.f0:      db "DEFLECT", CTRL_END
+.f1:      db "QUIP", CTRL_END
+LhRude:   db 2
+          dw .f0, .f1
+.f0:      db "SNAP", CTRL_END
+.f1:      db "SCOFF", CTRL_END
+LhGuard:  db 2
+          dw .f0, .f1
+.f0:      db "CAREFUL", CTRL_END
+.f1:      db "WARY", CTRL_END
+LhCheer:  db 2
+          dw .f0, .f1
+.f0:      db "RALLY", CTRL_END
+.f1:      db "UPLIFT", CTRL_END
+LhGrim:   db 2
+          dw .f0, .f1
+.f0:      db "AGREE", CTRL_END
+.f1:      db "BLEAK", CTRL_END
+LhDemand: db 2
+          dw .f0, .f1
+.f0:      db "PRESS", CTRL_END
+.f1:      db "EXTORT", CTRL_END
+
+LnNice:   db 2
+          dw .f0, .f1
+.f0:      db "NICE", CTRL_END
+.f1:      db "KIND", CTRL_END
+LnFlirt:  db 2
+          dw .f0, .f1
+.f0:      db "FLIRT", CTRL_END
+.f1:      db "TEASE", CTRL_END
+LnJoke:   db 2
+          dw .f0, .f1
+.f0:      db "JOKE", CTRL_END
+.f1:      db "JEST", CTRL_END
+LnRude:   db 2
+          dw .f0, .f1
+.f0:      db "RUDE", CTRL_END
+.f1:      db "MOCK", CTRL_END
+LnGuard:  db 2
+          dw .f0, .f1
+.f0:      db "GUARDED", CTRL_END
+.f1:      db "HEDGE", CTRL_END
+LnCheer:  db 2
+          dw .f0, .f1
+.f0:      db "CHEER", CTRL_END
+.f1:      db "PEP", CTRL_END
+LnGrim:   db 2
+          dw .f0, .f1
+.f0:      db "GRIM", CTRL_END
+.f1:      db "SIGH", CTRL_END
+LnDemand: db 2
+          dw .f0, .f1
+.f0:      db "DEMAND", CTRL_END
+.f1:      db "ASK", CTRL_END
+
+LwNice:   db 2
+          dw .f0, .f1
+.f0:      db "LOVE IT", CTRL_END
+.f1:      db "AGREED", CTRL_END
+LwFlirt:  db 2
+          dw .f0, .f1
+.f0:      db "SWOON", CTRL_END
+.f1:      db "DARLING", CTRL_END
+LwJoke:   db 2
+          dw .f0, .f1
+.f0:      db "BANTER", CTRL_END
+.f1:      db "RIFF", CTRL_END
+LwRude:   db 2
+          dw .f0, .f1
+.f0:      db "NEEDLE", CTRL_END
+.f1:      db "JAB", CTRL_END
+LwGuard:  db 2
+          dw .f0, .f1
+.f0:      db "DEMUR", CTRL_END
+.f1:      db "MODEST", CTRL_END
+LwCheer:  db 2
+          dw .f0, .f1
+.f0:      db "HOORAY", CTRL_END
+.f1:      db "BEAM", CTRL_END
+LwGrim:   db 2
+          dw .f0, .f1
+.f0:      db "SOBER", CTRL_END
+.f1:      db "LAMENT", CTRL_END
+LwDemand: db 2
+          dw .f0, .f1
+.f0:      db "BEG", CTRL_END
+.f1:      db "REQUEST", CTRL_END
 
 ; -----------------------------------------------------------------------------
 ; Mood-keyed banks (index by MOOD_*): how they open, and how their world looks.
@@ -159,26 +283,29 @@ OpenWarm:
 PromptMoods::
     dw PromptHostile, PromptNeutral, PromptWarm
 PromptHostile:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 5
+    dw .f0, .f1, .f2, .f3, .f4
 .f0: db "ANYWAY.", CTRL_END
 .f1: db "TCH.", CTRL_END
 .f2: db "STILL HERE?", CTRL_END
 .f3: db "MOVING ON.", CTRL_END
+.f4: db "WHAT ELSE.", CTRL_END
 PromptNeutral:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 5
+    dw .f0, .f1, .f2, .f3, .f4
 .f0: db "SO.", CTRL_END
 .f1: db "ANYWAY.", CTRL_END
 .f2: db "YOU KNOW,", CTRL_END
 .f3: db "LISTEN.", CTRL_END
+.f4: db "HM.", CTRL_END
 PromptWarm:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 5
+    dw .f0, .f1, .f2, .f3, .f4
 .f0: db "OH! ALSO,", CTRL_END
 .f1: db "AND GET THIS.", CTRL_END
 .f2: db "YOU KNOW WHAT?", CTRL_END
 .f3: db "BY THE WAY,", CTRL_END
+.f4: db "ONE MORE THING.", CTRL_END
 
 AdjMoods::
     dw AdjHostile, AdjNeutral, AdjWarm
@@ -210,35 +337,40 @@ AdjWarm:
 ReactBanks::
     dw ReactLoved, ReactLiked, ReactMeh, ReactDisliked, ReactHated
 ReactLoved:
-    db 3
-    dw .f0, .f1, .f2
+    db 4
+    dw .f0, .f1, .f2, .f3
 .f0: db "OH! I LOVE THAT!", CTRL_END
 .f1: db "HA! WONDERFUL!", CTRL_END
 .f2: db "YES! EXACTLY!", CTRL_END
+.f3: db "NOW YOU'RE TALKING!", CTRL_END
 ReactLiked:
-    db 3
-    dw .f0, .f1, .f2
+    db 4
+    dw .f0, .f1, .f2, .f3
 .f0: db "HEH. NOT BAD.", CTRL_END
 .f1: db "GOOD ANSWER.", CTRL_END
 .f2: db "FAIR ENOUGH.", CTRL_END
+.f3: db "I'LL ALLOW IT.", CTRL_END
 ReactMeh:
-    db 3
-    dw .f0, .f1, .f2
+    db 4
+    dw .f0, .f1, .f2, .f3
 .f0: db "HM. OKAY.", CTRL_END
 .f1: db "IF YOU SAY SO.", CTRL_END
 .f2: db "SURE. ANYWAY.", CTRL_END
+.f3: db "MM.", CTRL_END
 ReactDisliked:
-    db 3
-    dw .f0, .f1, .f2
+    db 4
+    dw .f0, .f1, .f2, .f3
 .f0: db "EXCUSE ME?", CTRL_END
 .f1: db "THAT'S NOT FUNNY.", CTRL_END
 .f2: db "HMPH.", CTRL_END
+.f3: db "WOW. OKAY.", CTRL_END
 ReactHated:
-    db 3
-    dw .f0, .f1, .f2
+    db 4
+    dw .f0, .f1, .f2, .f3
 .f0: db "HOW DARE YOU!", CTRL_END
 .f1: db "WATCH IT, PAL.", CTRL_END
 .f2: db "UNBELIEVABLE!", CTRL_END
+.f3: db "GET AWAY FROM ME.", CTRL_END
 
 ; -----------------------------------------------------------------------------
 ; Tone tags: a second beat appended to the reaction that answers the SPECIFIC
@@ -356,7 +488,66 @@ OutReward:
 .f1: db "FOR YOU, FRIEND. TAKE THIS!", CTRL_END
 
 ; -----------------------------------------------------------------------------
-; Per-persona noun banks + topic templates.
+; Context observation banks (index by CTX_*): remarks keyed to LIVE game state.
+; The NPC notices your meters, your equipped weapon (CTRL_ITEM splices its
+; actual name) and the in-game clock — dialogue.asm PickContext decides which
+; fires; wCtxUsed stops repeats within one conversation.
+; -----------------------------------------------------------------------------
+CtxBanks::
+    dw CtxHurt, CtxHungry, CtxTired, CtxWeapon
+    dw CtxNight, CtxMorning, CtxDusk, CtxDay
+CtxHurt:
+    db 3
+    dw .f0, .f1, .f2
+.f0: db "YOU'RE BLEEDING ON MY BOOTS.", CTRL_END
+.f1: db "THAT WOUND LOOKS NASTY.", CTRL_END
+.f2: db "YOU LOOK HALF DEAD, FRIEND.", CTRL_END
+CtxHungry:
+    db 3
+    dw .f0, .f1, .f2
+.f0: db "YOUR STOMACH IS GROWLING.", CTRL_END
+.f1: db "YOU LOOK HALF STARVED.", CTRL_END
+.f2: db "EATEN ANYTHING TODAY?", CTRL_END
+CtxTired:
+    db 3
+    dw .f0, .f1, .f2
+.f0: db "YOU LOOK DEAD ON YOUR FEET.", CTRL_END
+.f1: db "YOU KEEP YAWNING. SLEEP SOME.", CTRL_END
+.f2: db "ROUGH NIGHT, HUH?", CTRL_END
+CtxWeapon:
+    db 3
+    dw .f0, .f1, .f2
+.f0: db "IS THAT A ", CTRL_ITEM, "?", CTRL_END
+.f1: db "NICE ", CTRL_ITEM, ". KEEP IT CLOSE.", CTRL_END
+.f2: db "CAREFUL WITH THAT ", CTRL_ITEM, ".", CTRL_END
+CtxNight:
+    db 2
+    dw .f0, .f1
+.f0: db "DARK OUT. THEY BITE AT NIGHT.", CTRL_END
+.f1: db "YOU SHOULDN'T BE OUT THIS LATE.", CTRL_END
+CtxMorning:
+    db 2
+    dw .f0, .f1
+.f0: db "UP EARLY, AREN'T YOU?", CTRL_END
+.f1: db "MORNING ALREADY. STILL ALIVE.", CTRL_END
+CtxDusk:
+    db 2
+    dw .f0, .f1
+.f0: db "SUN'S GOING DOWN. BE QUICK.", CTRL_END
+.f1: db "IT'LL BE DARK SOON.", CTRL_END
+CtxDay:
+    db 2
+    dw .f0, .f1
+.f0: db "QUIET AFTERNOON. TOO QUIET.", CTRL_END
+.f1: db "NOT A CLOUD UP THERE.", CTRL_END
+
+; CTRL_ITEM's safety net when no weapon is equipped (an authored line could
+; use the slot anywhere; CTX_WEAPON itself only fires armed).
+FragBareHands::
+    db "FISTS", CTRL_END
+
+; -----------------------------------------------------------------------------
+; Per-persona noun banks + topic templates + questions.
 ; -----------------------------------------------------------------------------
 NounsPolice:
     db 6
@@ -368,12 +559,21 @@ NounsPolice:
 .f4: db "RADIO", CTRL_END
 .f5: db "LAW", CTRL_END
 TopicsPolice:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " IS ", CTRL_ADJ, " TODAY.", CTRL_END
 .f1: db "STAY BEHIND THE ", CTRL_SUBJ, ".", CTRL_END
 .f2: db "I LOST MY ", CTRL_NOUN, " AGAIN.", CTRL_END
 .f3: db "MY ", CTRL_SUBJ, " KEEPS US SAFE.", CTRL_END
+.f4: db "SOMEONE STOLE THE ", CTRL_NOUN, ".", CTRL_END
+.f5: db "TEN-FOUR.", CTRL_END
+QuestsPolice:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "IS THE ", CTRL_SUBJ, " SECURE?", CTRL_END
+.f1: db "SEEN ANY LOOTERS TONIGHT?", CTRL_END
+.f2: db "YOU STAYING OUT OF TROUBLE?", CTRL_END
+.f3: db "WHO SENT YOU OUT HERE?", CTRL_END
 
 NounsScientist:
     db 6
@@ -385,12 +585,21 @@ NounsScientist:
 .f4: db "FORMULA", CTRL_END
 .f5: db "SPORES", CTRL_END
 TopicsScientist:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "MY ", CTRL_SUBJ, " LOOKS ", CTRL_ADJ, ".", CTRL_END
 .f1: db "THE ", CTRL_SUBJ, " NEEDS A ", CTRL_NOUN, ".", CTRL_END
 .f2: db "DON'T TOUCH MY ", CTRL_SUBJ, ".", CTRL_END
 .f3: db "SCIENCE IS ", CTRL_ADJ, ".", CTRL_END
+.f4: db "MY ", CTRL_ADJ, " ", CTRL_NOUN, " GREW LEGS.", CTRL_END
+.f5: db "FASCINATING.", CTRL_END
+QuestsScientist:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "CARE TO SEE MY ", CTRL_SUBJ, "?", CTRL_END
+.f1: db "GOT A SPARE ", CTRL_NOUN, "?", CTRL_END
+.f2: db "DOES SCIENCE EXCITE YOU?", CTRL_END
+.f3: db "IS MY ", CTRL_SUBJ, " LEAKING AGAIN?", CTRL_END
 
 NounsCheer:
     db 6
@@ -402,12 +611,21 @@ NounsCheer:
 .f4: db "PEP", CTRL_END
 .f5: db "MEGAPHONE", CTRL_END
 TopicsCheer:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " IS SO ", CTRL_ADJ, "!", CTRL_END
 .f1: db "GIMME A Z-O-M-B!", CTRL_END
 .f2: db "MY ", CTRL_SUBJ, " NEEDS ", CTRL_ADJ, " VIBES!", CTRL_END
 .f3: db "PRACTICE WAS ", CTRL_ADJ, "!", CTRL_END
+.f4: db "TWO FOUR SIX EIGHT!", CTRL_END
+.f5: db "THE ", CTRL_NOUN, " NEEDS A NEW CHANT.", CTRL_END
+QuestsCheer:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "GOT ANY TEAM SPIRIT?", CTRL_END
+.f1: db "WANNA JOIN THE ", CTRL_SUBJ, "?", CTRL_END
+.f2: db "READY? OKAY?", CTRL_END
+.f3: db "ISN'T IT ALL SO ", CTRL_ADJ, "?", CTRL_END
 
 NounsMaid:
     db 6
@@ -419,12 +637,21 @@ NounsMaid:
 .f4: db "SILVER", CTRL_END
 .f5: db "FLOORS", CTRL_END
 TopicsMaid:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " WON'T CLEAN ITSELF.", CTRL_END
 .f1: db "I JUST POLISHED THE ", CTRL_SUBJ, ".", CTRL_END
 .f2: db "SO MUCH ", CTRL_ADJ, " DUST.", CTRL_END
 .f3: db "I DUST. I MOP. I ENDURE.", CTRL_END
+.f4: db "COBWEBS IN THE ", CTRL_NOUN, " AGAIN.", CTRL_END
+.f5: db "SIGH.", CTRL_END
+QuestsMaid:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "DID YOU WIPE YOUR FEET?", CTRL_END
+.f1: db "SEEN MY ", CTRL_SUBJ, "?", CTRL_END
+.f2: db "DOES THIS LOOK CLEAN TO YOU?", CTRL_END
+.f3: db "MORE TEA, DEAR?", CTRL_END
 
 NounsBiz:
     db 6
@@ -436,12 +663,21 @@ NounsBiz:
 .f4: db "MARKET", CTRL_END
 .f5: db "MEMO", CTRL_END
 TopicsBiz:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " LOOKS ", CTRL_ADJ, ".", CTRL_END
 .f1: db "SYNERGY. THE ", CTRL_SUBJ, ". YES.", CTRL_END
 .f2: db "MY ", CTRL_NOUN, " IS OVERDUE.", CTRL_END
 .f3: db "BUY LOW. SELL ", CTRL_ADJ, ".", CTRL_END
+.f4: db "TIME IS MONEY. YOU OWE ME BOTH.", CTRL_END
+.f5: db "THE ", CTRL_SUBJ, "? PENDING.", CTRL_END
+QuestsBiz:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "GOT A MINUTE FOR THE ", CTRL_SUBJ, "?", CTRL_END
+.f1: db "ARE YOU BUYING OR SELLING?", CTRL_END
+.f2: db "WHERE IS MY ", CTRL_NOUN, "?", CTRL_END
+.f3: db "CAN WE CIRCLE BACK LATER?", CTRL_END
 
 NounsPrepper:
     db 6
@@ -453,12 +689,21 @@ NounsPrepper:
 .f4: db "TINFOIL", CTRL_END
 .f5: db "GENERATOR", CTRL_END
 TopicsPrepper:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " IS SEALED.", CTRL_END
 .f1: db "I COUNTED MY ", CTRL_SUBJ, " TWICE.", CTRL_END
 .f2: db "THE END WAS ", CTRL_ADJ, " ANYWAY.", CTRL_END
 .f3: db "MY ", CTRL_SUBJ, " OUTLASTS US ALL.", CTRL_END
+.f4: db "TRUST NO ONE. NOT THE ", CTRL_NOUN, ".", CTRL_END
+.f5: db "THEY'RE LISTENING.", CTRL_END
+QuestsPrepper:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "WHO TOLD YOU ABOUT THE ", CTRL_SUBJ, "?", CTRL_END
+.f1: db "DID ANYONE FOLLOW YOU?", CTRL_END
+.f2: db "HOW MANY CANS DO YOU OWN?", CTRL_END
+.f3: db "YOU HEAR THAT TOO, RIGHT?", CTRL_END
 
 NounsMedic:
     db 6
@@ -470,12 +715,21 @@ NounsMedic:
 .f4: db "SPLINT", CTRL_END
 .f5: db "GAUZE", CTRL_END
 TopicsMedic:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " RAN OUT AGAIN.", CTRL_END
 .f1: db "HOLD STILL. THIS LOOKS ", CTRL_ADJ, ".", CTRL_END
 .f2: db "I SAVED SIX WITH ONE ", CTRL_SUBJ, ".", CTRL_END
 .f3: db "YOUR ", CTRL_NOUN, " READS ", CTRL_ADJ, ".", CTRL_END
+.f4: db "SAY AAH.", CTRL_END
+.f5: db "CLEAN WATER. THAT'S THE DREAM.", CTRL_END
+QuestsMedic:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "WHERE DOES IT HURT?", CTRL_END
+.f1: db "ANY DIZZINESS? BLURRED SIGHT?", CTRL_END
+.f2: db "HAVE YOU SEEN MY ", CTRL_SUBJ, "?", CTRL_END
+.f3: db "WHEN DID YOU LAST SLEEP?", CTRL_END
 
 NounsRaider:
     db 6
@@ -487,12 +741,21 @@ NounsRaider:
 .f4: db "TOLL", CTRL_END
 .f5: db "SCRAPS", CTRL_END
 TopicsRaider:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THIS IS MY ", CTRL_SUBJ, ".", CTRL_END
 .f1: db "THE ", CTRL_SUBJ, " LOOKS ", CTRL_ADJ, ".", CTRL_END
 .f2: db "PAY THE ", CTRL_NOUN, " OR ELSE.", CTRL_END
 .f3: db "NICE ", CTRL_SUBJ, ". SHAME IF IT BROKE.", CTRL_END
+.f4: db "I BITE HARDER THAN THEY DO.", CTRL_END
+.f5: db "HAND IT OVER. ALL OF IT.", CTRL_END
+QuestsRaider:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "WHAT'S IN THE BAG?", CTRL_END
+.f1: db "YOU GOT A DEATH WISH?", CTRL_END
+.f2: db "WANT TO KEEP YOUR ", CTRL_NOUN, "?", CTRL_END
+.f3: db "WHO'S GONNA STOP ME? YOU?", CTRL_END
 
 NounsPreacher:
     db 6
@@ -504,12 +767,21 @@ NounsPreacher:
 .f4: db "GOSPEL", CTRL_END
 .f5: db "BELLS", CTRL_END
 TopicsPreacher:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " NEEDS YOU.", CTRL_END
 .f1: db "I PREACH TO THE ", CTRL_SUBJ, ".", CTRL_END
 .f2: db "THE END TIMES LOOK ", CTRL_ADJ, ".", CTRL_END
 .f3: db "SING! THE ", CTRL_SUBJ, " LISTENS.", CTRL_END
+.f4: db "REPENT! THE ", CTRL_NOUN, " DEMANDS IT!", CTRL_END
+.f5: db "HALLELUJAH.", CTRL_END
+QuestsPreacher:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "HAVE YOU HEARD THE GOOD WORD?", CTRL_END
+.f1: db "WILL YOU JOIN THE ", CTRL_SUBJ, "?", CTRL_END
+.f2: db "DO YOU EVER PRAY, CHILD?", CTRL_END
+.f3: db "IS YOUR SOUL ", CTRL_ADJ, "?", CTRL_END
 
 NounsFarmer:
     db 6
@@ -521,9 +793,18 @@ NounsFarmer:
 .f4: db "SILO", CTRL_END
 .f5: db "SEEDS", CTRL_END
 TopicsFarmer:
-    db 4
-    dw .f0, .f1, .f2, .f3
+    db 6
+    dw .f0, .f1, .f2, .f3, .f4, .f5
 .f0: db "THE ", CTRL_SUBJ, " WON'T WAIT.", CTRL_END
 .f1: db "CROWS GOT THE ", CTRL_NOUN, ".", CTRL_END
 .f2: db "THE ", CTRL_SUBJ, " LOOKS ", CTRL_ADJ, ".", CTRL_END
 .f3: db "RAIN SOON. I CAN TELL.", CTRL_END
+.f4: db "DIRT DON'T LIE.", CTRL_END
+.f5: db "THE ", CTRL_SUBJ, " FEEDS US ALL.", CTRL_END
+QuestsFarmer:
+    db 4
+    dw .f0, .f1, .f2, .f3
+.f0: db "RAIN COMING, YOU THINK?", CTRL_END
+.f1: db "EVER WORKED A ", CTRL_NOUN, "?", CTRL_END
+.f2: db "YOU EAT TODAY?", CTRL_END
+.f3: db "SEEN CROWS ON THE ", CTRL_SUBJ, "?", CTRL_END

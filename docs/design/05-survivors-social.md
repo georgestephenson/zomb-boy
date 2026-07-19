@@ -122,17 +122,26 @@ palettes (tints are shared beyond that).
 The §4 reply slots draw from an **eight-tone pool** covering every trait axis
 in both directions (NICE, FLIRT, JOKE, RUDE, GUARDED, CHEER, GRIM, DEMAND);
 each menu deals a random four with at least one non-punishing option
-guaranteed — context-sensitive *wording* of replies stays LATER. A
-conversation runs greeting + **3 rounds** of *their sentence → your reply →
-their reaction* (rounds 2+ open with a fresh generated prompt line) +
-resolution by affinity thresholds (§5).
+guaranteed. The §4 *context-sensitive wording* ships as **mood-keyed label
+synonyms**: each tone's menu label is drawn from a bank keyed by the NPC's
+current mood (soothing a hostile NPC reads EASY; agreeing with a warm one
+reads LOVE IT — same mechanical tone, phrased for the moment). A conversation
+runs greeting + **3 rounds** of *their turn → your reply → their reaction*,
+where an NPC **turn is itself 2-3 pages**: their sentence, sometimes an
+**observation**, and always a closing **question** that hands you the menu
+(rounds 2+ open with a fresh generated prompt line) + resolution by affinity
+thresholds (§5).
 
-The generator earns its "convincing" with four cheap tricks: each conversation
+The generator earns its "convincing" with cheap tricks: each conversation
 fixes a **subject noun** the templates keep returning to; reactions append a
 **tone tag** that answers the specific reply picked ("WISE." vs "SO TENSE.");
 the §3 personality-weighting ships as **trait-tinted adjective banks** (grim
-personas draw bleaker words at equal affinity); and NPCs **remember meeting
-you** — return visits skip the stranger hello and pick the thread back up.
+personas draw bleaker words at equal affinity); NPCs **remember meeting
+you** — return visits skip the stranger hello and pick the thread back up;
+and observations read **live game state** — low HP/food/energy, the in-game
+clock's time of day, even the name of your equipped weapon spliced from the
+inventory ("IS THAT A PISTOL?") — with a per-conversation used-mask so the
+same remark never fires twice in one talk.
 
 Still placeholder: the **gift** hands over no item yet (no inventory), and
 **hostile** plays the battle-flash stand-in — both resolve and announce

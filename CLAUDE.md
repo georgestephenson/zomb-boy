@@ -305,12 +305,17 @@ scroll updates — so there's no seam or one-frame latency.
   ROM and proves every composable line fits — run it after ANY data change.**
 - All talk-mode VRAM writes go through `wTalkQ` (logic fills ≤16/frame, VBlank
   drains all) — the typewriter reveal, menus and face changes ride this queue.
-- **Round rhythm:** every round is NPC sentence → your reply → NPC reaction.
-  The greeting opens round 1; rounds 2+ open with a **prompt** line
-  (`ComposePrompt`, continuation openers + topic). Reactions are a bucket quip
-  plus a **tone tag** answering the specific tone picked (`ToneTagsLiked`/
-  `Disliked` by the delta's sign). After `TALK_ROUNDS` replies, final affinity
-  picks fight/part/reward.
+- **Round rhythm:** every round is NPC *turn* → your reply → NPC reaction,
+  and an NPC turn is **2-3 pages**: their sentence (greeting round 1; rounds
+  2+ a **prompt** line — `ComposePrompt`, continuation openers + topic), an
+  *optional* **observation** page, and always a closing **question** page
+  (`ComposeQuestion`, per-persona `PO_QUESTS` banks, `wLastQuest` repeat
+  guard) that hands you the menu. Turn 1 always tries the observation; later
+  turns coin-flip it (`wTalkObs`), so turn length is unpredictable. Phases:
+  `TPH_GREET/PROMPT → [TPH_OBS] → TPH_QUEST → menu → TPH_REACT`. Reactions
+  are a bucket quip plus a **tone tag** answering the specific tone picked
+  (`ToneTagsLiked`/`Disliked` by the delta's sign). After `TALK_ROUNDS`
+  replies, final affinity picks fight/part/reward.
 - **Convincingness tricks** (all data + a few bytes of state):
   * *Subject threading* — each conversation fixes one noun (`wTalkSubject`);
     `CTRL_SUBJ` slots emit it, `CTRL_NOUN` slots stay random (and are guarded
@@ -320,12 +325,22 @@ scroll updates — so there's no seam or one-frame latency.
     vocabulary at neutral affinity, the preacher beams.
   * *Return greetings* — `EO_MET` (struct offset 15) flips on first talk;
     repeat visits greet from the continuation bank ("STILL HERE?").
+  * *State-aware observations* — `ComposeObservation`/`PickContext`
+    (dialogue.asm) scan LIVE state in priority order: low `wHP`/`wFood`/
+    `wEnergy` (< `CTX_LOW_METER`), an equipped weapon (`CTRL_ITEM` splices
+    the actual item name from `wPartyEquip` — "IS THAT A PISTOL?"), then the
+    `wClockH` time-of-day bucket as a backstop. `wCtxUsed` (bitmask) stops a
+    context repeating within one conversation; if nothing is fresh the turn
+    just skips to the question.
 - **Tones:** a pool of `TONE_COUNT` (8) covering every trait axis both ways
   (NICE FLIRT JOKE RUDE GUARDED CHEER GRIM DEMAND). Each menu offers a random
   **4 distinct** of them (`BuildMenu` → `wMenuTones`; picking applies
   `wMenuTones[cursor]`), redrawn until at least one option has a non-negative
   delta for the persona — there is always a playable move. Tests poke
-  `wMenuTones[0]` to sidestep menu randomness.
+  `wMenuTones[0]` to sidestep menu randomness. Labels are **context-
+  sensitive**: `ToneLabelMoods` keys 2 synonyms per tone per current mood
+  (soothing a hostile NPC reads EASY, agreeing with a warm one LOVE IT) —
+  the mechanical tone is still the `TONE_*` id underneath.
 - Affinity is per-NPC (`EO_AFFIN`, 0..255 **saturating**), persists across
   conversations in WRAM; `delta = clamp(dot(tone push, persona traits)>>2, ±16)
   + tone base`. The integration tests hold a lockstep copy of the police
@@ -507,8 +522,10 @@ scroll updates — so there's no seam or one-frame latency.
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
 - **A new persona:** data + art. In `dialogue_data.asm` add a `PersonaTable`
-  record (name, 4 traits in -60..+60, noun + topic banks, `PO_PAL` — pick any
-  OBJ palette 3..7, shared tints are fine), bump `PERSONA_COUNT`/`MAX_NPCS` +
+  record (name, 4 traits in -60..+60, noun + topic + **question** banks,
+  `PO_PAL` — pick any OBJ palette 3..7, shared tints are fine; the record is
+  `PERSONA_SIZE` = 16 bytes, question bank at `PO_QUESTS`, questions must end
+  in `?`), bump `PERSONA_COUNT`/`MAX_NPCS` +
   a spawn offset in `npc.asm`. Art is **mandatory** (no fallbacks): a 112×112
   source in `img/portrait/source/` run through the portrait pipeline (see the
   dialogue section) + a `PERSONA_ART` entry, and 3 world-sprite tiles
@@ -520,7 +537,8 @@ scroll updates — so there's no seam or one-frame latency.
   label length) **including winnability**: some tone's delta must be ≥ +7 so
   three perfect replies reach `AFFIN_REWARD`.
 - **A new reply tone:** add a `ToneTable` record (push vector + base) and a
-  ≤7-char label in `dialogue_data.asm`, bump `TONE_COUNT` — but keep it a
+  synonym bank of ≤7-char labels under **each of the three moods** in
+  `ToneLabelMoods` (`dialogue_data.asm`), bump `TONE_COUNT` — but keep it a
   **power of 2** (`BuildMenu` masks `Rand`), and rerun the bounds model
   (winnability shifts for every persona).
 - **New dialogue text:** only charmap'd characters (`A-Z 0-9 . , ! ? ' -`);

@@ -7,6 +7,8 @@ drift from what's checked. It then simulates the composer's exact tokenising +
 greedy wrap (dialogue.asm: EmitFrag/FlushWord) over EVERY reachable sentence:
 
     greeting/prompt = opener-or-continuation(mood) + topic(persona)
+    observation     = one context-bank line (CTX_*; CTRL_ITEM = an item name)
+    question        = one persona question fragment (the turn's last beat)
     react           = bucket quip + tone tag (liked/disliked by delta sign)
     outcome         = one closing fragment
 
@@ -38,14 +40,15 @@ SYM_PATH = os.path.join(ROOT, "build", "zombboy.sym")
 FONT_BASE = 128
 CHARSET = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,!?'-"
 VALID_GLYPHS = set(range(FONT_BASE, FONT_BASE + len(CHARSET)))
-CTRL_END, CTRL_NOUN, CTRL_ADJ, CTRL_SUBJ = 0, 1, 2, 3
-SLOT_CODES = (CTRL_NOUN, CTRL_ADJ, CTRL_SUBJ)
+CTRL_END, CTRL_NOUN, CTRL_ADJ, CTRL_SUBJ, CTRL_ITEM = 0, 1, 2, 3, 4
+SLOT_CODES = (CTRL_NOUN, CTRL_ADJ, CTRL_SUBJ, CTRL_ITEM)
 SPACE = FONT_BASE
 TINT_THRESH = 17  # |T1| >= this shifts the adjective bank (dialogue.asm)
 
 COLS, ROWS, WORD_MAX = 18, 3, 15
 N_PERSONAS, N_MOODS, N_REACTS, N_OUTCOMES, N_TONES = 10, 3, 5, 3, 8
-PERSONA_SIZE = 12
+N_CTX, N_ITEMS = 8, 11
+PERSONA_SIZE = 16
 LABEL_MAX = 7           # menu cell width
 WINNABLE_DELTA = 7      # 3 * this must clear AFFIN_REWARD - AFFIN_START (20)
 
@@ -151,10 +154,11 @@ def slot_kinds(frag):
     return [b for b in frag if b in SLOT_CODES]
 
 
-def fill_choices(kinds, nouns, adjs, subject_idx=None):
+def fill_choices(kinds, nouns, adjs, subject_idx=None, items=()):
     """All slot assignments. SUBJ slots always take the fixed subject noun;
     consecutive NOUN slots can't repeat (the wLastNoun guard re-rolls, matching
-    PickNounFrag) — earlier-guard states are over-approximated as 'any noun'."""
+    PickNounFrag) — earlier-guard states are over-approximated as 'any noun'.
+    ITEM slots expand over every possible item name (EmitItem)."""
     def rec(i, prev_noun, acc):
         if i == len(kinds):
             yield acc
@@ -165,6 +169,9 @@ def fill_choices(kinds, nouns, adjs, subject_idx=None):
                 yield from rec(i + 1, prev_noun, acc + [a])
         elif kind == CTRL_SUBJ:
             yield from rec(i + 1, prev_noun, acc + [nouns[subject_idx]])
+        elif kind == CTRL_ITEM:
+            for it in items:
+                yield from rec(i + 1, prev_noun, acc + [it])
         else:
             for j, n in enumerate(nouns):
                 if j == prev_noun and len(nouns) > 1:
@@ -199,7 +206,8 @@ def main() -> int:
         nouns = read_bank(rom, le16(rom, off + 6), f"nouns[{i}]")
         topics = read_bank(rom, le16(rom, off + 8), f"topics[{i}]")
         pal = rom[off + 10]
-        personas.append((name, traits, nouns, topics, pal))
+        quests = read_bank(rom, le16(rom, off + 12), f"quests[{i}]")
+        personas.append((name, traits, nouns, topics, pal, quests))
 
     openers = [read_bank(rom, a, f"openers[{m}]") for m, a in
                enumerate(read_ptr_table(rom, syms["OpenerMoods"], N_MOODS, "OpenerMoods"))]
@@ -218,8 +226,25 @@ def main() -> int:
         push = [b - 256 if b >= 128 else b for b in rec[:4]]
         base = rec[4] - 256 if rec[4] >= 128 else rec[4]
         tones.append((push, base))
-    labels = [read_frag(rom, a, f"label[{t}]") for t, a in
-              enumerate(read_ptr_table(rom, syms["ToneLabels"], N_TONES, "ToneLabels"))]
+    label_banks = []  # [mood][tone] -> list of synonym fragments
+    for m, ma in enumerate(read_ptr_table(rom, syms["ToneLabelMoods"], N_MOODS,
+                                          "ToneLabelMoods")):
+        label_banks.append([read_bank(rom, a, f"labels[m{m}][t{t}]") for t, a in
+                            enumerate(read_ptr_table(rom, ma, N_TONES, f"labels[m{m}]"))])
+    ctx_banks = [read_bank(rom, a, f"ctx[{c}]") for c, a in
+                 enumerate(read_ptr_table(rom, syms["CtxBanks"], N_CTX, "CtxBanks"))]
+    # Item names (items.asm): space-padded; EmitItem stops at the first pad
+    # space, so the effective fill is the leading run of non-space glyphs.
+    items = []
+    for i, a in enumerate(read_ptr_table(rom, syms["ItemNames"], N_ITEMS, "ItemNames")):
+        off = cpu_to_off(a)
+        name = []
+        while rom[off] != 0 and rom[off] != SPACE:
+            name.append(rom[off])
+            off += 1
+        items.append(name)
+    items = items[1:]  # id 0 is the "--------" empty marker, never equipped
+    items.append(read_frag(rom, syms["FragBareHands"], "FragBareHands"))
     tags_liked = [read_bank(rom, a, f"tagL[{t}]") for t, a in
                   enumerate(read_ptr_table(rom, syms["ToneTagsLiked"], N_TONES, "ToneTagsLiked"))]
     tags_disliked = [read_bank(rom, a, f"tagD[{t}]") for t, a in
@@ -233,11 +258,18 @@ def main() -> int:
         return max(-16, min(16, d)) + base
 
     # --- static data rules ---
-    for t, lbl in enumerate(labels):
-        if len(lbl) > LABEL_MAX or any(b not in VALID_GLYPHS for b in lbl):
-            print(f"FAIL: tone label {t} '{decode(lbl)}' too long or invalid")
-            ok = False
-    for i, (name, traits, nouns, topics, pal) in enumerate(personas):
+    for m, tone_table in enumerate(label_banks):
+        for t, bank in enumerate(tone_table):
+            for lbl in bank:
+                if len(lbl) > LABEL_MAX or any(b not in VALID_GLYPHS for b in lbl):
+                    print(f"FAIL: label m{m}/t{t} '{decode(lbl)}' too long or invalid")
+                    ok = False
+    QMARK = FONT_BASE + CHARSET.index("?")
+    for i, (name, traits, nouns, topics, pal, quests) in enumerate(personas):
+        for q in quests:
+            if q[-1] != QMARK:
+                print(f"FAIL: persona {i} question '{decode(q)}' doesn't end in ?")
+                ok = False
         if not 3 <= pal <= 7:
             print(f"FAIL: persona {i} PO_PAL={pal} outside OBJ palettes 3..7")
             ok = False
@@ -272,7 +304,7 @@ def main() -> int:
         kinds = slot_kinds(topic) if topic is not None else []
         subjects = range(len(nouns_b)) if CTRL_SUBJ in kinds else [None]
         for si in subjects:
-            for fills in fill_choices(kinds, nouns_b, adjs_b, si):
+            for fills in fill_choices(kinds, nouns_b, adjs_b, si, items):
                 tokens = expand(head, [])
                 if topic is not None:
                     tokens += expand(topic, fills)
@@ -288,7 +320,7 @@ def main() -> int:
     # Line shapes as composed by dialogue.asm: greeting/prompt = head + topic
     # (adjectives from the trait-tinted mood bank); reaction = bucket quip +
     # tone tag matching the delta's sign; outcome fragments stand alone.
-    for p, (name, traits, nouns_b, topics, _) in enumerate(personas):
+    for p, (name, traits, nouns_b, topics, _, quests) in enumerate(personas):
         for m in range(N_MOODS):
             adjs_b = adjs[eff_mood(traits[1], m)]
             heads = [(h, f"greet p{p} m{m}") for h in openers[m]] + \
@@ -296,6 +328,12 @@ def main() -> int:
             for head, what in heads:
                 for topic in topics:
                     check_line(head, topic, nouns_b, adjs_b, what)
+            # questions and context observations stand alone on their page
+            for q in quests:
+                check_line([], q, nouns_b, adjs_b, f"quest p{p} m{m}")
+    for c, bank in enumerate(ctx_banks):
+        for line in bank:
+            check_line([], line, [], [], f"ctx[{c}]")
     for quips, tag_tables, pol in ((reacts[0] + reacts[1], tags_liked, "liked"),
                                    (reacts[3] + reacts[4], tags_disliked, "disliked")):
         for quip in quips:

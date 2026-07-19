@@ -204,6 +204,128 @@ EmitTopic:
     call PickTopicFrag
     jp EmitFrag
 
+; ComposeQuestion: every NPC turn's last beat — they put a question to you and
+; the reply menu answers it. Per-persona banks (PO_QUESTS), subject-threaded
+; like the topics; wLastQuest keeps the same question from repeating rounds.
+ComposeQuestion::
+    call ResetCompose
+    ld c, PO_QUESTS
+    call GetPersonaField       ; HL = question bank
+    call PickQuestFrag
+    jp EmitFrag
+
+; -----------------------------------------------------------------------------
+; ComposeObservation: an optional mid-turn remark keyed to LIVE game state (the
+; player's meters, their equipped weapon, the in-game clock). Returns A = 1 if
+; a line was composed, A = 0 if every triggered context was already used this
+; conversation (caller goes straight to the question).
+; -----------------------------------------------------------------------------
+ComposeObservation::
+    call PickContext           ; A = CTX_* or CTX_NONE
+    inc a                      ; CTX_NONE ($FF) -> 0
+    ret z                      ; A = 0: nothing fresh to say
+    dec a
+    push af
+    call ResetCompose
+    pop af
+    push af
+    call CtxMask               ; A = 1 << ctx (clobbers C)
+    ld hl, wCtxUsed
+    or a, [hl]
+    ld [hl], a                 ; one remark per context per conversation
+    pop af
+    ld de, CtxBanks
+    call DerefTable            ; HL = this context's line bank
+    call PickPlain
+    call EmitFrag
+    ld a, 1
+    ret
+
+; PickContext: scan live state in priority order (meters beat equipment beats
+; the clock — the most personal thing they could notice wins) and return the
+; first CTX_* not yet used this conversation, or CTX_NONE. The time-of-day
+; buckets are mutually exclusive, so one of them almost always backstops.
+PickContext:
+    ld a, [wHP]
+    cp CTX_LOW_METER
+    jr nc, .fed
+    ld a, CTX_HURT
+    call CtxFresh
+    ret c
+.fed:
+    ld a, [wFood]
+    cp CTX_LOW_METER
+    jr nc, .rested
+    ld a, CTX_HUNGRY
+    call CtxFresh
+    ret c
+.rested:
+    ld a, [wEnergy]
+    cp CTX_LOW_METER
+    jr nc, .unarmed
+    ld a, CTX_TIRED
+    call CtxFresh
+    ret c
+.unarmed:
+    ld a, [wPartyEquip + ESLOT_WEAPON1]
+    ld b, a
+    ld a, [wPartyEquip + ESLOT_WEAPON2]
+    or a, b
+    jr z, .clock
+    ld a, CTX_WEAPON
+    call CtxFresh
+    ret c
+.clock:
+    ld a, [wClockH]
+    cp 5
+    jr c, .night               ; 0..4
+    cp 12
+    jr c, .morning             ; 5..11
+    cp 18
+    jr c, .day                 ; 12..17
+    cp 22
+    jr c, .dusk                ; 18..21
+.night:
+    ld a, CTX_NIGHT
+    jr .time
+.morning:
+    ld a, CTX_MORNING
+    jr .time
+.day:
+    ld a, CTX_DAY
+    jr .time
+.dusk:
+    ld a, CTX_DUSK
+.time:
+    call CtxFresh
+    ret c
+    ld a, CTX_NONE
+    ret
+
+; CtxFresh: A = CTX_* -> carry set if its wCtxUsed bit is still clear.
+; Preserves the id in A. Clobbers B, C.
+CtxFresh:
+    ld b, a
+    call CtxMask               ; A = mask (clobbers C)
+    ld c, a
+    ld a, [wCtxUsed]
+    and a, c                   ; also clears carry
+    ld a, b
+    ret nz                     ; NC: already remarked on this
+    scf
+    ret
+
+; CtxMask: A = bit index 0..7 -> A = 1 << index. Clobbers C.
+CtxMask:
+    ld c, a
+    ld a, 1
+    inc c
+.shift:
+    dec c
+    ret z
+    add a, a
+    jr .shift
+
 ; ComposeOutcome: wTalkOutcome -> the conversation's closing line.
 ComposeOutcome::
     call ResetCompose
@@ -246,6 +368,8 @@ EmitFrag:
     jr z, .adj
     cp CTRL_SUBJ
     jr z, .subj
+    cp CTRL_ITEM
+    jr z, .item
     cp FONT_BASE               ; the space glyph separates tokens
     jr z, .space
     call AppendWordChar
@@ -268,6 +392,11 @@ EmitFrag:
 .subj:
     push hl
     call EmitSubject
+    pop hl
+    jr .loop
+.item:
+    push hl
+    call EmitItem
     pop hl
     jr .loop
 
@@ -331,6 +460,29 @@ EmitWordChars:
     ret c
     call AppendWordChar
     jr EmitWordChars
+
+; EmitItem: glue the player's equipped weapon's name into the current token —
+; the NPC comments on what you're ACTUALLY carrying. Item names are space-
+; padded to ITEM_NAME_MAX (items.asm), so the copy stops at the first pad
+; space. CTX_WEAPON only fires with a weapon equipped, but an authored line
+; could use CTRL_ITEM anywhere, so bare hands still read as a word.
+EmitItem:
+    ld a, [wPartyEquip + ESLOT_WEAPON1]
+    and a, a
+    jr nz, .named
+    ld a, [wPartyEquip + ESLOT_WEAPON2]
+    and a, a
+    jr nz, .named
+    ld hl, FragBareHands
+    jr .copy
+.named:
+    call GetItemName           ; HL = the padded name (clobbers DE)
+.copy:
+    ld a, [hl+]
+    cp FONT_BASE + 1
+    ret c                      ; terminator, ctrl byte or the pad space
+    call AppendWordChar
+    jr .copy
 
 ; AppendWordChar: A -> wWordBuf (silently truncates at WORD_MAX). Preserves HL.
 AppendWordChar:
@@ -431,7 +583,8 @@ DerefTable::
     ret
 
 ; PickPlain: HL = bank (count, then pointers) -> HL = a random fragment.
-PickPlain:
+; (Also used by talk.asm to pick a menu-label synonym.)
+PickPlain::
     ld a, [hl+]
     ld c, a                    ; c = count
     ld d, h
@@ -488,6 +641,31 @@ PickTopicFrag:
     ld [wLastTopic], a
     jr DerefTable
 
+; PickQuestFrag: same re-roll guard for the question bank (wLastQuest) — the
+; NPC never asks the same thing two rounds running.
+PickQuestFrag:
+    ld a, [hl+]
+    ld c, a
+    ld d, h
+    ld e, l
+    call RandMod
+    ld b, a
+    ld a, [wLastQuest]
+    cp b
+    jr nz, .keep
+    ld a, c
+    cp 2
+    jr c, .keep
+    inc b
+    ld a, b
+    cp c
+    jr c, .keep
+    ld b, 0
+.keep:
+    ld a, b
+    ld [wLastQuest], a
+    jr DerefTable
+
 ; RandMod: C = count (>= 1) -> A = uniform-ish 0..count-1. Clobbers B, HL.
 ; (Also used by talk.asm to pick the conversation subject.)
 RandMod::
@@ -499,16 +677,12 @@ RandMod::
     jr .mod
 
 ; PersonaPtr: A = persona id -> HL = &PersonaTable[A * PERSONA_SIZE].
+; PERSONA_SIZE is 16 and ids stay below 16, so the multiply is a swap.
 ; Clobbers DE.
 PersonaPtr::
+    swap a                     ; * 16 = PERSONA_SIZE
     ld l, a
     ld h, 0
-    add hl, hl
-    add hl, hl                 ; * 4
-    ld d, h
-    ld e, l
-    add hl, hl                 ; * 8
-    add hl, de                 ; * 12 = PERSONA_SIZE
     ld de, PersonaTable
     add hl, de
     ret

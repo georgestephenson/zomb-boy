@@ -16,6 +16,7 @@ ENT_SIZE = 16
 EO_AFFIN = 14
 MODE_OVERWORLD, MODE_ALERT, MODE_TALK = 0, 1, 2
 TS_REVEAL, TS_WAIT, TS_MENU = 0, 1, 2
+TPH_GREET, TPH_REACT, TPH_OUTCOME, TPH_PROMPT, TPH_OBS, TPH_QUEST = range(6)
 OUTCOME_FIGHT, OUTCOME_PART, OUTCOME_REWARD = 0, 1, 2
 TALK_TEXT_MAX, GUARD = 54, 0xC5
 FONT_BASE = 128
@@ -25,7 +26,7 @@ SCRN1 = 0x9C00
 TXT_ROW0, TXT_COL0 = 12, 1
 
 POLICE_TRAITS = (-40, 10, 20, 50)
-TONES = [  # id order matches ToneTable: (label, push over T0..T3, base)
+TONES = [  # id order matches ToneTable: (name, push over T0..T3, base)
     ("NICE", (0, 1, 1, 0), 2),
     ("FLIRT", (1, 0, 0, -1), 0),
     ("JOKE", (0, 0, 0, -1), 0),
@@ -36,6 +37,24 @@ TONES = [  # id order matches ToneTable: (label, push over T0..T3, base)
     ("DEMAND", (0, 0, -1, 0), -2),
 ]
 T_NICE, T_FLIRT, T_JOKE, T_RUDE, T_GUARDED, T_CHEER, T_GRIM, T_DEMAND = range(8)
+
+# Lockstep copy of ToneLabelMoods (dialogue_data.asm): the menu shows a
+# mood-keyed synonym for each tone, so tests accept any variant for the tone.
+TONE_LABEL_VARIANTS = [  # [tone] -> set of labels across all moods x variants
+    {"EASY", "SOOTHE", "NICE", "KIND", "LOVE IT", "AGREED"},
+    {"CHARM", "WINK", "FLIRT", "TEASE", "SWOON", "DARLING"},
+    {"DEFLECT", "QUIP", "JOKE", "JEST", "BANTER", "RIFF"},
+    {"SNAP", "SCOFF", "RUDE", "MOCK", "NEEDLE", "JAB"},
+    {"CAREFUL", "WARY", "GUARDED", "HEDGE", "DEMUR", "MODEST"},
+    {"RALLY", "UPLIFT", "CHEER", "PEP", "HOORAY", "BEAM"},
+    {"AGREE", "BLEAK", "GRIM", "SIGH", "SOBER", "LAMENT"},
+    {"PRESS", "EXTORT", "DEMAND", "ASK", "BEG", "REQUEST"},
+]
+LABEL_MAX = 7
+
+# Lockstep copies of the context observation banks the tests poke into range
+# (dialogue_data.asm CtxBanks).
+HURT_WORDS = ("BLEEDING", "WOUND", "HALF DEAD")
 
 
 def expected_delta(tone_id, traits=POLICE_TRAITS):
@@ -87,8 +106,9 @@ def start_talk(g):
 
 
 def advance_to_menu(g):
-    """Press through NPC lines (reaction and/or prompt) until the menu is up."""
-    for _ in range(4):
+    """Press through the NPC's pages (reaction, prompt, observation, question)
+    until the menu is up. A turn runs 2-3 pages now, plus the reaction."""
+    for _ in range(8):
         assert wait_for(g, lambda: g.r8("wTalkState") in (TS_WAIT, TS_MENU)), \
             "reveal never finished"
         if g.r8("wTalkState") == TS_MENU:
@@ -112,6 +132,14 @@ def read_text(g):
 
 def decode(cells):
     return "".join(CHARSET[b - FONT_BASE] if b in VALID else "#" for b in cells)
+
+
+def flow_text(g):
+    """The grid re-joined as one line: words survive the greedy wrap (a phrase
+    like 'KIND SOUL.' may straddle a row boundary in the raw 54-cell decode)."""
+    cells = read_text(g)
+    rows = [decode(cells[r * 18:(r + 1) * 18]) for r in range(3)]
+    return " ".join(" ".join(row.split()) for row in rows).strip()
 
 
 def assert_text_sane(g):
@@ -191,15 +219,18 @@ def test_cursor_slots_map_to_offered_tones(game):
 
 
 def test_menu_labels_reach_vram(game):
+    """The label shown for slot 0 must be one of the mood-keyed synonyms for
+    the tone actually offered there (labels are context-sensitive now)."""
     goto_npc0(game)
     start_talk(game)
     advance_to_menu(game)
     game.tick(12)  # let the fast reveal drain through the VBlank queue
     slot0 = menu_tones(game)[0]
-    label = TONES[slot0][0]
     row = SCRN1 + TXT_ROW0 * 32
-    shown = decode([game.r8(row + TXT_COL0 + 1 + i) for i in range(len(label))])
-    assert shown == label, f"slot 0 offers {label}, VRAM shows '{shown}'"
+    shown = decode([game.r8(row + TXT_COL0 + 1 + i) for i in range(LABEL_MAX)])
+    shown = shown.rstrip()
+    assert shown in TONE_LABEL_VARIANTS[slot0], \
+        f"slot 0 offers tone {slot0}, VRAM shows '{shown}' (not a known synonym)"
     press(game, "b")
 
 
@@ -264,7 +295,7 @@ def test_reaction_carries_a_tone_tag(game):
     advance_to_menu(game)
     force_pick(game, T_NICE)  # +9 at the policeman -> liked -> NICE tag
     assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
-    text = decode(read_text(game))
+    text = flow_text(game)
     assert any(tag in text for tag in NICE_TAGS), \
         f"reaction lacks a NICE tag: '{text}'"
     press(game, "b")
@@ -305,8 +336,8 @@ def test_npc_remembers_meeting(game):
 
 def test_rounds_are_sentence_reply_reaction(game):
     """Rounds 2+ must open with a fresh NPC prompt line: after a pick, the
-    reaction is acknowledged, then another NPC line, THEN the next menu."""
-    TPH_REACT, TPH_PROMPT = 1, 3
+    reaction is acknowledged, then another NPC line, then their question,
+    THEN the next menu."""
     goto_npc0(game)
     start_talk(game)
     advance_to_menu(game)
@@ -317,9 +348,74 @@ def test_rounds_are_sentence_reply_reaction(game):
     assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
     assert game.r8("wTalkPhase") == TPH_PROMPT, "no fresh NPC line before round 2"
     assert_text_sane(game)
+    # the turn always closes with a question page before the menu opens
+    saw_question = False
+    for _ in range(4):
+        press(game, "a")
+        assert wait_for(game, lambda: game.r8("wTalkState") in (TS_WAIT, TS_MENU))
+        if game.r8("wTalkState") == TS_MENU:
+            break
+        if game.r8("wTalkPhase") == TPH_QUEST:
+            saw_question = True
+            assert "?" in decode(read_text(game)), "question page lacks a ?"
+    assert game.r8("wTalkState") == TS_MENU, "menu never opened"
+    assert saw_question, "menu opened without the NPC asking a question"
+    press(game, "b")
+
+
+def test_turn_ends_with_question_page(game):
+    """Round 1, observation suppressed: greeting -> question -> menu. The
+    question is the turn's last beat and carries an actual '?'."""
+    goto_npc0(game)
+    start_talk(game)
+    game.pyboy.memory[game.addr("wTalkObs")] = 0   # force the 2-page turn
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    press(game, "a")
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    assert game.r8("wTalkPhase") == TPH_QUEST, "greeting wasn't followed by a question"
+    assert "?" in decode(read_text(game))
+    assert_text_sane(game)
     press(game, "a")
     assert wait_for(game, lambda: game.r8("wTalkState") == TS_MENU, 60)
     press(game, "b")
+
+
+# --- context awareness: the NPC reads live game state ---------------------------
+
+def test_observation_notices_low_hp(game):
+    """With HP low, the round-1 observation page must come from the HURT bank
+    (meters outrank everything in PickContext) and mark its context used."""
+    goto_npc0(game)
+    game.pyboy.memory[game.addr("wHP")] = 10
+    start_talk(game)
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    press(game, "a")
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    assert game.r8("wTalkPhase") == TPH_OBS, "no observation page on turn 1"
+    text = flow_text(game)
+    assert any(w in text for w in HURT_WORDS), \
+        f"low-HP observation isn't from the HURT bank: '{text}'"
+    assert game.r8("wCtxUsed") & 1, "CTX_HURT not marked used"
+    press(game, "b")
+    game.pyboy.memory[game.addr("wHP")] = 100
+
+
+def test_observation_names_equipped_weapon(game):
+    """With full meters and a bat equipped, the NPC's remark must splice the
+    actual item name out of the inventory (CTRL_ITEM)."""
+    ITEM_BAT = 1
+    goto_npc0(game)
+    game.pyboy.memory[game.addr("wPartyEquip")] = ITEM_BAT
+    start_talk(game)
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    press(game, "a")
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    assert game.r8("wTalkPhase") == TPH_OBS, "no observation page on turn 1"
+    text = flow_text(game)
+    assert "BAT" in text, f"weapon remark doesn't name the BAT: '{text}'"
+    assert_text_sane(game)
+    press(game, "b")
+    game.pyboy.memory[game.addr("wPartyEquip")] = 0
 
 
 def test_three_nice_rounds_reach_reward(game):
