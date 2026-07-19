@@ -88,6 +88,21 @@ InitInventory::
     ld [hl+], a
     dec b
     jr nz, .clrEquip
+    ; every member starts LEVEL 1 with 0 XP (A is still 0 here)
+    ld hl, wPartyXP
+    ld b, MAX_PARTY * 2
+.clrXP:
+    ld [hl+], a
+    dec b
+    jr nz, .clrXP
+    ld hl, wPartyLevel
+    ld b, MAX_PARTY
+    ld a, START_LEVEL
+.setLvl:
+    ld [hl+], a
+    dec b
+    jr nz, .setLvl
+    xor a, a
     ; clear the bag
     ld hl, wBag
     ld b, BAG_MAX * 2
@@ -239,3 +254,159 @@ CompactBag:
     dec b
     jr nz, .padLoop
     ret
+
+; =============================================================================
+; Party levels / experience (the player is member 0). Levels run 1..MAX_LEVEL;
+; each costs exponentially more XP than the last (LevelXP is the cumulative
+; threshold table, indexed by the level you're climbing FROM). Battles grant XP
+; (LATER) via AddPlayerXP; RecalcLevel re-derives the level from the XP total.
+; =============================================================================
+; AddPlayerXP: add BC (16-bit) experience to member 0, saturating at $FFFF, then
+; re-derive the level. Call this from combat once battles land. Clobbers all.
+AddPlayerXP::
+    ld a, [wPartyXP]
+    add a, c
+    ld c, a
+    ld a, [wPartyXP+1]
+    adc b
+    ld b, a
+    jr c, .cap                 ; > $FFFF -> pin the total
+    ld a, c
+    ld [wPartyXP], a
+    ld a, b
+    ld [wPartyXP+1], a
+    jr RecalcLevel
+.cap:
+    ld a, $FF
+    ld [wPartyXP], a
+    ld [wPartyXP+1], a
+    ; fall through to RecalcLevel
+
+; RecalcLevel: raise member 0's level while its XP meets the next threshold.
+; Idempotent (safe to call from a display build). Clobbers A, BC, DE, HL.
+RecalcLevel::
+    ld a, [wPartyXP]
+    ld e, a
+    ld a, [wPartyXP+1]
+    ld d, a                    ; DE = current XP
+    ld a, [wPartyLevel]
+    ld c, a                    ; C = level
+.loop:
+    ld a, c
+    cp MAX_LEVEL
+    jr nc, .done               ; already capped
+    dec a                      ; entry index = (level-1); index 0 = reach level 2
+    add a, a                   ; * 2 (dw table)
+    ld l, a
+    ld h, 0
+    push de
+    ld de, LevelXP
+    add hl, de
+    pop de
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a                    ; HL = XP needed to reach level+1
+    ld a, e
+    sub l
+    ld a, d
+    sbc h
+    jr c, .done                ; XP < threshold: stay
+    inc c                      ; level up and check the next threshold
+    jr .loop
+.done:
+    ld a, c
+    ld [wPartyLevel], a
+    ret
+
+; XPToNext: -> HL = XP still needed for member 0's next level (0 at MAX_LEVEL),
+; and carry SET if already at MAX_LEVEL (no next). Clobbers A, BC, DE, HL.
+XPToNext::
+    ld a, [wPartyLevel]
+    cp MAX_LEVEL
+    jr nc, .maxed
+    dec a
+    add a, a
+    ld l, a
+    ld h, 0
+    ld de, LevelXP
+    add hl, de
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a                    ; HL = threshold to reach level+1
+    ld a, [wPartyXP]
+    ld c, a
+    ld a, [wPartyXP+1]
+    ld b, a                    ; BC = XP
+    ld a, l
+    sub c
+    ld l, a
+    ld a, h
+    sbc b
+    ld h, a                    ; HL = threshold - XP
+    and a, a                   ; clear carry
+    ret
+.maxed:
+    ld hl, 0
+    scf
+    ret
+
+; GetStat: A = STAT_* -> A = member 0's value for it, saturating at 255.
+; A stat is StatBase[id] + (level-1)*StatGrow[id]. Clobbers BC, DE, HL.
+GetStat::
+    ld e, a
+    ld d, 0
+    ld hl, StatBase
+    add hl, de
+    ld c, [hl]                 ; C = base value
+    ld hl, StatGrow
+    add hl, de
+    ld b, [hl]                 ; B = per-level growth
+    ld a, [wPartyLevel]
+    dec a                      ; levels above 1
+    jr z, .done                ; level 1: value is just the base
+    ld e, a                    ; E = growth iterations
+.loop:
+    ld a, c
+    add a, b
+    jr c, .sat                 ; overflowed a byte -> saturate
+    ld c, a
+    dec e
+    jr nz, .loop
+.done:
+    ld a, c
+    ret
+.sat:
+    ld a, 255
+    ret
+
+; The progression tables live in ROMX bank 1 (the always-mapped default bank,
+; same one the dialogue data uses) to keep the fixed ROM0 bank from overflowing.
+; RecalcLevel/GetStat only read them from the overworld/menu, where bank 1 is
+; mapped, so a plain read reaches them with no bank switch.
+SECTION "Party Data", ROMX, BANK[1]
+
+; StatBase / StatGrow: member 0's level-1 stat points and per-level growth,
+; indexed by STAT_* (Strength, Dexterity, Endurance, Immunity, Accuracy, Speed).
+StatBase:
+    db 6, 4, 8, 5, 5, 6
+StatGrow:
+    db 1, 1, 2, 1, 1, 1
+
+; LevelXP: cumulative experience needed to REACH each level, indexed by
+; (level-1) — entry 0 = XP for level 2, entry 97 = XP for level 99. Exponential
+; (~1.06x per step, from a base of 5), capped so the whole climb fits 16 bits.
+; Generated; keep monotonic if regenerated.
+LevelXP:
+    dw 5, 10, 16, 22, 28, 35, 42, 50
+    dw 58, 66, 75, 84, 94, 105, 116, 128
+    dw 141, 154, 168, 183, 199, 216, 234, 253
+    dw 273, 294, 317, 341, 367, 394, 423, 453
+    dw 485, 519, 555, 593, 634, 677, 723, 772
+    dw 823, 878, 936, 997, 1062, 1131, 1204, 1281
+    dw 1363, 1450, 1542, 1640, 1743, 1853, 1969, 2092
+    dw 2223, 2361, 2508, 2664, 2829, 3004, 3189, 3385
+    dw 3593, 3814, 4048, 4296, 4559, 4838, 5133, 5446
+    dw 5778, 6130, 6503, 6898, 7317, 7761, 8232, 8731
+    dw 9260, 9821, 10415, 11045, 11713, 12421, 13171, 13966
+    dw 14809, 15703, 16650, 17654, 18718, 19846, 21042, 22310
+    dw 23654, 25078

@@ -279,10 +279,37 @@ scroll updates — so there's no seam or one-frame latency.
   only member 0 (the player) exists so far, its stats are the global meters.
   Equipping references a bag item (doesn't consume it). The equip picker filters
   the bag by the slot's `EquipSlotType`.
-- **STATUS** shows the player OBJ as an avatar plus HP/food/energy, the clock,
-  and position **relative to the spawn tile** (`wSpawnWX/WY`, recorded in
+- **STATUS** is **two pages** (LEFT/RIGHT flip `wStatusPage`; A/B exits, entry
+  resets to page 0). Page 0 (vitals) shows the player OBJ avatar, LEVEL, EXP and
+  NEXT (XP to the next level, or "MAX" at 99), HP/food/energy, the clock, and
+  position **relative to the spawn tile** (`wSpawnWX/WY`, recorded in
   `InitPlayer`; magnitude capped at 255 — signed via a leading space/'-' since
-  the font has no '+').
+  the font has no '+'). Page 1 lists the six **stat points** (`GetStat`); the
+  avatar is hidden there so it can't overlap the value column.
+
+### Party levels / experience / stats (items.asm)
+- **The party has levels + XP + six stat points** (docs task). Each member (only
+  member 0, the player, exists so far) starts at `START_LEVEL` (1) with 0 XP and
+  climbs to `MAX_LEVEL` (99). Level/XP live in ram.asm's Party section
+  (`wPartyLevel` 1 byte + `wPartyXP` 16-bit each, `MAX_PARTY` wide); PARTY shows
+  "LV n" per member, STATUS page 0 the full readout.
+- **XP is cumulative and each level costs exponentially more** (`LevelXP`, a
+  98-entry `dw` table of the cumulative XP needed to REACH levels 2..99, ~1.06x
+  per step from a base of 5, capped to fit 16 bits — max 25078). `RecalcLevel`
+  raises member 0's level while its XP meets the next threshold (idempotent; the
+  PARTY/STATUS builds call it so a poked/earned XP reflects immediately);
+  `AddPlayerXP` (BC, saturating) is the hook combat will call once battles land
+  ("this will increase experience points"); `XPToNext` drives the NEXT readout.
+- **The six stats derive from the level** (`GetStat` = `StatBase[id] +
+  (level-1)*StatGrow[id]`, saturating): STAT_STR (melee power/defence), STAT_DEX
+  (ranged power), STAT_END (HP), STAT_IMM (zombie defence), STAT_ACC (hit/crit),
+  STAT_SPD (evasion/turn order). Wiring them into combat and mapping Endurance to
+  a real max-HP is **LATER** (they're display-only until battles exist).
+- **`LevelXP`/`StatBase`/`StatGrow` live in a ROMX BANK[1] section** ("Party
+  Data"), the always-mapped default bank the dialogue data uses, because the
+  fixed ROM0 bank is nearly full. RecalcLevel/GetStat read them only from the
+  overworld/menu (bank 1 mapped), so no bank switch is needed. SAVE persists
+  level+XP (save version bumped to 2; the checksum spans them automatically).
 - **SAVE** writes a battery-backed block to cart RAM (see the ROM banking
   invariant below) with a magic + 8-bit checksum; **there is no load-on-boot yet**
   (the title still captures a fresh seed) — that's LATER. OPTIONS is a music

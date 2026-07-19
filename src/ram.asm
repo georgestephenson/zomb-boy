@@ -193,6 +193,8 @@ wSaveDone::         ds 1               ; nonzero once a save has completed (SAVE
 wMenuId::           ds 1               ; scratch: item id being drawn in a list row
 wMenuCount::        ds 1               ; scratch: its stack count
 wAllowType::        ds 1               ; scratch: equip picker's accepted ITYPE_*
+wStatusPage::       ds 1               ; STATUS panel: 0 = vitals, 1 = stat points
+                                       ; (LEFT/RIGHT flip; reset on entry)
 ; A generic scrolling list (BAG, equip picker): count, cursor, and the index of
 ; the first visible row. See MenuListMove / DrawList in menu.asm.
 wListN::            ds 1
@@ -203,10 +205,14 @@ wListTop::          ds 1
 wPickMember::       ds 1
 wPickSlot::         ds 1
 wPickMap::          ds BAG_MAX + 1
-; Party: one record per member is just its EQUIP_SLOTS item ids (member stats for
-; slot 0 are the global player meters; extra members are LATER). Slot 0 = player.
+; Party: one record per member is its EQUIP_SLOTS item ids plus a level + 16-bit
+; XP total (member survival stats for slot 0 are still the global player meters;
+; extra members are LATER). Slot 0 = player. Level/XP grow through battles
+; (AddPlayerXP); stat points are derived from the level (items.asm StatBase/Grow).
 wPartyCount::       ds 1
 wPartyEquip::       ds MAX_PARTY * EQUIP_SLOTS
+wPartyLevel::       ds MAX_PARTY               ; 1..MAX_LEVEL per member
+wPartyXP::          ds MAX_PARTY * 2           ; 16-bit LE cumulative XP per member
 ; Inventory: BAG_MAX stacks of {item id, count}; 0 = empty. Compacted on removal.
 wBag::              ds BAG_MAX * 2
 
@@ -228,6 +234,8 @@ sClockH::           ds 1
 sClockM::           ds 1
 sPartyCount::       ds 1
 sPartyEquip::       ds MAX_PARTY * EQUIP_SLOTS
+sPartyLevel::       ds MAX_PARTY               ; save version 2: levels + XP
+sPartyXP::          ds MAX_PARTY * 2
 sBag::              ds BAG_MAX * 2
 sOptMusic::         ds 1
 sChecksum::         ds 1               ; 8-bit sum of every byte above

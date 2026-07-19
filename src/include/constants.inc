@@ -506,6 +506,23 @@ DEF ESLOT_WEAPON2  EQU 1
 DEF ESLOT_ARMOR    EQU 2
 DEF ESLOT_ACCESSORY EQU 3
 
+; --- Party levels / experience (items.asm) ----------------------------------
+; Every member starts at LEVEL 1 with 0 XP and climbs to MAX_LEVEL. Each level
+; costs exponentially more XP than the last (LevelXP cumulative table, indexed
+; by level). Battles (LATER) grant XP via AddPlayerXP; RecalcLevel re-derives the
+; level from the running XP total. Six stat points scale with the level (a base
+; per stat + a per-level growth); they'll drive combat once it lands.
+DEF START_LEVEL    EQU 1
+DEF MAX_LEVEL      EQU 99
+DEF STAT_COUNT     EQU 6
+; Stat ids (index StatBase / StatGrow and the STATUS stats page).
+DEF STAT_STR       EQU 0           ; Strength  — melee power / melee defence
+DEF STAT_DEX       EQU 1           ; Dexterity — ranged weapon power
+DEF STAT_END       EQU 2           ; Endurance — number of HP
+DEF STAT_IMM       EQU 3           ; Immunity  — defence against zombies
+DEF STAT_ACC       EQU 4           ; Accuracy  — hit / critical rate
+DEF STAT_SPD       EQU 5           ; Speed     — evasion / turn order
+
 ; --- Items / inventory ------------------------------------------------------
 ; Item type (category). Equip slots accept specific categories; the bag holds
 ; everything. Ids index the parallel ItemType/ItemName tables (items.asm).
