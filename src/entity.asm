@@ -170,6 +170,9 @@ UpdateZombieAI:
     and a, a
     jr nz, .doStep
     ; --- pick a new plan ---
+    ; Bits 0-1 decide move/pause, so they're biased by the branch (nonzero on
+    ; the move path, zero on the pause path); everything after must draw from
+    ; bits 2-3 or direction 0 (EFACE_DOWN) can never come up.
     call Rand
     ld d, a                     ; keep a copy of the random byte
     and %00000011
@@ -177,12 +180,16 @@ UpdateZombieAI:
     ld a, EDIR_IDLE
     ld [wEnt + EO_DIR], a
     ld a, d
+    rrca
+    rrca
     and %00000011
     add a, 2                    ; pause 2..5 ticks
     ld [wEnt + EO_STEPS], a
     ret
 .movePlan:
     ld a, d
+    rrca
+    rrca
     and %00000011               ; direction 0..3
     ld [wEnt + EO_DIR], a
     ld [wEnt + EO_FACING], a
