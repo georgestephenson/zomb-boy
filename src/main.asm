@@ -21,7 +21,7 @@ SECTION "EntryPoint", ROM0[$0100]
     ds $0150 - @
 
 SECTION "Main", ROM0[$0150]
-Start:
+Start::                             ; exported: the menu's EXIT soft-resets here
     ld sp, $FFFE                    ; explicit stack top (don't trust the boot ROM)
 
     ; --- map ROMX bank 1 (song + dialogue data) ---------------------------------
@@ -148,6 +148,7 @@ Start:
     call InitNPCs
     call InitCar                    ; one drivable car near the start
     call InitHUD                    ; meters/clock + the window row (LCD is off)
+    call InitInventory              ; party (just the player) + starting bag + options
 
     call InitSound                  ; power on the APU + start the demo song
 
@@ -171,14 +172,24 @@ Start:
 ; the new edge appears the same frame the camera scrolls — no seam, no latency.
 ; -----------------------------------------------------------------------------
 MainLoop:
-    call UpdateSound                ; advance music one tick (once/frame, pre-VBlank)
+    ld a, [wOptMusic]               ; music can be turned off in the pause menu's
+    and a, a                        ; OPTIONS screen (gates the per-frame tick)
+    call nz, UpdateSound            ; advance music one tick (once/frame, pre-VBlank)
     call ReadInput
     ld a, [wGameMode]
     cp MODE_TALK
-    jr z, .talk
+    jp z, .talk
+    cp MODE_MENU
+    jp z, .menu
     and a, a                        ; MODE_OVERWORLD == 0
     jr nz, .alert
     ; --- overworld ---
+    ld a, [wNewKeys]
+    and PAD_START
+    jr z, .noMenu
+    call EnterMenu                  ; START -> pause menu (its own frame)
+    jp MainLoop
+.noMenu:
     call UpdateSurvival             ; clock + meter drains (time flows only here)
     call UpdatePlayer
     call UpdateView
@@ -216,6 +227,15 @@ MainLoop:
     call hOAMDMA
     call DrainTalkQ                 ; typewriter/menu writes, bounded
     jr MainLoop
+
+; --- menu mode: pause menu logic, then OAM push (screen is built LCD-off by the
+;     menu itself on each navigation). The game is paused: no clock, no world. ---
+.menu:
+    call UpdateMenu                 ; input + panel navigation (may exit the mode)
+    call WaitVBlank
+    ld a, HIGH(wShadowOAM)
+    call hOAMDMA
+    jp MainLoop
 
 ; -----------------------------------------------------------------------------
 ; DrawTitle: write the title strings straight to SCRN0 (call with the LCD off).

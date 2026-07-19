@@ -14,6 +14,8 @@ SECTION "Game State", WRAM0
 ; Player + camera use 16-bit signed world *tile* coordinates (endless world).
 wPlayerWX::         ds 2               ; player world tile X (little-endian)
 wPlayerWY::         ds 2               ; player world tile Y
+wSpawnWX::          ds 2               ; the tile the player started on (InitPlayer);
+wSpawnWY::          ds 2               ; the status screen shows position relative to it
 wViewTX::           ds 2               ; world tile at screen's top-left column
 wViewTY::           ds 2               ; ... and row (= player - centre offset)
 
@@ -154,6 +156,56 @@ wTalkGuard::        ds 1
 ; VRAM write queue: logic fills (bounded), the talk VBlank path drains fully.
 wTalkQN::           ds 1               ; entries used this frame
 wTalkQ::            ds TALKQ_CAP * 3   ; {addrHi, addrLo, value}
+
+; Start menu (menu.asm): the pause menu, party, inventory and equipment.
+SECTION "Menu State", WRAM0
+wMenuScreen::       ds 1               ; MSCR_* — which panel is showing
+wRootCursor::       ds 1               ; selected option on the root list (kept
+                                       ; across submenu visits so B returns here)
+wMenuCursor::       ds 1               ; sub-cursor for the equip slots / options
+wOptMusic::         ds 1               ; options: 1 = music on (drives NR50 mute)
+wSaveDone::         ds 1               ; nonzero once a save has completed (SAVE screen)
+wMenuId::           ds 1               ; scratch: item id being drawn in a list row
+wMenuCount::        ds 1               ; scratch: its stack count
+wAllowType::        ds 1               ; scratch: equip picker's accepted ITYPE_*
+; A generic scrolling list (BAG, equip picker): count, cursor, and the index of
+; the first visible row. See MenuListMove / DrawList in menu.asm.
+wListN::            ds 1
+wListCur::          ds 1
+wListTop::          ds 1
+; Equip picker: which member/slot is being filled, and a map from picker row to
+; the item id it offers (row 0 = ITEM_NONE = unequip).
+wPickMember::       ds 1
+wPickSlot::         ds 1
+wPickMap::          ds BAG_MAX + 1
+; Party: one record per member is just its EQUIP_SLOTS item ids (member stats for
+; slot 0 are the global player meters; extra members are LATER). Slot 0 = player.
+wPartyCount::       ds 1
+wPartyEquip::       ds MAX_PARTY * EQUIP_SLOTS
+; Inventory: BAG_MAX stacks of {item id, count}; 0 = empty. Compacted on removal.
+wBag::              ds BAG_MAX * 2
+
+; Battery-backed save (menu.asm SAVE option). MBC5+RAM+battery (-m 0x1B); the
+; RAM enable/bank writes bracket every access. sMagic+sChecksum validate a block.
+SECTION "SaveData", SRAM
+sMagic::            ds 2               ; "ZB" — a written, valid save
+sVersion::          ds 1
+sSeed::             ds 1               ; hWorldSeed (which world this is)
+sPlayerWX::         ds 2
+sPlayerWY::         ds 2
+sSpawnWX::          ds 2
+sSpawnWY::          ds 2
+sHP::               ds 1
+sFood::             ds 1
+sEnergy::           ds 1
+sFuel::             ds 1
+sClockH::           ds 1
+sClockM::           ds 1
+sPartyCount::       ds 1
+sPartyEquip::       ds MAX_PARTY * EQUIP_SLOTS
+sBag::              ds BAG_MAX * 2
+sOptMusic::         ds 1
+sChecksum::         ds 1               ; 8-bit sum of every byte above
 
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ

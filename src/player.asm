@@ -45,11 +45,21 @@ InitPlayer::
     ld [wGenY+1], a
     call GenTileType
     call IsSolid
-    ret z
+    jr z, .found
     ld hl, wPlayerWX
     call Inc16Ptr
     dec b
     jr nz, .scan
+.found:
+    ; record the spawn tile so the status screen can show position relative to it
+    ld a, [wPlayerWX]
+    ld [wSpawnWX], a
+    ld a, [wPlayerWX+1]
+    ld [wSpawnWX+1], a
+    ld a, [wPlayerWY]
+    ld [wSpawnWY], a
+    ld a, [wPlayerWY+1]
+    ld [wSpawnWY+1], a
     ret
 
 ; View follows the player, centred (no clamp — the world is endless).
