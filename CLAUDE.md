@@ -53,6 +53,8 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | Module | Responsibility |
 |--------|----------------|
 | `main.asm` | Entry ($0100), boot init, title screen (seed capture), main loop (`wGameMode` dispatch) |
+| `title.asm` | CGB full-screen title background loader (`ShowTitle`; both VRAM banks) |
+| `title_data.asm` | Title image: palettes + tiles + tile/attr maps (ROMX BANK[3]) |
 | `world.asm` | Tile generator, map init, BG streaming (the engine) |
 | `player.asm` | Movement, collision, camera, sprite |
 | `entity.asm` | Zombie AI + LOS; the shared 16-byte entity struct + pool helpers |
@@ -179,6 +181,30 @@ scroll updates — so there's no seam or one-frame latency.
   converts constraint-satisfying images **losslessly** (`exact_portrait`);
   its lossy k-means path is only a fallback for unconstrained art. Rerun both
   tools (in that order) after any art change.
+
+### Title screen (title.asm / title_data.asm, docs/design LATER)
+- **CGB** shows a full-screen 160×144 image; **DMG** keeps the classic text
+  title (`DrawTitle` — "ZOMB BOY / PRESS START" on the grass backdrop), gated on
+  `hIsCGB` in `main.asm` boot. A 20×18 detailed scene barely dedups (~359 unique
+  tiles), so it can't fit DMG (256 tiles, one bank, no BG attributes) — that's
+  inherent, not a bug.
+- **Pipeline:** `img/source/title.png` (1024×1024 AI pixel-art with the text
+  baked in) → `tools/gen-title.py` → `src/title_data.asm` (committed) +
+  `img/title.png` (what the hardware shows) to eyeball. The tool resizes/crops to 160×144,
+  denoises the AI dithering to flat colours, fits **8 BG palettes × 4 colours,
+  one palette per 8×8 tile** (the same alternating-refinement solver as
+  prep-portraits, `NUM_PALS=8`), then dedups tiles under H/V flip. Each palette
+  is sorted lightest..darkest so a flat region hits the same 2bpp index in every
+  palette (dedups across palettes; keeps DMG grayscale coherent).
+- **The scene spans BOTH VRAM banks:** tile ids 0..255 → bank 0, 256.. → bank 1
+  (re-based to 0); the CGB BG attribute byte carries the bank bit (3) plus
+  palette (0-2) and X/Y flip (5/6). `gen-title.py` asserts ≤512 tiles and emits
+  `TITLE_BANK0/1_BYTES` so the loader needs no assembly-time arithmetic.
+- `ShowTitle` (LCD off, at boot) maps BANK[3], loads all 8 BG palettes + both
+  tile banks + the tile/attr maps, then restores bank 1. The title owns all of
+  VRAM; after START `main.asm` re-runs `LoadTiles`/`LoadFont`/`LoadPalettes` and
+  `InitMap` rewrites the whole map, so there's no title cleanup. Rerun
+  `gen-title.py` and `make` after any art change.
 
 ### The endless-world trick (world.asm)
 - World coords are **16-bit signed tile** coordinates (`wPlayerWX/WY`).

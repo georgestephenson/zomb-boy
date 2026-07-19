@@ -78,18 +78,27 @@ Start:
     ldh [rVBK], a                   ; VRAM bank 0 for rendering
 
     ; --- content setup ---
+    call CopyDMARoutine
+
+    ; --- title screen ------------------------------------------------------
+    ; CGB shows the full-screen image (title.asm — both VRAM banks + per-tile
+    ; palettes); DMG can't (256 tiles, one bank, no BG attributes), so it keeps
+    ; the classic text title on the grass backdrop. Either way, the frame the
+    ; player presses START on is the only entropy source for the world seed
+    ; (DIV at boot is deterministic on hardware and emulators alike, so seeding
+    ; there gives the same world every power-on). SELECT+START forces the
+    ; classic WORLD_SEED so the tests and reference model get a reproducible one.
+    ldh a, [hIsCGB]
+    and a, a
+    jr z, .dmgtitle
+    call ShowTitle                  ; CGB: full-screen background
+    jr .titleon
+.dmgtitle:
     call LoadTiles
     call LoadFont                   ; expand the 1bpp font to $8800 (FONT_BASE)
-    call CopyDMARoutine
     call LoadPalettes
-
-    ; --- title screen: PRESS START -----------------------------------------
-    ; The frame the player presses START on is the entropy source for the
-    ; world seed — there is no earlier one (DIV at boot is deterministic on
-    ; hardware and emulators alike, so seeding there gives the same world
-    ; every power-on). SELECT+START forces the classic WORLD_SEED so the
-    ; integration tests and the reference model get a reproducible world.
     call DrawTitle
+.titleon:
     xor a, a
     ldh [rSCY], a                   ; power-on scroll registers are undefined
     ldh [rSCX], a
@@ -122,6 +131,9 @@ Start:
     xor a, a
     ldh [rLCDC], a                  ; (InitMap below overwrites the title text)
 
+    call LoadTiles                  ; restore game tiles (the title owned all of
+    call LoadFont                   ; VRAM on CGB); InitMap redraws the tile map
+    call LoadPalettes               ; game palettes (title used all 8 BG slots)
     call InitPlayer                 ; choose a passable start tile
     call UpdateView                 ; derive the camera from the player
     call InitMap                    ; generate the initial 32x32 map + attrs
