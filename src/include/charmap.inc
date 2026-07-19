@@ -1,8 +1,8 @@
 ; =============================================================================
 ; charmap.inc — maps ASCII string literals to font tile ids (FONT_BASE order:
 ; space, A-Z, 0-9, . , ! ? ' -). Include AFTER constants.inc, and only in files
-; that author dialogue text (string literals assemble straight to tile ids, so
-; the composer/renderer never translates at runtime).
+; that author font text — dialogue plus the title strings (string literals
+; assemble straight to tile ids, so nothing translates at runtime).
 ; Control codes (CTRL_NOUN etc.) are emitted as explicit `db` bytes between
 ; string pieces — they deliberately have no charmap entry.
 ; =============================================================================

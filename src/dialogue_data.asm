@@ -24,7 +24,10 @@
 INCLUDE "include/constants.inc"
 INCLUDE "include/charmap.inc"
 
-SECTION "Dialogue Data", ROMX
+; BANK[1]: the default-mapped ROMX bank (with the song data, which the linker
+; must also place here — bank 2's portraits leave it no room anyway). Code only
+; ever banks away from 1 transiently (ShowPortrait), restoring it on return.
+SECTION "Dialogue Data", ROMX, BANK[1]
 
 ; -----------------------------------------------------------------------------
 ; Personas. Trait axes (signed, + = second pole):

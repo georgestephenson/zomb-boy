@@ -110,8 +110,6 @@ wTalkSubject::      ds 1               ; noun-bank index the conversation orbits
 wTalkTone::         ds 1               ; TONE_* just picked (drives react tags)
 wTalkMet::          ds 1               ; EO_MET as it was BEFORE this talk
 wTalkCursor::       ds 1               ; menu cursor 0..3 (bit0 = col, bit1 = row)
-wHasPortrait::      ds 1               ; nonzero if this persona has a 56x56 BG
-                                       ; portrait (vs. the small OBJ sprite)
 wMenuTones::        ds 4               ; the TONE_* offered in each menu slot
 wMenuTries::        ds 1               ; BuildMenu redraw counter
 ; Typewriter reveal: walks wTalkText into VRAM via the write queue.

@@ -23,6 +23,7 @@
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
+INCLUDE "include/charmap.inc"       ; the card's "MOOD"/"BOND"/descriptor labels
 
 SECTION "Talk", ROM0
 
@@ -89,7 +90,10 @@ EnterTalk::
     xor a, a
     ldh [rLCDC], a             ; LCD off (safe: we're inside VBlank)
     call BuildTalkScreen
-    ; sprites: hide everything, then the survivor "portrait"
+    call ShowPortrait          ; the persona's 56x56 BG portrait
+    call EnqStatus             ; mood word/face + affinity meter into the queue...
+    call DrainTalkQ            ; ...and paint them now (LCD still off)
+    ; sprites: hide everything (the survivor is the BG portrait, not an OBJ)
     ld hl, wShadowOAM
     ld b, 160                  ; 40 sprites x 4 bytes, < 256
     xor a, a
@@ -220,7 +224,7 @@ UpdateTalk::
     ld [wEnt + EO_AFFIN], a
     call MoodFromAffin
     ld [wTalkMood], a
-    call UpdateFace            ; the name-plate face tracks the mood
+    call EnqStatus            ; the status card tracks the new mood/affinity
     ld a, [wTalkNPC]           ; persist immediately (survives early B-exit)
     ld de, wNPCs
     call CopyPoolOut
@@ -331,28 +335,54 @@ BuildTalkScreen:
     add hl, de
     dec c
     jr nz, .sides
-    ; name plate + mood face
+    ; name banner (row 0, top-left)
     ld c, PO_NAME
     call GetPersonaField       ; HL = name string
     ld de, _SCRN1 + NAME_ROW * 32 + NAME_COL
-.name:
+    call .puts
+    ; status card box (cols CARD_COL_L..CARD_COL_R, rows CARD_ROW_TOP..CARD_ROW_BOT)
+    ld a, TILE_UIBOX
+    ld hl, _SCRN1 + CARD_ROW_TOP * 32 + CARD_COL_L
+    ld b, CARD_COL_R - CARD_COL_L + 1
+.cardtop:
+    ld [hl+], a
+    dec b
+    jr nz, .cardtop
+    ld hl, _SCRN1 + CARD_ROW_BOT * 32 + CARD_COL_L
+    ld b, CARD_COL_R - CARD_COL_L + 1
+.cardbot:
+    ld [hl+], a
+    dec b
+    jr nz, .cardbot
+    ld hl, _SCRN1 + (CARD_ROW_TOP + 1) * 32 + CARD_COL_L
+    ld c, CARD_ROW_BOT - CARD_ROW_TOP - 1
+.cardside:
+    ld [hl], a                 ; left border
+    ld de, CARD_COL_R - CARD_COL_L
+    add hl, de
+    ld [hl], a                 ; right border
+    ld de, 32 - (CARD_COL_R - CARD_COL_L)
+    add hl, de
+    dec c
+    jr nz, .cardside
+    ; static labels ("MOOD" / "BOND"); the face, mood word and meter are dynamic
+    ; (EnqStatus, driven from the running affinity)
+    ld hl, LblMood
+    ld de, _SCRN1 + STAT_MOOD_ROW * 32 + STAT_INNER_COL
+    call .puts
+    ld hl, LblBond
+    ld de, _SCRN1 + STAT_BOND_ROW * 32 + STAT_INNER_COL
+    call .puts
+    jr .attrs
+; .puts: copy a 0-terminated (charmap'd) string HL -> DE. Clobbers A, HL, DE.
+.puts:
     ld a, [hl+]
     and a, a
-    jr z, .face
+    ret z
     ld [de], a
     inc de
-    jr .name
-.face:
-    inc de                     ; one-cell gap
-    ld a, [wTalkMood]
-    ld hl, FaceTable
-    add a, l
-    ld l, a
-    ld a, h
-    adc a, 0
-    ld h, a
-    ld a, [hl]
-    ld [de], a
+    jr .puts
+.attrs:
     ; attributes: the whole screen uses the UI palette. CGB only — on DMG the
     ; rVBK write is a no-op and this pass would overwrite the tile map itself.
     ldh a, [hIsCGB]
@@ -377,23 +407,171 @@ BuildTalkScreen:
 FaceTable:                     ; index by MOOD_*
     db TILE_FACE_MAD, TILE_FACE_NEUT, TILE_FACE_HAPPY
 
-; DrawTalkSprites: shadow OAM slot 0 = the survivor, slot 1 = menu cursor.
-; (All other slots were zeroed on entry and stay hidden.)
-DrawTalkSprites:
+; -----------------------------------------------------------------------------
+; ShowPortrait: load wTalkPersona's 56x56 portrait (PortraitTable, generated in
+; portrait_data.asm — every persona has one): palettes + tiles + the 7x7 BG
+; block. The portrait bank is mapped only inside this routine; bank 1 (song +
+; dialogue data) is restored before returning.
+; Runs with the LCD off (called from EnterTalk after BuildTalkScreen), so it can
+; touch VRAM/palettes freely. See portrait_data.asm for the descriptor layout.
+; -----------------------------------------------------------------------------
+ShowPortrait:
+    ld a, BANK(PortraitTable)
+    ld [rROMB0], a
     ld a, [wTalkPersona]
-    call PersonaPtr            ; palette comes from the record (PO_PAL)
-    ld de, PO_PAL
+    add a, a                   ; * 2 (dw table)
+    ld e, a
+    ld d, 0
+    ld hl, PortraitTable
     add hl, de
-    ld b, [hl]
-    ld hl, wShadowOAM
-    ld a, TALK_NPC_Y
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a                    ; HL = descriptor
+    ; --- palettes: 24 bytes -> BG slots 5/6/7 (CGB only) ---
+    ldh a, [hIsCGB]
+    and a, a
+    jr z, .tileids
+    push hl
+    ld a, BCPSF_AUTOINC | (PAL_BG_PORTRAIT * 8)
+    ldh [rBCPS], a
+    ld b, PORTRAIT_ATTR_OFF    ; 24 palette bytes
+.pal:
+    ld a, [hl+]
+    ldh [rBCPD], a
+    dec b
+    jr nz, .pal
+    pop hl
+.tileids:
+    ; --- 7x7 sequential tile ids into SCRN1 (bank 0) ---
+    xor a, a
+    ldh [rVBK], a
+    push hl                    ; keep descriptor
+    ld hl, _SCRN1 + PORTRAIT_ROW0 * 32 + PORTRAIT_COL0
+    ld a, PORTRAIT_TILE_BASE
+    ld d, PORTRAIT_ROWS
+.trow:
+    ld b, PORTRAIT_COLS
+    push hl
+.tcol:
     ld [hl+], a
-    ld a, TALK_NPC_X
-    ld [hl+], a
-    ld a, TILE_SURV_DOWN       ; faces the camera
-    ld [hl+], a
+    inc a
+    dec b
+    jr nz, .tcol
+    pop hl
+    push de                    ; hl += 32 (next BG row)
+    ld de, 32
+    add hl, de
+    pop de
+    dec d
+    jr nz, .trow
+    pop hl                     ; descriptor
+    push hl
+    call DrawPortraitFrame     ; the photo frame ring (bank 0 tile ids, palette
+    pop hl                     ; PAL_BG_UI already set by BuildTalkScreen)
+    ; --- attributes: per-tile palette index (0..2) + PAL_BG_PORTRAIT (CGB only) ---
+    push hl                    ; keep descriptor
+    ld de, PORTRAIT_ATTR_OFF
+    add hl, de                 ; HL = attr array (desc + 24)
+    ldh a, [hIsCGB]
+    and a, a
+    jr z, .tiles
+    ld a, 1
+    ldh [rVBK], a
+    ld de, _SCRN1 + PORTRAIT_ROW0 * 32 + PORTRAIT_COL0
+    ld c, PORTRAIT_ROWS
+.arow:
+    ld b, PORTRAIT_COLS
+.acol:
+    ld a, [hl+]
+    add a, PAL_BG_PORTRAIT
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .acol
+    ld a, e                    ; de += 32 - COLS (next BG row)
+    add a, 32 - PORTRAIT_COLS
+    ld e, a
+    ld a, d
+    adc a, 0
+    ld d, a
+    dec c
+    jr nz, .arow
+    xor a, a
+    ldh [rVBK], a
+.tiles:
+    pop hl                     ; descriptor
+    ld bc, PORTRAIT_TILE_OFF
+    add hl, bc                 ; HL = tile data (desc + 73)
+    xor a, a
+    ldh [rVBK], a              ; tiles in bank 0
+    ld de, _VRAM + PORTRAIT_TILE_BASE * 16
+    ld bc, PORTRAIT_NTILES * 16
+.cp:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec bc
     ld a, b
+    or a, c
+    jr nz, .cp
+    ld a, 1                    ; back to the song + dialogue bank
+    ld [rROMB0], a
+    ret
+
+; -----------------------------------------------------------------------------
+; DrawPortraitFrame: paint the frame ring around the 7x7 photo (SCRN1, bank 0).
+; The ring sits one cell out on every side; its cells already carry PAL_BG_UI
+; from BuildTalkScreen, so only tile ids are written here. LCD off.
+; -----------------------------------------------------------------------------
+DrawPortraitFrame:
+    ; top border row: TL, T x COLS, TR
+    ld hl, _SCRN1 + (PORTRAIT_ROW0 - 1) * 32 + (PORTRAIT_COL0 - 1)
+    ld a, TILE_FRAME_TL
     ld [hl+], a
+    ld a, TILE_FRAME_T
+    ld b, PORTRAIT_COLS
+.top:
+    ld [hl+], a
+    dec b
+    jr nz, .top
+    ld a, TILE_FRAME_TR
+    ld [hl+], a
+    ; bottom border row: BL, B x COLS, BR
+    ld hl, _SCRN1 + (PORTRAIT_ROW0 + PORTRAIT_ROWS) * 32 + (PORTRAIT_COL0 - 1)
+    ld a, TILE_FRAME_BL
+    ld [hl+], a
+    ld a, TILE_FRAME_B
+    ld b, PORTRAIT_COLS
+.bot:
+    ld [hl+], a
+    dec b
+    jr nz, .bot
+    ld a, TILE_FRAME_BR
+    ld [hl+], a
+    ; the two side columns
+    ld hl, _SCRN1 + PORTRAIT_ROW0 * 32 + (PORTRAIT_COL0 - 1)
+    ld c, PORTRAIT_ROWS
+.side:
+    ld a, TILE_FRAME_L
+    ld [hl], a
+    push hl
+    ld de, PORTRAIT_COLS + 1    ; step across to the right column
+    add hl, de
+    ld a, TILE_FRAME_R
+    ld [hl], a
+    pop hl
+    ld de, 32
+    add hl, de
+    dec c
+    jr nz, .side
+    ret
+
+; DrawTalkSprites: shadow OAM slot 1 = menu cursor. Slot 0 stays hidden: every
+; persona shows its 56x56 BG portrait, never the small OBJ survivor. (All other
+; slots were zeroed on entry and stay hidden.)
+DrawTalkSprites:
+    xor a, a
+    ld [wShadowOAM], a         ; slot 0 Y = 0: off-screen
     ld a, [wTalkState]
     cp TS_MENU
     jr z, .cursor
@@ -426,19 +604,16 @@ DrawTalkSprites:
     ld [wShadowOAM + 7], a
     ret
 
-; UpdateFace: re-enqueue the name-plate mood face (mood may have shifted).
-UpdateFace:
-    ld c, PO_NAME
-    call GetPersonaField       ; HL = name (walk it to find the face cell)
-    ld b, NAME_COL
-.len:
-    ld a, [hl+]
-    and a, a
-    jr z, .got
-    inc b
-    jr .len
-.got:
-    inc b                      ; the gap cell; face sits after it
+; -----------------------------------------------------------------------------
+; EnqStatus: (re)paint the dynamic status card — mood face, the spelled-out
+; relationship word, and the 8-cell affinity meter — from the running affinity
+; (wEnt + EO_AFFIN) and mood (wTalkMood). Queues writes via TalkEnq, so it works
+; both at build (drained immediately, LCD off) and mid-conversation. Under the
+; TALKQ_CAP budget: 1 + 8 + 8 = 17 writes. Only B survives a TalkEnq call, so
+; the loops stash their pointers/counters across it on the stack.
+; -----------------------------------------------------------------------------
+EnqStatus:
+    ; --- mood face (MOOD row) ---
     ld a, [wTalkMood]
     ld hl, FaceTable
     add a, l
@@ -446,13 +621,100 @@ UpdateFace:
     ld a, h
     adc a, 0
     ld h, a
-    ld c, [hl]                 ; c = face tile
-    ld l, b
-    ld h, 0
-    ld de, _SCRN1 + NAME_ROW * 32
-    add hl, de
-    ld a, c
-    jr TalkEnq
+    ld a, [hl]                 ; A = face tile
+    ld hl, _SCRN1 + STAT_MOOD_ROW * 32 + STAT_FACE_COL
+    call TalkEnq
+    ; --- relationship word (DESC row), 8 cells ---
+    ld a, [wEnt + EO_AFFIN]
+    call DescIdx               ; A = descriptor index (0..4)
+    add a, a
+    add a, a
+    add a, a                   ; * 8 (each entry is 8 chars)
+    ld e, a
+    ld d, 0
+    ld hl, DescTable
+    add hl, de                 ; HL = the 8-char word
+    ld de, _SCRN1 + STAT_DESC_ROW * 32 + STAT_INNER_COL
+    ld b, 8
+.desc:
+    ld a, [hl+]                ; A = char, advance src
+    push hl                    ; save src
+    push de                    ; save dest
+    ld h, d
+    ld l, e                    ; HL = dest for TalkEnq
+    call TalkEnq               ; clobbers A,C,D,E,HL; preserves B
+    pop de
+    inc de                     ; next cell
+    pop hl
+    dec b
+    jr nz, .desc
+    ; --- affinity meter (BAR row), 8 cells of 8 px = affinity to the pixel ---
+    ld a, [wEnt + EO_AFFIN]
+    srl a
+    srl a                      ; A = filled columns, 0..63 (affinity / 4)
+    ld de, _SCRN1 + STAT_BAR_ROW * 32 + STAT_INNER_COL
+    ld b, 8                    ; cells left
+.bar:
+    ld c, a                    ; C = columns remaining
+    sub 8
+    jr nc, .full               ; >= 8 columns -> a full cell
+    ld a, c                    ; < 8: this cell is partly filled
+    ld c, 0                    ; nothing left after it
+    jr .emit
+.full:
+    ld c, a                    ; columns remaining after a full cell
+    ld a, 8
+.emit:
+    add a, TILE_BAR_BASE       ; A = the gauge tile for this fill level
+    push bc                    ; save cell counter (B) + remaining (C)
+    push de                    ; save dest
+    ld h, d
+    ld l, e
+    call TalkEnq
+    pop de
+    inc de
+    pop bc
+    ld a, c                    ; A = remaining columns for the next cell
+    dec b
+    jr nz, .bar
+    ret
+
+; DescIdx: A = affinity -> A = relationship descriptor index (0..4). Finer than
+; MoodFromAffin's 3 buckets; display only, so it never feeds the dialogue banks.
+DescIdx:
+    cp AFFIN_HOSTILE           ; < 96
+    jr c, .d0
+    cp DESC_WARY_MIN           ; < 128
+    jr c, .d1
+    cp AFFIN_WARM              ; < 160
+    jr c, .d2
+    cp DESC_WARM_MIN           ; < 200
+    jr c, .d3
+    ld a, 4                    ; DEVOTED
+    ret
+.d0:
+    xor a, a                   ; HOSTILE
+    ret
+.d1:
+    ld a, 1                    ; WARY
+    ret
+.d2:
+    ld a, 2                    ; NEUTRAL
+    ret
+.d3:
+    ld a, 3                    ; WARM
+    ret
+
+; Fixed 8-char (space-padded) descriptor words, indexed by DescIdx. charmap'd.
+DescTable:
+    db "HOSTILE "
+    db "WARY    "
+    db "NEUTRAL "
+    db "WARM    "
+    db "DEVOTED "
+
+LblMood: db "MOOD", 0
+LblBond: db "BOND", 0
 
 ; DrawWaitArrow / ClearWaitArrow: the "press A" notch on the bottom border.
 DrawWaitArrow:

@@ -11,3 +11,6 @@ __pycache__/
 # Editor / OS cruft
 *.swp
 .DS_Store
+
+img/portrait/source/
+img/portrait/backup/

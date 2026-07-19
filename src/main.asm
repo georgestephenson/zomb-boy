@@ -24,6 +24,15 @@ SECTION "Main", ROM0[$0150]
 Start:
     ld sp, $FFFE                    ; explicit stack top (don't trust the boot ROM)
 
+    ; --- map ROMX bank 1 (song + dialogue data) ---------------------------------
+    ; MBC5: don't trust the power-on register values. Bank 1 is the default
+    ; mapped bank everywhere; only ShowPortrait (talk.asm) switches away, to the
+    ; portrait bank, and restores bank 1 before returning.
+    ld a, 1
+    ld [rROMB0], a
+    xor a, a
+    ld [rROMB1], a
+
     ; --- detect console, stash in HRAM (ClearRAM below only wipes WRAM) --------
     ; Probe the VRAM-bank register: on CGB it's writable, so bank 0 reads back
     ; with bit0 = 0; on DMG rVBK is unmapped and reads $FF (bit0 = 1). (The boot

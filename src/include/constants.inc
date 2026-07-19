@@ -153,6 +153,22 @@ DEF TILE_SURV_UP   EQU 28
 DEF TILE_SURV_SIDE EQU 29          ; right profile; X-flip for left
 DEF TILE_CURSOR    EQU 30
 
+; Portrait frame BG tiles (extend the Tiles table after the cursor; gfx.asm).
+; Only used on the talk screen, around the 56x56 photo.
+DEF TILE_FRAME_TL  EQU 31          ; corners
+DEF TILE_FRAME_TR  EQU 32
+DEF TILE_FRAME_BL  EQU 33
+DEF TILE_FRAME_BR  EQU 34
+DEF TILE_FRAME_T   EQU 35          ; edges
+DEF TILE_FRAME_B   EQU 36
+DEF TILE_FRAME_L   EQU 37
+DEF TILE_FRAME_R   EQU 38
+
+; Affinity meter bar cells (also in the Tiles table): a gauge segment with grey
+; top/bottom rails and the left N of 8 columns filled with ink. TILE_BAR_BASE+n
+; = n columns filled (n = 0..8), so an 8-cell bar shows affinity to the pixel.
+DEF TILE_BAR_BASE  EQU 39           ; ids 39..47 (fill 0..8 columns)
+
 ; Personas: index into dialogue_data.asm's PersonaTable
 DEF PERSONA_POLICE   EQU 0
 DEF PERSONA_SCIENTIST EQU 1
@@ -227,8 +243,27 @@ DEF TXT_ROW0       EQU 12          ; text rows at 12/14/16 (stride 2 for air)
 DEF BOX_ROW_TOP    EQU 10          ; solid border rows of the text box
                                    ; (row 11 stays blank: air above the text)
 DEF BOX_ROW_BOT    EQU 17
-DEF NAME_COL       EQU 1           ; name plate position
-DEF NAME_ROW       EQU 1
+DEF NAME_COL       EQU 1           ; name plate position — top-left corner, so
+DEF NAME_ROW       EQU 0            ; a long name can't collide with the framed
+                                   ; portrait on the right (rows 1..9)
+
+; Survivor status card: a boxed panel under the name (left of the portrait) that
+; spells out the relationship — a mood face + word, and an 8-cell affinity meter.
+DEF CARD_COL_L     EQU 0           ; box border columns (inner content = 1..8)
+DEF CARD_COL_R     EQU 9
+DEF CARD_ROW_TOP   EQU 1           ; box border rows (inner content = 2..8)
+DEF CARD_ROW_BOT   EQU 9
+DEF STAT_MOOD_ROW  EQU 2           ; "MOOD" label + face
+DEF STAT_FACE_COL  EQU 6
+DEF STAT_DESC_ROW  EQU 3           ; the mood word (8 cells, cols 1..8)
+DEF STAT_BOND_ROW  EQU 5           ; "BOND" label
+DEF STAT_BAR_ROW   EQU 6           ; the affinity meter (8 cells, cols 1..8)
+DEF STAT_INNER_COL EQU 1
+; Display-only relationship descriptors (finer than the 3 MOOD_* buckets that
+; drive dialogue). Thresholds on affinity; words are padded to 8 chars.
+DEF DESC_WARY_MIN  EQU 128
+DEF DESC_WARM_MIN  EQU 200
+
 DEF TALK_NPC_X     EQU 84          ; OAM position of the NPC on the talk screen
 DEF TALK_NPC_Y     EQU 48
 DEF TALK_ARROW_COL EQU 18          ; "press A" arrow cell (rightmost, last row)
@@ -249,7 +284,9 @@ DEF TPH_PROMPT     EQU 3           ; the NPC's fresh line opening rounds 2+
 DEF REVEAL_SLOW    EQU 2           ; cells revealed per frame (typewriter)
 DEF REVEAL_FAST    EQU 12          ; menu draw / A-skip speed (must stay below
                                    ; TALKQ_CAP with room for an arrow write)
-DEF TALKQ_CAP      EQU 16          ; VRAM write queue entries (3 bytes each)
+DEF TALKQ_CAP      EQU 32          ; VRAM write queue entries (3 bytes each) —
+                                   ; holds a full status-card redraw (face +
+                                   ; 8-cell word + 8-cell meter) in one frame
 
 ; --- Font (BG tiles from id 128 = $8800; expanded from 1bpp at boot) ---------
 DEF FONT_BASE      EQU 128
@@ -304,8 +341,10 @@ DEF PORTRAIT_COLS  EQU 7
 DEF PORTRAIT_ROWS  EQU 7
 DEF PORTRAIT_NTILES EQU PORTRAIT_COLS * PORTRAIT_ROWS   ; 49
 DEF PORTRAIT_TILE_BASE EQU 64      ; first VRAM tile id (64..112, before FONT_BASE)
-DEF PORTRAIT_COL0  EQU 6           ; top-left BG cell (centred above the text box)
-DEF PORTRAIT_ROW0  EQU 2
+DEF PORTRAIT_COL0  EQU 12          ; top-left BG cell: photo cols 12..18, rows
+DEF PORTRAIT_ROW0  EQU 2           ; 2..8 — a framed photo on the upper right.
+                                   ; Its frame ring occupies rows 1..9, cols
+                                   ; 11..19; col 10 is the gap to the status card.
 DEF PAL_BG_PORTRAIT EQU 5          ; portrait uses BG palettes 5/6/7
 DEF NUM_PORTRAIT_PALS EQU 3
 DEF PORTRAIT_ATTR_OFF EQU NUM_PORTRAIT_PALS * 8         ; 24: palettes -> attr map

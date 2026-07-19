@@ -158,6 +158,14 @@ scroll updates — so there's no seam or one-frame latency.
   shared via each record's `PO_PAL`. Persona *data* is cheap (~200 bytes each,
   in ROMX); OAM allows `MAX_NPCS` more sprites (slots start at `OAM_NPC0`) —
   mind the 10-sprites-per-scanline hardware limit if raising it further.
+- **Portrait art pipeline** (every persona MUST have one — talk.asm has no
+  small-sprite fallback): `img/portrait/source/*.png` (112×112 AI art, noisy)
+  → `tools/prep-portraits.py` → GBC-exact 56×56 PNGs in `img/portrait/`
+  (RGB555, 3 palettes × 4 colours, one palette per 8×8 tile — BG slots 5/6/7)
+  → `tools/gen-portraits.py` → `src/portrait_data.asm` (committed). gen
+  converts constraint-satisfying images **losslessly** (`exact_portrait`);
+  its lossy k-means path is only a fallback for unconstrained art. Rerun both
+  tools (in that order) after any art change.
 
 ### The endless-world trick (world.asm)
 - World coords are **16-bit signed tile** coordinates (`wPlayerWX/WY`).
@@ -226,13 +234,20 @@ scroll updates — so there's no seam or one-frame latency.
   `UpdateSound` (`hUGE_dosound`) advances one tick. Call `UpdateSound` **once per
   frame, outside VBlank** (top of the loop) — the loop is frame-locked by
   `WaitVBlank`, and keeping it out of the VBlank window spares that tight budget.
-- Song data is `ROMX` (bank 1). The cart is still 32 KB ROM-ONLY (banks 0+1, no
-  MBC). If songs grow past bank 1, add `-m`/`-r` to `FIXFLAGS` for a real MBC.
+- Song data is `ROMX`, in **bank 1 with the dialogue data** (that section is
+  pinned `BANK[1]`; song data must share it — see the ROM banking invariant
+  below).
 - To swap the tune: export from hUGETracker as "RGBDS .asm", drop it in
   `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label.
 
 ## Conventions & invariants (don't break these)
 
+- **The cart is 64 KB MBC5 (`-m 0x19` in `FIXFLAGS`); ROMX bank 1 is the
+  default-mapped bank.** Bank 1 holds song + dialogue data (both read every
+  frame); boot maps it explicitly (don't trust MBC power-on state). Portraits
+  are `BANK[2]`, mapped **only** inside `ShowPortrait` (talk.asm), which
+  restores bank 1 before returning. New banked data must do the same:
+  switch, read, restore bank 1 — nothing else may assume another bank.
 - **RGBDS syntax, v4 `hardware.inc` names.** `ldh [rLCDC], a`, `ld [hl+], a`,
   `LCDCF_*`, `_VRAM`, `_SCRN0`, `BCPSF_AUTOINC`, etc.
 - **Exports:** anything used across files is defined with `::`. File-local labels
