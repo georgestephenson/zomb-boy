@@ -215,13 +215,16 @@ DEF PERSONA_PREACHER EQU 8
 DEF PERSONA_FARMER   EQU 9
 DEF PERSONA_COUNT    EQU 10
 ; Persona record layout (see dialogue_data.asm)
-DEF PERSONA_SIZE   EQU 12
+DEF PERSONA_SIZE   EQU 16          ; power of 2: PersonaPtr is a single swap
 DEF PO_NAME        EQU 0           ; dw -> 0-terminated name string
 DEF PO_TRAITS      EQU 2           ; 4 signed bytes: T0..T3 (see below)
 DEF PO_NOUNS       EQU 6           ; dw -> noun bank
 DEF PO_TOPICS      EQU 8           ; dw -> topic-template bank
 DEF PO_PAL         EQU 10          ; OBJ palette (3..7; tints are shared —
                                    ; only 5 hardware palettes are free)
+DEF PO_QUESTS      EQU 12          ; dw -> question bank (the turn's last beat)
+DEF PO_CTX         EQU 14          ; dw -> table of 8 context banks (CTX_* id
+                                   ; -> this persona's IN-VOICE observations)
 ; Trait axes (signed -60..+60; + = the second-named pole):
 ;   T0 WARY<->TRUSTING  T1 GRIM<->HOPEFUL  T2 SELFISH<->GENEROUS  T3 JOKING<->SERIOUS
 ; NOTE: |dot(push, traits)| over any tone must stay <= 127 (8-bit math);
@@ -314,6 +317,11 @@ DEF TPH_GREET      EQU 0
 DEF TPH_REACT      EQU 1
 DEF TPH_OUTCOME    EQU 2
 DEF TPH_PROMPT     EQU 3           ; the NPC's fresh line opening rounds 2+
+DEF TPH_OBS        EQU 4           ; optional mid-turn remark about the world /
+                                   ; the player's visible state (dialogue.asm
+                                   ; ComposeObservation)
+DEF TPH_QUEST      EQU 5           ; the question that hands you the menu —
+                                   ; every NPC turn ends by asking something
 DEF REVEAL_SLOW    EQU 2           ; cells revealed per frame (typewriter)
 DEF REVEAL_FAST    EQU 12          ; menu draw / A-skip speed (must stay below
                                    ; TALKQ_CAP with room for an arrow write)
@@ -349,6 +357,26 @@ DEF CTRL_ADJ       EQU 2           ; expand a mood-adjective likewise
 DEF CTRL_SUBJ      EQU 3           ; expand the conversation's SUBJECT noun —
                                    ; picked once per conversation, so the NPC
                                    ; keeps talking about the same thing
+DEF CTRL_ITEM      EQU 4           ; expand the name of the player's equipped
+                                   ; weapon ("IS THAT A PISTOL?") — the NPC
+                                   ; reads your actual inventory
+
+; --- Context observations (dialogue.asm PickContext / ComposeObservation) ----
+; The NPC may open a mid-turn remark keyed to LIVE game state: your meters,
+; your equipment, the in-game clock. Ids index CtxBanks (dialogue_data.asm);
+; the priority scan runs in this order, and wCtxUsed (a bitmask of ids) stops
+; the same remark firing twice in one conversation.
+DEF CTX_HURT       EQU 0           ; wHP     < CTX_LOW_METER
+DEF CTX_HUNGRY     EQU 1           ; wFood   < CTX_LOW_METER
+DEF CTX_TIRED      EQU 2           ; wEnergy < CTX_LOW_METER
+DEF CTX_WEAPON     EQU 3           ; a weapon is equipped (CTRL_ITEM names it)
+DEF CTX_NIGHT      EQU 4           ; wClockH >= 22 or < 5
+DEF CTX_MORNING    EQU 5           ; wClockH 5..11
+DEF CTX_DUSK       EQU 6           ; wClockH 18..21
+DEF CTX_DAY        EQU 7           ; wClockH 12..17
+DEF CTX_COUNT      EQU 8
+DEF CTX_NONE       EQU $FF         ; PickContext: nothing fresh to remark on
+DEF CTX_LOW_METER  EQU 40          ; a meter under this is worth a comment
 
 ; --- HUD / survival meters (docs/design/03; v0: visible + draining, non-lethal)
 ; The HUD is the hardware window over the BOTTOM 8 px (the window always runs

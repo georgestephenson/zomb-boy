@@ -10,6 +10,14 @@
 ;
 ;   InitSound   — power the APU on, full volume both sides, load the demo song.
 ;   UpdateSound — advance playback by one tick; call once per frame.
+;
+; BANKING: the song data no longer fits in bank 1 beside the (grown) dialogue
+; data, so it lives in its own ROMX bank. Both driver entry points read song
+; data, so this seam brackets them with a switch to BANK(song_demo) and a
+; restore of bank 1 (the repo invariant: switch, read, restore bank 1) — the
+; same pattern as talk.asm's ShowPortrait. The driver holds only WRAM state
+; between ticks, so nothing dangles across the switch. PlaySplash/PlayCarDoor
+; are pure register writes and need no banking.
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
@@ -28,8 +36,12 @@ InitSound::
     ld a, $77                       ; NR50: max master volume, left and right.
     ldh [rNR50], a
 
+    ld a, BANK(song_demo)           ; map the song's bank (init copies the
+    ld [rROMB0], a                  ; descriptor + pattern pointers from ROM)
     ld hl, song_demo                ; song descriptor (see songs/song_demo.asm)
     call hUGE_init
+    ld a, 1                         ; back to the default (dialogue) bank
+    ld [rROMB0], a
     ret
 
 ; Advance the music one tick. Must be called at a steady once-per-frame rate for
@@ -37,7 +49,12 @@ InitSound::
 ; per iteration (outside the VBlank window, to spare that tight budget) is exactly
 ; one call per frame. Clobbers a/bc/de/hl — fine at the top of the loop.
 UpdateSound::
-    jp hUGE_dosound                 ; tail-call: hUGE_dosound's ret returns for us
+    ld a, BANK(song_demo)           ; the driver re-reads pattern bytes each tick
+    ld [rROMB0], a
+    call hUGE_dosound
+    ld a, 1                         ; back to the default (dialogue) bank
+    ld [rROMB0], a
+    ret
 
 ; Play a short splash blip on the noise channel (ch4) for entering/leaving water.
 ; This writes ch4 directly, borrowing it from the music for an instant: the driver

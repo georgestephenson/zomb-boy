@@ -305,12 +305,20 @@ scroll updates — so there's no seam or one-frame latency.
   ROM and proves every composable line fits — run it after ANY data change.**
 - All talk-mode VRAM writes go through `wTalkQ` (logic fills ≤16/frame, VBlank
   drains all) — the typewriter reveal, menus and face changes ride this queue.
-- **Round rhythm:** every round is NPC sentence → your reply → NPC reaction.
-  The greeting opens round 1; rounds 2+ open with a **prompt** line
-  (`ComposePrompt`, continuation openers + topic). Reactions are a bucket quip
-  plus a **tone tag** answering the specific tone picked (`ToneTagsLiked`/
-  `Disliked` by the delta's sign). After `TALK_ROUNDS` replies, final affinity
-  picks fight/part/reward.
+- **Round rhythm:** every round is NPC *turn* → your reply → NPC reaction,
+  and an NPC turn is **2-3 pages**: their sentence (greeting round 1; rounds
+  2+ a **prompt** line — `ComposePrompt`, continuation openers + topic), an
+  *optional* **observation** page, and always a closing **question** page
+  that hands you the menu. The question FOLLOWS UP the observation when one
+  fired (`wCtxKind` carries the CTX_* into `ComposeQuestion`, which asks
+  from the persona's context-question bank — "SIT DOWN. LET ME SEE THAT."
+  → "WHERE DOES IT HURT?"); otherwise it draws from the generic per-persona
+  `PO_QUESTS` bank (`wLastQuest` repeat guard). Turn 1 always tries the observation; later
+  turns coin-flip it (`wTalkObs`), so turn length is unpredictable. Phases:
+  `TPH_GREET/PROMPT → [TPH_OBS] → TPH_QUEST → menu → TPH_REACT`. Reactions
+  are a bucket quip plus a **tone tag** answering the specific tone picked
+  (`ToneTagsLiked`/`Disliked` by the delta's sign). After `TALK_ROUNDS`
+  replies, final affinity picks fight/part/reward.
 - **Convincingness tricks** (all data + a few bytes of state):
   * *Subject threading* — each conversation fixes one noun (`wTalkSubject`);
     `CTRL_SUBJ` slots emit it, `CTRL_NOUN` slots stay random (and are guarded
@@ -320,12 +328,26 @@ scroll updates — so there's no seam or one-frame latency.
     vocabulary at neutral affinity, the preacher beams.
   * *Return greetings* — `EO_MET` (struct offset 15) flips on first talk;
     repeat visits greet from the continuation bank ("STILL HERE?").
+  * *State-aware observations, in the persona's voice* —
+    `ComposeObservation`/`PickContext` (dialogue.asm) scan LIVE state in
+    priority order: low `wHP`/`wFood`/`wEnergy` (< `CTX_LOW_METER`), an
+    equipped weapon (`CTRL_ITEM` splices the actual item name from
+    `wPartyEquip`), then the `wClockH` time-of-day bucket as a backstop.
+    The line itself comes from the TALKING persona's own `PO_CTX` table
+    (16 banks: 8 observations + 8 follow-up questions, index CTX_*): the
+    raider menaces your pistol ("DROP THE PISTOL AND WALK."), the preacher
+    tuts at it ("PUT THE PISTOL AWAY, CHILD.") — and each closes the turn
+    with its own follow-up question for that context. `wCtxUsed` (bitmask) stops a context repeating within one
+    conversation; if nothing is fresh the turn just skips to the question.
 - **Tones:** a pool of `TONE_COUNT` (8) covering every trait axis both ways
   (NICE FLIRT JOKE RUDE GUARDED CHEER GRIM DEMAND). Each menu offers a random
   **4 distinct** of them (`BuildMenu` → `wMenuTones`; picking applies
   `wMenuTones[cursor]`), redrawn until at least one option has a non-negative
   delta for the persona — there is always a playable move. Tests poke
-  `wMenuTones[0]` to sidestep menu randomness.
+  `wMenuTones[0]` to sidestep menu randomness. Labels are **context-
+  sensitive**: `ToneLabelMoods` keys 2 synonyms per tone per current mood
+  (soothing a hostile NPC reads EASY, agreeing with a warm one LOVE IT) —
+  the mechanical tone is still the `TONE_*` id underneath.
 - Affinity is per-NPC (`EO_AFFIN`, 0..255 **saturating**), persists across
   conversations in WRAM; `delta = clamp(dot(tone push, persona traits)>>2, ±16)
   + tone base`. The integration tests hold a lockstep copy of the police
@@ -436,21 +458,26 @@ scroll updates — so there's no seam or one-frame latency.
   `UpdateSound` (`hUGE_dosound`) advances one tick. Call `UpdateSound` **once per
   frame, outside VBlank** (top of the loop) — the loop is frame-locked by
   `WaitVBlank`, and keeping it out of the VBlank window spares that tight budget.
-- Song data is `ROMX`, in **bank 1 with the dialogue data** (that section is
-  pinned `BANK[1]`; song data must share it — see the ROM banking invariant
-  below).
+- Song data is `ROMX` in its **own bank** (it outgrew bank 1 when the
+  dialogue data grew): `InitSound`/`UpdateSound` bracket every driver call
+  with a switch to `BANK(song_demo)` and a restore of bank 1, per the ROM
+  banking invariant below. `test/integration/test_audio.py` asserts the
+  driver's WRAM tempo/order-count match the song and that the row cursor
+  advances — the headless canary for a broken bank seam (or driver/tracker
+  format drift, which fails the same way).
 - To swap the tune: export from hUGETracker as "RGBDS .asm", drop it in
   `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label.
 
 ## Conventions & invariants (don't break these)
 
-- **The cart is 64 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
-  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds song +
-  dialogue data (both read every frame); boot maps it explicitly (don't trust
-  MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
-  `ShowPortrait` (talk.asm), which restores bank 1 before returning. New banked
-  data must do the same: switch, read, restore bank 1 — nothing else may assume
-  another bank. **Cart RAM (`SECTION ... , SRAM`, the menu's SAVE block) is
+- **The cart is 128 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
+  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds the
+  dialogue data (read throughout talk mode); boot maps it explicitly (don't
+  trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
+  `ShowPortrait` (talk.asm); the song data floats in its own bank, mapped
+  **only** inside `InitSound`/`UpdateSound` (audio.asm) via `BANK(song_demo)`.
+  Both restore bank 1 before returning. New banked data must do the same:
+  switch, read, restore bank 1 — nothing else may assume another bank. **Cart RAM (`SECTION ... , SRAM`, the menu's SAVE block) is
   disabled by default; `DoSave` brackets every access with the `rRAMG` enable /
   disable writes** (and `rRAMB`=0) — never leave it enabled.
 - **RGBDS syntax, v4 `hardware.inc` names.** `ldh [rLCDC], a`, `ld [hl+], a`,
@@ -507,8 +534,13 @@ scroll updates — so there's no seam or one-frame latency.
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
 - **A new persona:** data + art. In `dialogue_data.asm` add a `PersonaTable`
-  record (name, 4 traits in -60..+60, noun + topic banks, `PO_PAL` — pick any
-  OBJ palette 3..7, shared tints are fine), bump `PERSONA_COUNT`/`MAX_NPCS` +
+  record (name, 4 traits in -60..+60, noun + topic + **question** banks +
+  a **`PO_CTX` context table** — 16 in-voice banks indexed by `CTX_*`
+  (8 observations, then 8 follow-up questions ending in `?`), every
+  `CTX_WEAPON` observation carrying `CTRL_ITEM`; `PO_PAL` — pick any
+  OBJ palette 3..7, shared tints are fine; the record is
+  `PERSONA_SIZE` = 16 bytes, question bank at `PO_QUESTS`, questions must end
+  in `?`), bump `PERSONA_COUNT`/`MAX_NPCS` +
   a spawn offset in `npc.asm`. Art is **mandatory** (no fallbacks): a 112×112
   source in `img/portrait/source/` run through the portrait pipeline (see the
   dialogue section) + a `PERSONA_ART` entry, and 3 world-sprite tiles
@@ -520,7 +552,8 @@ scroll updates — so there's no seam or one-frame latency.
   label length) **including winnability**: some tone's delta must be ≥ +7 so
   three perfect replies reach `AFFIN_REWARD`.
 - **A new reply tone:** add a `ToneTable` record (push vector + base) and a
-  ≤7-char label in `dialogue_data.asm`, bump `TONE_COUNT` — but keep it a
+  synonym bank of ≤7-char labels under **each of the three moods** in
+  `ToneLabelMoods` (`dialogue_data.asm`), bump `TONE_COUNT` — but keep it a
   **power of 2** (`BuildMenu` masks `Rand`), and rerun the bounds model
   (winnability shifts for every persona).
 - **New dialogue text:** only charmap'd characters (`A-Z 0-9 . , ! ? ' -`);

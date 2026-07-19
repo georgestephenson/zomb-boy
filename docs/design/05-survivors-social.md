@@ -122,17 +122,33 @@ palettes (tints are shared beyond that).
 The §4 reply slots draw from an **eight-tone pool** covering every trait axis
 in both directions (NICE, FLIRT, JOKE, RUDE, GUARDED, CHEER, GRIM, DEMAND);
 each menu deals a random four with at least one non-punishing option
-guaranteed — context-sensitive *wording* of replies stays LATER. A
-conversation runs greeting + **3 rounds** of *their sentence → your reply →
-their reaction* (rounds 2+ open with a fresh generated prompt line) +
-resolution by affinity thresholds (§5).
+guaranteed. The §4 *context-sensitive wording* ships as **mood-keyed label
+synonyms**: each tone's menu label is drawn from a bank keyed by the NPC's
+current mood (soothing a hostile NPC reads EASY; agreeing with a warm one
+reads LOVE IT — same mechanical tone, phrased for the moment). A conversation
+runs greeting + **3 rounds** of *their turn → your reply → their reaction*,
+where an NPC **turn is itself 2-3 pages**: their sentence, sometimes an
+**observation**, and always a closing **question** that hands you the menu
+(rounds 2+ open with a fresh generated prompt line) + resolution by affinity
+thresholds (§5).
 
-The generator earns its "convincing" with four cheap tricks: each conversation
+The generator earns its "convincing" with cheap tricks: each conversation
 fixes a **subject noun** the templates keep returning to; reactions append a
 **tone tag** that answers the specific reply picked ("WISE." vs "SO TENSE.");
 the §3 personality-weighting ships as **trait-tinted adjective banks** (grim
-personas draw bleaker words at equal affinity); and NPCs **remember meeting
-you** — return visits skip the stranger hello and pick the thread back up.
+personas draw bleaker words at equal affinity); NPCs **remember meeting
+you** — return visits skip the stranger hello and pick the thread back up;
+and observations read **live game state** — low HP/food/energy, the in-game
+clock's time of day, even the name of your equipped weapon spliced from the
+inventory — **in the speaking persona's own voice** (each persona carries its
+own 8 context banks: the raider menaces your pistol with "DROP THE PISTOL AND
+WALK.", the preacher tuts "PUT THE PISTOL AWAY, CHILD.", the medic wants it
+off the cots) — with a per-conversation used-mask so the same remark never
+fires twice in one talk. When an observation fires, the turn's closing
+question **follows the same thread** from a matching per-persona bank — the
+medic who just said "SIT DOWN. LET ME SEE THAT." asks "WHERE DOES IT HURT?",
+the farmer who noticed you starving offers "COULD YOU EAT A BAKED SPUD?" —
+so the two-page beat reads as one continuous thought.
 
 Still placeholder: the **gift** hands over no item yet (no inventory), and
 **hostile** plays the battle-flash stand-in — both resolve and announce

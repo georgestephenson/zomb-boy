@@ -73,8 +73,15 @@ EnterTalk::
     call RandMod
     ld [wTalkSubject], a
     ld [wLastNoun], a
-    ld a, $FF                  ; topic repeat-guard: nothing picked yet
+    ld a, $FF                  ; topic/question repeat-guards: nothing yet
     ld [wLastTopic], a
+    ld [wLastQuest], a
+    ld [wCtxKind], a           ; (= CTX_NONE) no observation made this turn
+    xor a, a
+    ld [wCtxUsed], a           ; no context remarked on yet this conversation
+    inc a
+    ld [wTalkObs], a           ; turn 1 always tries an observation — the NPC
+                               ; leads with what they can SEE about you
     ld a, $C5                  ; canary after the text grid — must survive
     ld [wTalkGuard], a
     ; finish any half-blitted world strip before leaving the overworld screen
@@ -134,7 +141,7 @@ UpdateTalk::
     cp TS_WAIT
     jr z, .wait
     cp TS_MENU
-    jr z, .menu
+    jp z, .menu                ; (.wait grew: out of JR range)
     ; --- TS_REVEAL ---
     ld a, [wNewKeys]
     and PAD_A
@@ -151,7 +158,9 @@ UpdateTalk::
     ret
 
 ; --- TS_WAIT: A advances past the shown line. Round rhythm (per the design):
-;     [greet/prompt sentence] -> menu -> [reaction] -> [prompt sentence] -> ...
+;     [greet/prompt] -> [observation?] -> [question] -> menu -> [reaction] ...
+; Each NPC turn is 2-3 pages: their line, sometimes a remark about the world
+; or your visible state, then always a question that hands you the menu.
 .wait:
     ld a, [wNewKeys]
     and PAD_A
@@ -159,11 +168,32 @@ UpdateTalk::
     call ClearWaitArrow
     ld a, [wTalkPhase]
     cp TPH_OUTCOME
-    jr z, .finish
+    jp z, TalkFinish
     cp TPH_REACT
     jr z, .afterReact
-    ; TPH_GREET / TPH_PROMPT: their line is out — your turn
-    call BuildMenu
+    cp TPH_QUEST
+    jr z, .toMenu
+    cp TPH_OBS
+    jr z, .toQuest
+    ; TPH_GREET / TPH_PROMPT: maybe one more remark before their question
+    ld a, [wTalkObs]
+    and a, a
+    jr z, .toQuest
+    xor a, a
+    ld [wTalkObs], a           ; one observation page per NPC turn
+    call ComposeObservation
+    and a, a
+    jr z, .toQuest             ; nothing fresh to remark on: ask away
+    ld a, TPH_OBS
+    ld [wTalkPhase], a
+    jr .reveal
+.toQuest:
+    call ComposeQuestion       ; their question is the turn's last beat
+    ld a, TPH_QUEST
+    ld [wTalkPhase], a
+    jr .reveal
+.toMenu:
+    call BuildMenu             ; question asked — your turn
     ld a, TS_MENU
     ld [wTalkState], a
     ret
@@ -181,14 +211,17 @@ UpdateTalk::
     call ComposePrompt         ; they pick the conversation back up
     ld a, TPH_PROMPT
     ld [wTalkPhase], a
+    call Rand                  ; later turns: a coin flip decides whether a
+    and a, 1                   ; remark comes before the question — NPC turns
+    ld [wTalkObs], a           ; run an unpredictable 2-3 pages
+    ld a, CTX_NONE             ; fresh turn: no observation made yet, so the
+    ld [wCtxKind], a           ; question defaults to the generic bank
 .reveal:
     ld a, REVEAL_SLOW
     ld [wRevSpeed], a
     ld a, TS_REVEAL
     ld [wTalkState], a
     ret
-.finish:
-    jp TalkFinish
 
 ; --- TS_MENU: pick one of the four tones ---
 .menu:
@@ -952,16 +985,24 @@ BuildMenu:
     add hl, de
     ld d, h
     ld e, l                    ; DE = dest
-    ; HL (src) = ToneLabels[wMenuTones[slot]]
+    ; HL (src) = a random synonym for wMenuTones[slot], drawn from the bank
+    ; keyed by tone AND the NPC's current mood — the same reply reads
+    ; differently as the relationship shifts (NICE -> EASY / KIND / LOVE IT).
     ld a, c
     push de
     ld e, a
     ld d, 0
     ld hl, wMenuTones
     add hl, de
-    ld a, [hl]
-    ld de, ToneLabels
-    call DerefTable
+    ld b, [hl]                 ; B = the tone in this slot
+    ld a, [wTalkMood]
+    ld de, ToneLabelMoods
+    call DerefTable            ; HL = this mood's 8-tone label table
+    ld d, h
+    ld e, l
+    ld a, b
+    call DerefTable            ; HL = the tone's synonym bank
+    call PickPlain             ; HL = one synonym
     pop de
 .copy:
     ld a, [hl+]

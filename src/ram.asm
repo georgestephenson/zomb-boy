@@ -166,6 +166,13 @@ wWordLen::          ds 1
 wWordBuf::          ds WORD_MAX + 1    ; current word (incl. glued punctuation)
 wLastNoun::         ds 1               ; repeat-pick guards (bank indexes)
 wLastTopic::        ds 1
+wLastQuest::        ds 1
+; Multi-page NPC turns: each turn may add a context remark before its question.
+wTalkObs::          ds 1               ; 1 = try an observation page this turn
+wCtxUsed::          ds 1               ; CTX_* bits already remarked this talk
+wCtxKind::          ds 1               ; the CTX_* this turn's observation used
+                                       ; (CTX_NONE if none) — the question beat
+                                       ; follows it up in the persona's voice
 ; The 3x18 text grid (font tile ids). wTalkGuard is a canary: set to $C5 on
 ; talk entry and never written again — the composer is bounds-checked and the
 ; integration tests assert it survives (docs/design/05 §3 memory safety).
