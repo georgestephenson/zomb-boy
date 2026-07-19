@@ -134,6 +134,27 @@ wCarEject::         ds 1               ; 0 = none; else (EFACE_*+1) = get out of
 wFuel::             ds 1               ; 0..METER_MAX, saturating (drives the HUD
                                        ; fuel readout; replaces energy while driving)
 
+; World animation (anim.asm): ambient + reactive tile-art swaps. All 1-byte
+; frame counters / current-frame indices; "shown" tracks what PushAnim last wrote
+; so it only re-copies art on a change. Zeroed by ClearRAM, then InitAnim arms
+; the two free-running dividers.
+SECTION "Anim State", WRAM0
+wAnimTick::         ds 1               ; free-running frame counter
+wWaterDiv::        ds 1               ; frames left until the next shimmer sub-frame
+wWaterFrame::      ds 1               ; current water ripple frame (0..2)
+wWaterShown::      ds 1               ; last-pushed water frame
+wBreezeTimer::     ds 1               ; frames until the next ambient tree gust
+wTreeTimer::       ds 1               ; sway remaining (0 = at rest)
+wTreeFrame::       ds 1               ; current canopy sway frame (0..2)
+wTreeShown::       ds 1
+wBrushTimer::      ds 1               ; rustle remaining (0 = at rest)
+wBrushFrame::      ds 1               ; current brush frame (0..2)
+wBrushShown::      ds 1
+wOnDoor::          ds 1               ; 1 while the player stands on a door tile
+wDoorLinger::      ds 1               ; frames a door stays open after stepping off
+wDoorFrame::       ds 1               ; 0 = closed art, 1 = open art
+wDoorShown::       ds 1
+
 ; HUD / survival meters (docs/design/03; v0 non-lethal) — see hud.asm.
 SECTION "HUD State", WRAM0
 wHP::               ds 1               ; 0..METER_MAX, saturating

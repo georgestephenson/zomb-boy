@@ -149,6 +149,7 @@ Start::                             ; exported: the menu's EXIT soft-resets here
     call InitCar                    ; one drivable car near the start
     call InitSpawns                 ; arm the dynamic respawn timers
     call InitLoot                   ; scatter starting pickups + arm loot respawns
+    call InitAnim                   ; arm the world-animation timers (water/trees/...)
     call InitHUD                    ; meters/clock + the window row (LCD is off)
     call InitInventory              ; party (just the player) + starting bag + options
 
@@ -203,10 +204,12 @@ MainLoop:
     call UpdateLootSpawns           ; cull far loot + respawn fresh pickups/containers
     call CheckCarToggle             ; A next to the car -> board it / drive off
     call CheckLoot                  ; grab food underfoot / open a faced container
+    call CheckTreeTouch             ; A facing a tree -> rustle it
     call CheckTalkStart             ; A at a survivor -> EnterTalk (MODE_TALK)
     ld a, [wGameMode]
     cp MODE_TALK
     jr z, MainLoop                  ; EnterTalk presented its own frame
+    call UpdateAnim                 ; advance world animation (water/trees/brush/doors)
     jr .draw
 .alert:
     call UpdateAlert                ; "!" countdown -> placeholder battle
@@ -221,7 +224,14 @@ MainLoop:
     call SetScroll
     call PushHUD                    ; HUD row if dirty (skipped on strip frames;
                                     ; must run BEFORE BlitStream eats wStrKind)
+    ld a, [wStrKind]                ; is a world strip being blitted this frame?
+    push af
     call BlitStream                 ; push the queued strip into VRAM
+    pop af
+    and a, a
+    call z, PushAnim                ; animated tile art — skip on the (single) strip
+                                    ; frame to keep the DMG VBlank budget (an effect
+                                    ; frame is ~invisibly late; water cycles slowly)
     jr MainLoop
 
 ; --- talk mode: dialogue logic, then a lighter VBlank (no scroll/stream) ---
@@ -231,7 +241,7 @@ MainLoop:
     ld a, HIGH(wShadowOAM)
     call hOAMDMA
     call DrainTalkQ                 ; typewriter/menu writes, bounded
-    jr MainLoop
+    jp MainLoop
 
 ; --- menu mode: pause menu logic, then OAM push (screen is built LCD-off by the
 ;     menu itself on each navigation). The game is paused: no clock, no world. ---

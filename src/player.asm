@@ -256,7 +256,9 @@ TryStartStep:
     ; solid tile. On foot the player swims, so water is the one walkable "solid".
     ld a, [wDestTile]
     cp TILE_WATER
-    jr nz, .blocked            ; genuinely solid (wall / tree)
+    jr z, .notSolid            ; water: swimmable, not a wall
+    call MaybeTreeBump         ; genuinely solid (wall/tree) — a bumped tree sways
+    jr .blocked
 .notSolid:
     call CheckZombieAt         ; a zombie is standing there
     and a, a
@@ -330,6 +332,20 @@ TryStartStep:
     ld [wHUDDirty], a
     jr .swimDone
 .footStep:
+    ; --- world reactions to the tile just stepped onto ---
+    ld a, [wDestTile]
+    cp TILE_BRUSH
+    call z, TriggerBrushRustle  ; walking through long grass stirs it
+    ld a, [wDestTile]
+    cp TILE_DOOR               ; standing on a doorway? (anim.asm swings it open)
+    jr nz, .noDoor
+    ld a, 1
+    ld [wOnDoor], a
+    jr .doorSet
+.noDoor:
+    xor a, a
+    ld [wOnDoor], a
+.doorSet:
     ; --- swim state: crossing the land/water boundary splashes (sound + sprite) ---
     ld a, [wDestTile]
     cp TILE_WATER
