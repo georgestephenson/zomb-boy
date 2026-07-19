@@ -52,9 +52,9 @@ TONE_LABEL_VARIANTS = [  # [tone] -> set of labels across all moods x variants
 ]
 LABEL_MAX = 7
 
-# Lockstep copies of the context observation banks the tests poke into range
-# (dialogue_data.asm CtxBanks).
-HURT_WORDS = ("BLEEDING", "WOUND", "HALF DEAD")
+# Lockstep copy of the POLICEMAN's hurt bank (observation banks are per-
+# persona now — dialogue_data.asm CtxPolice; NPC 0 is the policeman).
+HURT_WORDS = ("FILE A REPORT", "CODE THREE")
 
 
 def expected_delta(tone_id, traits=POLICE_TRAITS):

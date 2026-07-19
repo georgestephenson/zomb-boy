@@ -325,13 +325,16 @@ scroll updates — so there's no seam or one-frame latency.
     vocabulary at neutral affinity, the preacher beams.
   * *Return greetings* — `EO_MET` (struct offset 15) flips on first talk;
     repeat visits greet from the continuation bank ("STILL HERE?").
-  * *State-aware observations* — `ComposeObservation`/`PickContext`
-    (dialogue.asm) scan LIVE state in priority order: low `wHP`/`wFood`/
-    `wEnergy` (< `CTX_LOW_METER`), an equipped weapon (`CTRL_ITEM` splices
-    the actual item name from `wPartyEquip` — "IS THAT A PISTOL?"), then the
-    `wClockH` time-of-day bucket as a backstop. `wCtxUsed` (bitmask) stops a
-    context repeating within one conversation; if nothing is fresh the turn
-    just skips to the question.
+  * *State-aware observations, in the persona's voice* —
+    `ComposeObservation`/`PickContext` (dialogue.asm) scan LIVE state in
+    priority order: low `wHP`/`wFood`/`wEnergy` (< `CTX_LOW_METER`), an
+    equipped weapon (`CTRL_ITEM` splices the actual item name from
+    `wPartyEquip`), then the `wClockH` time-of-day bucket as a backstop.
+    The line itself comes from the TALKING persona's own `PO_CTX` table
+    (8 banks, index CTX_*): the raider menaces your pistol ("DROP THE
+    PISTOL AND WALK."), the preacher tuts at it ("PUT THE PISTOL AWAY,
+    CHILD."). `wCtxUsed` (bitmask) stops a context repeating within one
+    conversation; if nothing is fresh the turn just skips to the question.
 - **Tones:** a pool of `TONE_COUNT` (8) covering every trait axis both ways
   (NICE FLIRT JOKE RUDE GUARDED CHEER GRIM DEMAND). Each menu offers a random
   **4 distinct** of them (`BuildMenu` → `wMenuTones`; picking applies
@@ -522,8 +525,10 @@ scroll updates — so there's no seam or one-frame latency.
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
 - **A new persona:** data + art. In `dialogue_data.asm` add a `PersonaTable`
-  record (name, 4 traits in -60..+60, noun + topic + **question** banks,
-  `PO_PAL` — pick any OBJ palette 3..7, shared tints are fine; the record is
+  record (name, 4 traits in -60..+60, noun + topic + **question** banks +
+  a **`PO_CTX` context table** — 8 in-voice observation banks indexed by
+  `CTX_*`, every `CTX_WEAPON` line carrying `CTRL_ITEM`; `PO_PAL` — pick any
+  OBJ palette 3..7, shared tints are fine; the record is
   `PERSONA_SIZE` = 16 bytes, question bank at `PO_QUESTS`, questions must end
   in `?`), bump `PERSONA_COUNT`/`MAX_NPCS` +
   a spawn offset in `npc.asm`. Art is **mandatory** (no fallbacks): a 112×112

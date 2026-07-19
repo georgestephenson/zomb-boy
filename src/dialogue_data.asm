@@ -43,70 +43,70 @@ PersonaTable::
     dw TopicsPolice            ; PO_TOPICS
     db 3, 0                    ; PO_PAL (= 3 + persona id), pad
     dw QuestsPolice            ; PO_QUESTS
-    db 0, 0                    ; pad to PERSONA_SIZE (16)
+    dw CtxPolice               ; PO_CTX (in-voice observation banks)
     dw NameScientist
     db -20, 20, 0, 40          ; guarded, curious-hopeful, serious
     dw NounsScientist
     dw TopicsScientist
     db 4, 0
     dw QuestsScientist
-    db 0, 0
+    dw CtxScientist
     dw NameCheer
     db 30, 50, 10, -50         ; trusting, hopeful, joking
     dw NounsCheer
     dw TopicsCheer
     db 5, 0
     dw QuestsCheer
-    db 0, 0
+    dw CtxCheer
     dw NameMaid
     db 10, -30, 56, 20         ; weary but deeply generous
     dw NounsMaid
     dw TopicsMaid
     db 6, 0
     dw QuestsMaid
-    db 0, 0
+    dw CtxMaid
     dw NameBiz
     db -30, 30, -40, 10        ; bullish, selfish; respects a hard bargain
     dw NounsBiz
     dw TopicsBiz
     db 7, 0
     dw QuestsBiz
-    db 0, 0
+    dw CtxBiz
     dw NamePrepper
     db -50, -20, -30, 30       ; paranoid hoarder; approves of suspicion
     dw NounsPrepper
     dw TopicsPrepper
     db 6, 0
     dw QuestsPrepper
-    db 0, 0
+    dw CtxPrepper
     dw NameMedic
     db 30, 40, 50, 10          ; open-hearted healer; hates demands
     dw NounsMedic
     dw TopicsMedic
     db 4, 0
     dw QuestsMedic
-    db 0, 0
+    dw CtxMedic
     dw NameRaider
     db -40, -40, -50, -30      ; cruel humour; respects savagery
     dw NounsRaider
     dw TopicsRaider
     db 6, 0
     dw QuestsRaider
-    db 0, 0
+    dw CtxRaider
     dw NamePreacher
     db 40, 50, 30, 40          ; fervent hope; scandalised by rudeness
     dw NounsPreacher
     dw TopicsPreacher
     db 3, 0
     dw QuestsPreacher
-    db 0, 0
+    dw CtxPreacher
     dw NameFarmer
     db 20, 10, 40, 30          ; steady, stoic, generous
     dw NounsFarmer
     dw TopicsFarmer
     db 7, 0
     dw QuestsFarmer
-    db 0, 0
+    dw CtxFarmer
 
 NamePolice:    db "POLICEMAN", CTRL_END
 NameScientist: db "SCIENTIST", CTRL_END
@@ -488,58 +488,445 @@ OutReward:
 .f1: db "FOR YOU, FRIEND. TAKE THIS!", CTRL_END
 
 ; -----------------------------------------------------------------------------
-; Context observation banks (index by CTX_*): remarks keyed to LIVE game state.
-; The NPC notices your meters, your equipped weapon (CTRL_ITEM splices its
-; actual name) and the in-game clock — dialogue.asm PickContext decides which
-; fires; wCtxUsed stops repeats within one conversation.
+; Context observation banks: PER-PERSONA and in-voice. Each persona record's
+; PO_CTX points at a table of 8 banks (index by CTX_*) — the same live-state
+; trigger lands completely differently depending on who's talking: the raider
+; menaces your pistol, the preacher tuts at it, the medic wants it away from
+; the cots. dialogue.asm PickContext decides WHICH context fires (priority +
+; wCtxUsed); the talking persona decides HOW it's said.
+; AUTHORING RULES: lines stand alone on a page (must fit 3x18); every
+; CTX_WEAPON line must carry CTRL_ITEM (the tests and the model rely on the
+; remark naming the actual item).
 ; -----------------------------------------------------------------------------
-CtxBanks::
-    dw CtxHurt, CtxHungry, CtxTired, CtxWeapon
-    dw CtxNight, CtxMorning, CtxDusk, CtxDay
-CtxHurt:
-    db 3
-    dw .f0, .f1, .f2
-.f0: db "YOU'RE BLEEDING ON MY BOOTS.", CTRL_END
-.f1: db "THAT WOUND LOOKS NASTY.", CTRL_END
-.f2: db "YOU LOOK HALF DEAD, FRIEND.", CTRL_END
-CtxHungry:
-    db 3
-    dw .f0, .f1, .f2
-.f0: db "YOUR STOMACH IS GROWLING.", CTRL_END
-.f1: db "YOU LOOK HALF STARVED.", CTRL_END
-.f2: db "EATEN ANYTHING TODAY?", CTRL_END
-CtxTired:
-    db 3
-    dw .f0, .f1, .f2
-.f0: db "YOU LOOK DEAD ON YOUR FEET.", CTRL_END
-.f1: db "YOU KEEP YAWNING. SLEEP SOME.", CTRL_END
-.f2: db "ROUGH NIGHT, HUH?", CTRL_END
-CtxWeapon:
-    db 3
-    dw .f0, .f1, .f2
-.f0: db "IS THAT A ", CTRL_ITEM, "?", CTRL_END
-.f1: db "NICE ", CTRL_ITEM, ". KEEP IT CLOSE.", CTRL_END
-.f2: db "CAREFUL WITH THAT ", CTRL_ITEM, ".", CTRL_END
-CtxNight:
+CtxPolice:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
     db 2
-    dw .f0, .f1
-.f0: db "DARK OUT. THEY BITE AT NIGHT.", CTRL_END
-.f1: db "YOU SHOULDN'T BE OUT THIS LATE.", CTRL_END
-CtxMorning:
+    dw .h0, .h1
+.h0: db "YOU'RE HURT. FILE A REPORT.", CTRL_END
+.h1: db "THAT'S A CODE THREE WOUND.", CTRL_END
+.hungry:
     db 2
-    dw .f0, .f1
-.f0: db "UP EARLY, AREN'T YOU?", CTRL_END
-.f1: db "MORNING ALREADY. STILL ALIVE.", CTRL_END
-CtxDusk:
+    dw .g0, .g1
+.g0: db "YOU LOOK HUNGRY. STAY LEGAL.", CTRL_END
+.g1: db "STARVING IS NO EXCUSE TO LOOT.", CTRL_END
+.tired:
     db 2
-    dw .f0, .f1
-.f0: db "SUN'S GOING DOWN. BE QUICK.", CTRL_END
-.f1: db "IT'LL BE DARK SOON.", CTRL_END
-CtxDay:
+    dw .t0, .t1
+.t0: db "NO SLEEPING ON MY BEAT.", CTRL_END
+.t1: db "YOU'RE SWAYING, CITIZEN.", CTRL_END
+.weapon:
     db 2
-    dw .f0, .f1
-.f0: db "QUIET AFTERNOON. TOO QUIET.", CTRL_END
-.f1: db "NOT A CLOUD UP THERE.", CTRL_END
+    dw .w0, .w1
+.w0: db "PERMIT FOR THAT ", CTRL_ITEM, "?", CTRL_END
+.w1: db "KEEP THE ", CTRL_ITEM, " HOLSTERED.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "CURFEW STARTED AT DARK.", CTRL_END
+.n1: db "NOTHING GOOD WALKS AT NIGHT.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "EARLY SHIFT, CITIZEN?", CTRL_END
+.m1: db "MORNING PATROL. ALL QUIET.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "CURFEW SOON. HEAD HOME.", CTRL_END
+.d1: db "SUN'S GOING DOWN. MOVE ALONG.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "ALL QUIET ON MY WATCH.", CTRL_END
+.y1: db "MIDDAY. NOTHING TO REPORT.", CTRL_END
+
+CtxScientist:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "FASCINATING WOUND. DOES IT HURT?", CTRL_END
+.h1: db "YOU'RE LEAKING. NOTED.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "YOUR GLUCOSE IS CLEARLY LOW.", CTRL_END
+.g1: db "SUBJECT SHOWS SIGNS OF HUNGER.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "YOUR BLINK RATE HAS DOUBLED.", CTRL_END
+.t1: db "SLEEP DEBT SKEWS MY DATA.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "A ", CTRL_ITEM, ". CRUDE BUT EFFECTIVE.", CTRL_END
+.w1: db "IS THAT ", CTRL_ITEM, " CALIBRATED?", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "THEY GROW ACTIVE AFTER DARK.", CTRL_END
+.n1: db "NOCTURNAL PATTERNS. INTERESTING.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "MORNING LIGHT. GOOD READINGS.", CTRL_END
+.m1: db "I WAS UP ALL NIGHT TESTING.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "DUSK. SPECIMENS STIR SOON.", CTRL_END
+.d1: db "LIGHT IS FADING. SO IS MY GRANT.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "PEAK SUN. PEAK DATA.", CTRL_END
+.y1: db "CONDITIONS ARE STABLE TODAY.", CTRL_END
+
+CtxCheer:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "OUCH! WALK IT OFF, CHAMP!", CTRL_END
+.h1: db "BLOOD? THAT'S SO NOT CUTE.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "YOU NEED A SNACK, STAT!", CTRL_END
+.g1: db "HUNGRY? THAT'S NO PEP AT ALL!", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "WAKE UP! GIVE ME ENERGY!", CTRL_END
+.t1: db "NO NAPS! WE'VE GOT SPIRIT!", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "A ", CTRL_ITEM, "? SO FIERCE!", CTRL_END
+.w1: db "SWING THAT ", CTRL_ITEM, " LIKE YOU MEAN IT!", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "NIGHT GAMES ARE THE BEST!", CTRL_END
+.n1: db "SO DARK! SPOOKY VIBES!", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "RISE AND SHINE, TEAM!", CTRL_END
+.m1: db "MORNING PRACTICE! LET'S GO!", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "SUNSET SPARKLES! LOVE IT!", CTRL_END
+.d1: db "GOLDEN HOUR, GO TEAM!", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "PERFECT DAY FOR A ROUTINE!", CTRL_END
+.y1: db "SUN'S OUT! POMS OUT!", CTRL_END
+
+CtxMaid:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "YOU'RE DRIPPING ON THE FLOOR.", CTRL_END
+.h1: db "I'LL FETCH A CLEAN CLOTH.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "I HEAR YOUR STOMACH FROM HERE.", CTRL_END
+.g1: db "I WOULD OFFER TEA AND BISCUITS.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "YOU LOOK READY TO DROP, DEAR.", CTRL_END
+.t1: db "SHALL I TURN DOWN A BED?", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "MIND THE ", CTRL_ITEM, " ON MY FLOORS.", CTRL_END
+.w1: db "LEAVE THE ", CTRL_ITEM, " ON THE RACK.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "GUESTS ARRIVE SO LATE NOW.", CTRL_END
+.n1: db "I STILL SWEEP AFTER DARK.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "UP WITH THE LARKS, ARE WE?", CTRL_END
+.m1: db "MORNING. MIND THE WET FLOOR.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "I LIGHT THE LAMPS AT DUSK.", CTRL_END
+.d1: db "EVENING ALREADY. MORE CHORES.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "A FINE DAY FOR AIRING LINENS.", CTRL_END
+.y1: db "DUST DANCES IN THE NOON SUN.", CTRL_END
+
+CtxBiz:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "YOU'RE BLEEDING ON MY SUIT.", CTRL_END
+.h1: db "MEDICAL BILLS. BAD MARGINS.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "HUNGER IS BAD FOR OUTPUT.", CTRL_END
+.g1: db "I SKIP LUNCH. POWER MOVE.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "SLEEP IS FOR THE ACQUIRED.", CTRL_END
+.t1: db "YOU'RE BURNING OUT. LIABILITY.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "IS THAT ", CTRL_ITEM, " A COMPANY ASSET?", CTRL_END
+.w1: db "NICE ", CTRL_ITEM, ". LET'S TALK TERMS.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "MARKETS NEVER SLEEP. NOR DO I.", CTRL_END
+.n1: db "NIGHT SHIFT. NO OVERTIME PAY.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "EARLY BIRD GETS THE MERGER.", CTRL_END
+.m1: db "COFFEE FIRST. THEN DEALS.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "CLOSING BELL SOON.", CTRL_END
+.d1: db "END OF QUARTER. END OF DAY.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "PRIME BUSINESS HOURS.", CTRL_END
+.y1: db "LUNCH MEETING RAN LONG.", CTRL_END
+
+CtxPrepper:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "BLOOD DRAWS THEM. COVER IT.", CTRL_END
+.h1: db "WOUNDS GO BAD FAST OUT HERE.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "SHOULD HAVE STOCKED UP LIKE ME.", CTRL_END
+.g1: db "HUNGER MAKES YOU SLOPPY.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "SLEEP IS WHEN THEY GET YOU.", CTRL_END
+.t1: db "I NAP IN SHIFTS. YOU SHOULD.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "A ", CTRL_ITEM, ". SMART. TRUST NOTHING.", CTRL_END
+.w1: db "I'VE GOT SIX LIKE THAT ", CTRL_ITEM, ".", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "NIGHT. THEY'RE OUT THERE. LISTEN.", CTRL_END
+.n1: db "STAY LOW AFTER DARK.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "DAWN. FIRST PERIMETER CHECK.", CTRL_END
+.m1: db "MADE IT THROUGH ANOTHER NIGHT.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "LOCK UP BEFORE FULL DARK.", CTRL_END
+.d1: db "DUSK. START COUNTING EXITS.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "TOO EXPOSED IN DAYLIGHT.", CTRL_END
+.y1: db "CLEAR SKIES. DRONE WEATHER.", CTRL_END
+
+CtxMedic:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "SIT DOWN. LET ME SEE THAT.", CTRL_END
+.h1: db "THAT NEEDS STITCHES. NOW.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "MALNOURISHED. EAT SOMETHING.", CTRL_END
+.g1: db "YOUR BLOOD SUGAR IS CRASHING.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "EXHAUSTION KILLS SLOWLY.", CTRL_END
+.t1: db "PUPILS SLUGGISH. YOU NEED REST.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "A ", CTRL_ITEM, "? I STITCH WHAT THOSE DO.", CTRL_END
+.w1: db "KEEP THE ", CTRL_ITEM, " OFF MY COTS.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "NIGHT SHIFT AGAIN. ALWAYS IS.", CTRL_END
+.n1: db "BITES COME IN AFTER DARK.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "MORNING ROUNDS. YOU'RE FIRST.", CTRL_END
+.m1: db "SLEPT AT THE CLINIC AGAIN.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "DUSK. TRIAGE FILLS UP SOON.", CTRL_END
+.d1: db "LAST LIGHT. STOCK THE GAUZE.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "QUIET WARD TODAY. GOOD.", CTRL_END
+.y1: db "SUN HELPS THE HEALING.", CTRL_END
+
+CtxRaider:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "YOU'RE LEAKING. EASY PICKINGS.", CTRL_END
+.h1: db "WOUNDED PREY. MY FAVORITE.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "HUNGRY? SHOULD HAVE PAID UP.", CTRL_END
+.g1: db "I ATE YESTERDAY. TOUGH LUCK.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "SLEEP HERE, WAKE UP POORER.", CTRL_END
+.t1: db "YAWN AGAIN. SEE WHAT HAPPENS.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "DROP THE ", CTRL_ITEM, " AND WALK.", CTRL_END
+.w1: db "CUTE ", CTRL_ITEM, ". I'VE HAD BIGGER.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "NIGHT IS MINE. YOU'RE BORROWING IT.", CTRL_END
+.n1: db "DARK OUT. SCREAM ALL YOU WANT.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "UP EARLY TO GET ROBBED?", CTRL_END
+.m1: db "MORNING SHIFT PAYS DOUBLE.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "TOLL DOUBLES AFTER SUNDOWN.", CTRL_END
+.d1: db "GETTING DARK. GETTING PRICEY.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "BROAD DAYLIGHT? BOLD OF YOU.", CTRL_END
+.y1: db "SUN'S UP. RATES ARE TOO.", CTRL_END
+
+CtxPreacher:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "YOUR BLOOD CRIES OUT. BE HEALED!", CTRL_END
+.h1: db "SUFFERING TESTS THE FAITHFUL.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "FASTING, OR JUST STARVING?", CTRL_END
+.g1: db "NONE GO HUNGRY AT MY TABLE.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "REST, AS THE SEVENTH DAY ASKS.", CTRL_END
+.t1: db "WEARY SOULS STUMBLE INTO SIN.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "PUT THE ", CTRL_ITEM, " AWAY, CHILD.", CTRL_END
+.w1: db "A ", CTRL_ITEM, " WON'T SAVE YOUR SOUL.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "THE DARK TESTS US ALL.", CTRL_END
+.n1: db "EVEN NIGHT ENDS. HAVE FAITH.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "A NEW DAY. A NEW MERCY.", CTRL_END
+.m1: db "DAWN IS A SMALL RESURRECTION.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "EVENSONG SOON. JOIN US.", CTRL_END
+.d1: db "THE LIGHT FADES. PRAY FASTER.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "THE SUN SHINES ON THE SAVED.", CTRL_END
+.y1: db "GLORIOUS NOON! CAN YOU FEEL IT?", CTRL_END
+
+CtxFarmer:
+    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+.hurt:
+    db 2
+    dw .h0, .h1
+.h0: db "THAT CUT WILL FESTER. TEND IT.", CTRL_END
+.h1: db "SEEN WORSE FROM A THRESHER.", CTRL_END
+.hungry:
+    db 2
+    dw .g0, .g1
+.g0: db "SKIN AND BONES. EAT A SPUD.", CTRL_END
+.g1: db "NOBODY STARVES ON MY LAND.", CTRL_END
+.tired:
+    db 2
+    dw .t0, .t1
+.t0: db "YOU SLEEP LESS THAN MY ROOSTER.", CTRL_END
+.t1: db "REST WHEN THE SUN DOES.", CTRL_END
+.weapon:
+    db 2
+    dw .w0, .w1
+.w0: db "THAT ", CTRL_ITEM, " WON'T PLOW A FIELD.", CTRL_END
+.w1: db "WE USE A ", CTRL_ITEM, " ON VARMINTS.", CTRL_END
+.night:
+    db 2
+    dw .n0, .n1
+.n0: db "OWLS ARE OUT. SO ARE WORSE.", CTRL_END
+.n1: db "NIGHT MEANS BARN DOORS SHUT.", CTRL_END
+.morning:
+    db 2
+    dw .m0, .m1
+.m0: db "BEEN UP SINCE FOUR. YOU?", CTRL_END
+.m1: db "DEW IS STILL ON THE FIELDS.", CTRL_END
+.dusk:
+    db 2
+    dw .d0, .d1
+.d0: db "SUNDOWN. COWS HEAD IN.", CTRL_END
+.d1: db "RED SKY TONIGHT. GOOD SIGN.", CTRL_END
+.day:
+    db 2
+    dw .y0, .y1
+.y0: db "GOOD GROWING SUN TODAY.", CTRL_END
+.y1: db "HAY WON'T CUT ITSELF.", CTRL_END
 
 ; CTRL_ITEM's safety net when no weapon is equipped (an authored line could
 ; use the slot anywhere; CTX_WEAPON itself only fires armed).

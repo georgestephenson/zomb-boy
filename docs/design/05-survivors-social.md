@@ -140,8 +140,11 @@ personas draw bleaker words at equal affinity); NPCs **remember meeting
 you** — return visits skip the stranger hello and pick the thread back up;
 and observations read **live game state** — low HP/food/energy, the in-game
 clock's time of day, even the name of your equipped weapon spliced from the
-inventory ("IS THAT A PISTOL?") — with a per-conversation used-mask so the
-same remark never fires twice in one talk.
+inventory — **in the speaking persona's own voice** (each persona carries its
+own 8 context banks: the raider menaces your pistol with "DROP THE PISTOL AND
+WALK.", the preacher tuts "PUT THE PISTOL AWAY, CHILD.", the medic wants it
+off the cots) — with a per-conversation used-mask so the same remark never
+fires twice in one talk.
 
 Still placeholder: the **gift** hands over no item yet (no inventory), and
 **hostile** plays the battle-flash stand-in — both resolve and announce

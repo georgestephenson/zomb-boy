@@ -7,7 +7,8 @@ drift from what's checked. It then simulates the composer's exact tokenising +
 greedy wrap (dialogue.asm: EmitFrag/FlushWord) over EVERY reachable sentence:
 
     greeting/prompt = opener-or-continuation(mood) + topic(persona)
-    observation     = one context-bank line (CTX_*; CTRL_ITEM = an item name)
+    observation     = one line from the PERSONA'S OWN context banks (PO_CTX,
+                      8 banks indexed by CTX_*; CTRL_ITEM = an item name)
     question        = one persona question fragment (the turn's last beat)
     react           = bucket quip + tone tag (liked/disliked by delta sign)
     outcome         = one closing fragment
@@ -207,7 +208,10 @@ def main() -> int:
         topics = read_bank(rom, le16(rom, off + 8), f"topics[{i}]")
         pal = rom[off + 10]
         quests = read_bank(rom, le16(rom, off + 12), f"quests[{i}]")
-        personas.append((name, traits, nouns, topics, pal, quests))
+        ctx = [read_bank(rom, a, f"ctx[{i}][{c}]") for c, a in
+               enumerate(read_ptr_table(rom, le16(rom, off + 14), N_CTX,
+                                        f"ctxtable[{i}]"))]
+        personas.append((name, traits, nouns, topics, pal, quests, ctx))
 
     openers = [read_bank(rom, a, f"openers[{m}]") for m, a in
                enumerate(read_ptr_table(rom, syms["OpenerMoods"], N_MOODS, "OpenerMoods"))]
@@ -231,8 +235,6 @@ def main() -> int:
                                           "ToneLabelMoods")):
         label_banks.append([read_bank(rom, a, f"labels[m{m}][t{t}]") for t, a in
                             enumerate(read_ptr_table(rom, ma, N_TONES, f"labels[m{m}]"))])
-    ctx_banks = [read_bank(rom, a, f"ctx[{c}]") for c, a in
-                 enumerate(read_ptr_table(rom, syms["CtxBanks"], N_CTX, "CtxBanks"))]
     # Item names (items.asm): space-padded; EmitItem stops at the first pad
     # space, so the effective fill is the leading run of non-space glyphs.
     items = []
@@ -265,10 +267,16 @@ def main() -> int:
                     print(f"FAIL: label m{m}/t{t} '{decode(lbl)}' too long or invalid")
                     ok = False
     QMARK = FONT_BASE + CHARSET.index("?")
-    for i, (name, traits, nouns, topics, pal, quests) in enumerate(personas):
+    CTX_WEAPON = 3
+    for i, (name, traits, nouns, topics, pal, quests, ctx) in enumerate(personas):
         for q in quests:
             if q[-1] != QMARK:
                 print(f"FAIL: persona {i} question '{decode(q)}' doesn't end in ?")
+                ok = False
+        for line in ctx[CTX_WEAPON]:
+            if CTRL_ITEM not in line:
+                print(f"FAIL: persona {i} weapon remark '{decode(line)}' "
+                      f"lacks CTRL_ITEM (must name the equipped item)")
                 ok = False
         if not 3 <= pal <= 7:
             print(f"FAIL: persona {i} PO_PAL={pal} outside OBJ palettes 3..7")
@@ -320,7 +328,7 @@ def main() -> int:
     # Line shapes as composed by dialogue.asm: greeting/prompt = head + topic
     # (adjectives from the trait-tinted mood bank); reaction = bucket quip +
     # tone tag matching the delta's sign; outcome fragments stand alone.
-    for p, (name, traits, nouns_b, topics, _, quests) in enumerate(personas):
+    for p, (name, traits, nouns_b, topics, _, quests, ctx) in enumerate(personas):
         for m in range(N_MOODS):
             adjs_b = adjs[eff_mood(traits[1], m)]
             heads = [(h, f"greet p{p} m{m}") for h in openers[m]] + \
@@ -331,9 +339,9 @@ def main() -> int:
             # questions and context observations stand alone on their page
             for q in quests:
                 check_line([], q, nouns_b, adjs_b, f"quest p{p} m{m}")
-    for c, bank in enumerate(ctx_banks):
-        for line in bank:
-            check_line([], line, [], [], f"ctx[{c}]")
+            for c, bank in enumerate(ctx):
+                for line in bank:
+                    check_line([], line, nouns_b, adjs_b, f"ctx p{p}[{c}] m{m}")
     for quips, tag_tables, pol in ((reacts[0] + reacts[1], tags_liked, "liked"),
                                    (reacts[3] + reacts[4], tags_disliked, "disliked")):
         for quip in quips:

@@ -223,6 +223,8 @@ DEF PO_TOPICS      EQU 8           ; dw -> topic-template bank
 DEF PO_PAL         EQU 10          ; OBJ palette (3..7; tints are shared —
                                    ; only 5 hardware palettes are free)
 DEF PO_QUESTS      EQU 12          ; dw -> question bank (the turn's last beat)
+DEF PO_CTX         EQU 14          ; dw -> table of 8 context banks (CTX_* id
+                                   ; -> this persona's IN-VOICE observations)
 ; Trait axes (signed -60..+60; + = the second-named pole):
 ;   T0 WARY<->TRUSTING  T1 GRIM<->HOPEFUL  T2 SELFISH<->GENEROUS  T3 JOKING<->SERIOUS
 ; NOTE: |dot(push, traits)| over any tone must stay <= 127 (8-bit math);

@@ -233,9 +233,16 @@ ComposeObservation::
     ld hl, wCtxUsed
     or a, [hl]
     ld [hl], a                 ; one remark per context per conversation
+    ; the remark comes from the TALKING persona's own bank — the raider
+    ; menaces your pistol, the preacher tuts at it
     pop af
-    ld de, CtxBanks
-    call DerefTable            ; HL = this context's line bank
+    push af
+    ld c, PO_CTX
+    call GetPersonaField       ; HL = this persona's 8-bank context table
+    ld d, h
+    ld e, l
+    pop af
+    call DerefTable            ; HL = the context's line bank
     call PickPlain
     call EmitFrag
     ld a, 1
