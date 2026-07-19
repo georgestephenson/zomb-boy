@@ -34,6 +34,11 @@ def _w16(g, name, val):
     g.pyboy.memory[a + 1] = (val >> 8) & 0xFF
 
 
+def _w16b(g, addr, val):
+    g.pyboy.memory[addr] = val & 0xFF
+    g.pyboy.memory[addr + 1] = (val >> 8) & 0xFF
+
+
 def _press_a(g):
     g.hold("a")
     g.tick(3)
@@ -42,11 +47,19 @@ def _press_a(g):
 
 
 def _drivable_lane(g):
-    """A direction with >=5 non-solid tiles straight out from the player (water
-    is solid to a car, so this excludes it). Returns the button name."""
+    """A direction the 2x2 car can actually drive several tiles: its footprint
+    (top-left at the player, extending one tile right and one down) must stay on
+    non-solid ground at every step of the way (water is solid to a car). Returns
+    the button name, or None."""
     px, py = _pos(g)
     for button, dx, dy in DIRS:
-        if all(gen_tile_type(px + dx * k, py + dy * k) not in SOLID for k in range(1, 6)):
+        clear = True
+        for k in range(0, 6):                      # k=0 is the parked footprint
+            for i in (0, 1):                        # 2x2 footprint tiles
+                for j in (0, 1):
+                    if gen_tile_type(px + dx * k + i, py + dy * k + j) in SOLID:
+                        clear = False
+        if clear:
             return button
     return None
 
@@ -100,6 +113,98 @@ def test_enter_and_exit_the_car():
         cx, cy = g.s16("wCarWX"), g.s16("wCarWY")
         assert abs(cx - px) + abs(cy - py) <= 1, \
             f"car should park next to the player: {(cx, cy)} vs {(px, py)}"
+    finally:
+        g.close()
+
+
+def _find_clear_block(g, w, h):
+    """(ax, ay) near the player where the w x h tile block is all non-solid, else
+    None — a scratch spot to drop the car and probe collision deterministically."""
+    px, py = _pos(g)
+    for r in range(1, 14):
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                ax, ay = px + dx, py + dy
+                if all(gen_tile_type(ax + i, ay + j) not in SOLID
+                       for i in range(w) for j in range(h)):
+                    return ax, ay
+    return None
+
+
+def _reset_foot(g, x, y):
+    _w16(g, "wPlayerWX", x)
+    _w16(g, "wPlayerWY", y)
+    g.pyboy.memory[g.addr("wPlayerState")] = 0
+    g.pyboy.memory[g.addr("wStepOffset")] = 0
+    g.pyboy.memory[g.addr("wInCar")] = 0
+
+
+def test_car_occupies_four_solid_tiles():
+    """The parked car is a 2x2 world object (wCarWX/WY = top-left): the player on
+    foot must not be able to walk onto any of its four tiles. Probed against a
+    control run with the car moved away, so a coincidental wall can't pass it."""
+    g = Game()
+    try:
+        blk = _find_clear_block(g, 4, 3)   # left approach column + 2x2 + margin
+        assert blk, "no clear 4x3 block near spawn to test collision"
+        ax, ay = blk
+        cx, cy = ax + 1, ay                # car top-left, one tile right of approach
+        for row in (cy, cy + 1):           # the car's left column: both rows solid
+            # control: with the car elsewhere the player crosses this ground freely
+            _w16(g, "wCarWX", cx + 60)
+            _w16(g, "wCarWY", cy + 60)
+            _reset_foot(g, ax, row)
+            g.walk("right", 40)
+            assert _pos(g)[0] >= cx, \
+                f"control failed: clear ground at row {row} wasn't crossable: {_pos(g)}"
+            # now park the car's 2x2 here -> the player stops just left of it
+            _w16(g, "wCarWX", cx)
+            _w16(g, "wCarWY", cy)
+            _reset_foot(g, ax, row)
+            g.walk("right", 40)
+            assert _pos(g) == (cx - 1, row), \
+                f"player walked onto the car's tile (row {row}): {_pos(g)}"
+    finally:
+        g.close()
+
+
+def test_zombie_cannot_enter_the_car():
+    """Zombies treat all four of the car's tiles as solid too — a zombie marched
+    straight at the parked car never lands on its footprint."""
+    g = Game()
+    try:
+        blk = _find_clear_block(g, 4, 3)
+        assert blk, "no clear 4x3 block near spawn"
+        ax, ay = blk
+        cx, cy = ax + 1, ay
+        _w16(g, "wCarWX", cx)
+        _w16(g, "wCarWY", cy)
+        g.pyboy.memory[g.addr("wInCar")] = 0
+        foot = {(cx + i, cy + j) for i in (0, 1) for j in (0, 1)}
+        b = g.addr("wZombies")
+
+        def sz16(off):
+            v = g.r16(b + off)
+            return v - 0x10000 if v >= 0x8000 else v
+
+        g.pyboy.memory[b + 0] = 1                 # active
+        _w16b(g, b + 1, ax)                       # zombie at the approach tile
+        _w16b(g, b + 3, cy)
+        g.pyboy.memory[b + 5] = EFACE_RIGHT       # facing / marching right at the car
+        g.pyboy.memory[b + 6] = EFACE_RIGHT       # EO_DIR
+        landed = None
+        for _ in range(150):
+            g.tick(1)
+            z = (sz16(1), sz16(3))
+            if z in foot:
+                landed = z
+                break
+            if g.r8("wGameMode") != 0:            # keep it marching if it alerts
+                g.pyboy.memory[g.addr("wGameMode")] = 0
+                g.pyboy.memory[b + 6] = EFACE_RIGHT
+                g.pyboy.memory[b + 7] = 90
+                g.pyboy.memory[b + 8] = 0
+        assert landed is None, f"zombie stepped onto a car tile: {landed}"
     finally:
         g.close()
 
