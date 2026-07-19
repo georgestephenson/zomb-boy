@@ -28,6 +28,14 @@ wWX::               ds 2               ; domain-warped X used by water/biome pas
 wWY::               ds 2               ; domain-warped Y
 wBiX::              ds 2               ; biome-sample anchor X (chunk- or block-floored)
 wBiY::              ds 2               ; biome-sample anchor Y
+; CalcBiome memo cache: biome is pure in (anchor, seed) and neighbouring tiles
+; share anchors, so one entry skips ~half the biome hashing during streaming.
+; ClearRAM zeroes wBioCacheOK at boot (and on the EXIT soft-reset), so a stale
+; seed can never leak through the cache. Key bytes must stay contiguous.
+wBioCacheX::        ds 2               ; cached anchor X (16-bit LE)
+wBioCacheY::        ds 2               ; cached anchor Y
+wBioCacheVal::      ds 1               ; BIOME_* for that anchor
+wBioCacheOK::       ds 1               ; nonzero once the entry is valid
 ; House pass scratch (city biome): building size + this tile's offset into it.
 wHW::               ds 1               ; house width
 wHH::               ds 1               ; house height

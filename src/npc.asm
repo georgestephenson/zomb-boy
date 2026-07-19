@@ -233,10 +233,11 @@ DrawNPCs::
 .loop:
     ld a, [wNPCIdx]
     ld de, wNPCs
-    call CopyPoolIn
-    ld a, [wEnt + EO_ACTIVE]
-    and a, a
-    jr z, .next
+    call EntAddr
+    ld a, [hl]                 ; EO_ACTIVE: check in the pool so a free slot
+    and a, a                   ; (most of them, once the far ones cull) skips
+    jr z, .next                ; the 16-byte struct copy entirely
+    call CopyEntHL
     call EntScreenPos          ; -> A=visible, wScrX/wScrY set
     and a, a
     jr z, .next

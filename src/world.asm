@@ -172,8 +172,47 @@ GenCity:                        ; house already handled in GenTileType
 ; value-noise field, domain-warped so region borders are organic not square.
 ; The caller floors the coords to a feature anchor (chunk for houses, 2x2 block
 ; for terrain) so multi-tile features see one consistent biome.
+;
+; Memoized: the result is pure in (anchor, seed), and consecutive tiles share
+; anchors (2x2 blocks / 16x16 chunks), so a 1-entry cache answers about half of
+; all calls during strip generation / InitMap without touching Hash8. The seed
+; only changes across a boot, and ClearRAM zeroes wBioCacheOK there, so the
+; cache can never serve a stale world. Preserves D,E (GenTileType relies on E).
 ; -----------------------------------------------------------------------------
 CalcBiome::
+    ld a, [wBioCacheOK]
+    and a, a
+    jr z, .miss
+    ld hl, wBioCacheX
+    ld a, [wBiX]
+    cp [hl]
+    jr nz, .miss
+    inc hl
+    ld a, [wBiX+1]
+    cp [hl]
+    jr nz, .miss
+    inc hl
+    ld a, [wBiY]
+    cp [hl]
+    jr nz, .miss
+    inc hl
+    ld a, [wBiY+1]
+    cp [hl]
+    jr nz, .miss
+    ld a, [wBioCacheVal]
+    ret
+.miss:
+    ld hl, wBioCacheX
+    ld a, [wBiX]
+    ld [hl+], a
+    ld a, [wBiX+1]
+    ld [hl+], a
+    ld a, [wBiY]
+    ld [hl+], a
+    ld a, [wBiY+1]
+    ld [hl], a
+    ld a, 1
+    ld [wBioCacheOK], a
     call LoadHfromBi
     call ShiftH
     call ShiftH
@@ -214,15 +253,18 @@ CalcBiome::
     cp 212
     jr c, .forest
     ld a, BIOME_MARSH
-    ret
+    jr .store
 .city:
     ld a, BIOME_CITY
-    ret
+    jr .store
 .plains:
     ld a, BIOME_PLAINS
-    ret
+    jr .store
 .forest:
     ld a, BIOME_FOREST
+    ; fall through
+.store:
+    ld [wBioCacheVal], a        ; fill the memo entry (key stored at .miss)
     ret
 
 ; -----------------------------------------------------------------------------
@@ -515,20 +557,18 @@ LoadHfromW:
     ld [wHY+1], a
     ret
 
-; ShiftH: wHX >>= 1 and wHY >>= 1 (logical, 16-bit LE). Clobbers A.
+; ShiftH: wHX >>= 1 and wHY >>= 1 (logical, 16-bit LE). Clobbers HL (this is
+; the hot inner helper of every noise field — called up to ~18x per generated
+; tile, so it shifts in place instead of bouncing each byte through A).
 ShiftH:
-    ld a, [wHX+1]
-    srl a
-    ld [wHX+1], a
-    ld a, [wHX]
-    rra
-    ld [wHX], a
-    ld a, [wHY+1]
-    srl a
-    ld [wHY+1], a
-    ld a, [wHY]
-    rra
-    ld [wHY], a
+    ld hl, wHX+1
+    srl [hl]
+    dec hl
+    rr [hl]
+    ld hl, wHY+1
+    srl [hl]
+    dec hl
+    rr [hl]
     ret
 
 ; -----------------------------------------------------------------------------

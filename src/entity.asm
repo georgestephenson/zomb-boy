@@ -113,10 +113,12 @@ UpdateZombies::
     ld [wZombIdx], a
 .loop:
     ld a, [wZombIdx]
-    call CopyEntityIn
-    ld a, [wEnt + EO_ACTIVE]
-    and a, a
+    ld de, wZombies
+    call EntAddr
+    ld a, [hl]                  ; EO_ACTIVE: check in the pool, so a free slot
+    and a, a                    ; skips the 16-byte struct copy entirely
     jr z, .next
+    call CopyEntHL
     call UpdateZombieAI
     call CheckLOS
     and a, a
@@ -377,10 +379,12 @@ DrawZombies::
     ld [wZombIdx], a
 .loop:
     ld a, [wZombIdx]
-    call CopyEntityIn
-    ld a, [wEnt + EO_ACTIVE]
+    ld de, wZombies
+    call EntAddr
+    ld a, [hl]                  ; EO_ACTIVE: skip the copy for a free slot
     and a, a
     jr z, .next
+    call CopyEntHL
     call EntScreenPos           ; -> A=visible, wScrX/wScrY set
     and a, a
     jr z, .next
@@ -585,35 +589,35 @@ DrawBubble:
 ; CopyEntityIn / CopyEntityOut: A = index. Copies between wZombies[idx] and wEnt.
 ; The pool-generic versions (CopyPoolIn/Out, DE = pool base) are shared with the
 ; survivor NPCs (npc.asm) — same struct, different pool.
+; The copies are unrolled: they run ~30x per overworld frame (update + draw
+; loops over three pools), so the loop counter/branch was pure overhead.
 CopyEntityIn::
     ld de, wZombies
 CopyPoolIn::
     call EntAddr                ; A=idx, DE=base -> HL = &pool[idx]
-    ld de, wEnt                 ; copy entity -> wEnt
-    ld b, ENT_SIZE
-.loop:
+    ; fall through: copy the struct at HL into wEnt
+CopyEntHL::                     ; HL -> a pool struct (callers that already have
+    ld de, wEnt                 ; the address skip the EntAddr re-derivation)
+    REPT ENT_SIZE
     ld a, [hl+]
     ld [de], a
     inc de
-    dec b
-    jr nz, .loop
+    ENDR
     ret
 CopyEntityOut::
     ld de, wZombies
 CopyPoolOut::
     call EntAddr                ; A=idx, DE=base -> HL = &pool[idx]
     ld de, wEnt                 ; copy wEnt -> entity  (DE=src, HL=dst)
-    ld b, ENT_SIZE
-.loop:
+    REPT ENT_SIZE
     ld a, [de]
     ld [hl+], a
     inc de
-    dec b
-    jr nz, .loop
+    ENDR
     ret
 
-; EntAddr: A = index, DE = pool base -> HL = base + index * 16.
-EntAddr:
+; EntAddr: A = index, DE = pool base -> HL = base + index * 16. Preserves DE.
+EntAddr::
     ld l, a
     ld h, 0
     add hl, hl
@@ -883,38 +887,81 @@ SetPool::
     ret
 
 ; CullFarPool: deactivate every active entity in the pool (wPoolBase/wPoolCount)
-; whose Chebyshev distance from the player exceeds ENT_CULL_DIST.
+; whose Chebyshev distance from the player exceeds ENT_CULL_DIST. Scans the
+; structs IN PLACE — it reads only EO_ACTIVE + the coords and writes only
+; EO_ACTIVE on a cull. (This runs over all three pools every overworld frame;
+; the old wEnt round-trip copied ~26 structs a frame just to measure distances.)
 CullFarPool::
-    xor a, a
-    ld [wPoolIdx], a
+    ld a, [wPoolBase]
+    ld l, a
+    ld a, [wPoolBase+1]
+    ld h, a
+    ld a, [wPoolCount]
+    ld c, a
 .loop:
-    ld a, [wPoolBase]
+    ld a, [hl]                  ; EO_ACTIVE
+    and a, a
+    jr z, .next
+    push hl
+    inc hl                      ; EO_WXLO
+    ld a, [wPlayerWX]
+    sub [hl]
     ld e, a
-    ld a, [wPoolBase+1]
-    ld d, a
-    ld a, [wPoolIdx]
-    call CopyPoolIn             ; A=idx, DE=base -> wEnt
-    ld a, [wEnt + EO_ACTIVE]
-    and a, a
-    jr z, .next
-    call EntTooFar
-    and a, a
-    jr z, .next
+    inc hl                      ; EO_WXHI
+    ld a, [wPlayerWX+1]
+    sbc [hl]
+    ld d, a                     ; DE = playerX - entX (signed)
+    call CullMagDE
+    jr nz, .cull
+    inc hl                      ; EO_WYLO
+    ld a, [wPlayerWY]
+    sub [hl]
+    ld e, a
+    inc hl                      ; EO_WYHI
+    ld a, [wPlayerWY+1]
+    sbc [hl]
+    ld d, a                     ; DE = playerY - entY (signed)
+    call CullMagDE
+    jr nz, .cull
+    pop hl
+    jr .next
+.cull:
+    pop hl
     xor a, a
-    ld [wEnt + EO_ACTIVE], a    ; despawn: free the slot
-    ld a, [wPoolBase]
-    ld e, a
-    ld a, [wPoolBase+1]
-    ld d, a
-    ld a, [wPoolIdx]
-    call CopyPoolOut
+    ld [hl], a                  ; despawn: free the slot in place
 .next:
-    ld a, [wPoolIdx]
-    inc a
-    ld [wPoolIdx], a
-    ld hl, wPoolCount
-    cp [hl]
-    jr c, .loop
+    ld a, l
+    add a, ENT_SIZE
+    ld l, a
+    jr nc, .nc
+    inc h
+.nc:
+    dec c
+    jr nz, .loop
+    ret
+
+; CullMagDE: DE = signed 16-bit delta -> NZ if |DE| > ENT_CULL_DIST, Z if near.
+; Preserves BC, HL.
+CullMagDE:
+    bit 7, d
+    jr z, .pos
+    xor a, a                    ; DE = -DE
+    sub e
+    ld e, a
+    sbc a, a
+    sub d
+    ld d, a
+.pos:
+    ld a, d
+    and a, a
+    ret nz                      ; |delta| >= 256 tiles -> far
+    ld a, e
+    cp ENT_CULL_DIST + 1
+    jr nc, .far
+    xor a, a                    ; Z: within the cull radius
+    ret
+.far:
+    or a, 1                     ; NZ: too far
     ret
 
 ; CountActivePool: DE = base, B = count -> A = number of active entities.
@@ -937,33 +984,6 @@ CountActivePool::
     dec b
     jr nz, .loop
     ld a, c
-    ret
-
-; EntTooFar: A = 1 (NZ) if wEnt is farther than ENT_CULL_DIST from the player on
-; either axis (Chebyshev), else A = 0 (Z). Uses PXmEX/PYmEY (player - ent).
-EntTooFar:
-    call PXmEX
-    call FarMag
-    ret nz
-    call PYmEY
-    ; fall through
-; FarMag: HL = signed 16-bit delta -> A = 1 (NZ) if |HL| > ENT_CULL_DIST, else 0.
-FarMag:
-    bit 7, h
-    jr z, .pos
-    call Neg16HL
-.pos:
-    ld a, h
-    and a, a
-    jr nz, .far                 ; |delta| >= 256 tiles -> far
-    ld a, l
-    cp ENT_CULL_DIST + 1
-    jr nc, .far
-    xor a, a
-    ret
-.far:
-    ld a, 1
-    or a, a
     ret
 
 ; FindFreeSlot: DE = base, B = count. If a slot has EO_ACTIVE == 0, returns CY
