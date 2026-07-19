@@ -17,6 +17,7 @@ import os
 import pytest
 from pyboy import PyBoy
 
+import worldgen_model
 from harness import ROM, load_symbols
 from worldgen_model import gen_tile_type
 
@@ -42,9 +43,20 @@ def _forced_dmg_rom(tmp_path):
 def dmg(tmp_path):
     pb = PyBoy(_forced_dmg_rom(tmp_path), window="null",
                sound_emulated=False, cgb=True)
-    # No double-speed on the DMG path, so boot is slower — settle generously.
+    # Press SELECT+START through the title screen (forces the classic world
+    # seed). PyBoy's boot ROM runs until frame ~64, so the title is only up
+    # from ~frame 79; no double-speed on the DMG path, so settle generously.
+    for _ in range(100):
+        pb.tick()
+    pb.button_press("select")
+    pb.button_press("start")
+    for _ in range(6):
+        pb.tick()
+    pb.button_release("start")
+    pb.button_release("select")
     for _ in range(320):
         pb.tick()
+    worldgen_model.set_seed(pb.memory[load_symbols()["hWorldSeed"]])
     yield pb
     pb.stop(save=False)
 

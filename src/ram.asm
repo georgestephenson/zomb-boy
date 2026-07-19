@@ -32,6 +32,10 @@ wHH::               ds 1               ; house height
 wHDX::              ds 1               ; this tile's dx within the house bbox
 wHDY::              ds 1               ; ... and dy
 
+; Title screen: frames spent waiting for START (the press timing is the world
+; seed's entropy source — see TitleScreen in main.asm).
+wTitleTick::        ds 1
+
 ; Input
 wCurKeys::          ds 1               ; held this frame (1 = pressed)
 wNewKeys::          ds 1               ; pressed this frame (edge)
@@ -94,6 +98,8 @@ wTalkSubject::      ds 1               ; noun-bank index the conversation orbits
 wTalkTone::         ds 1               ; TONE_* just picked (drives react tags)
 wTalkMet::          ds 1               ; EO_MET as it was BEFORE this talk
 wTalkCursor::       ds 1               ; menu cursor 0..3 (bit0 = col, bit1 = row)
+wHasPortrait::      ds 1               ; nonzero if this persona has a 56x56 BG
+                                       ; portrait (vs. the small OBJ sprite)
 wMenuTones::        ds 4               ; the TONE_* offered in each menu slot
 wMenuTries::        ds 1               ; BuildMenu redraw counter
 ; Typewriter reveal: walks wTalkText into VRAM via the write queue.
@@ -121,4 +127,6 @@ SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ
 hIsCGB::            ds 1               ; 1 = Game Boy Color, 0 = DMG (set at boot,
                                        ; lives in HRAM so ClearRAM can't wipe it)
+hWorldSeed::        ds 1               ; the world-gen seed (set on the title
+                                       ; screen; HRAM keeps Hash8's read cheap)
 hOAMDMA::           ds 16              ; OAM DMA trampoline (copied here at boot)

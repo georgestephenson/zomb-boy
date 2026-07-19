@@ -11,6 +11,7 @@
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
+INCLUDE "include/charmap.inc"       ; title strings assemble to font tile ids
 
 SECTION "EntryPoint", ROM0[$0100]
     di
@@ -72,6 +73,45 @@ Start:
     call LoadFont                   ; expand the 1bpp font to $8800 (FONT_BASE)
     call CopyDMARoutine
     call LoadPalettes
+
+    ; --- title screen: PRESS START -----------------------------------------
+    ; The frame the player presses START on is the entropy source for the
+    ; world seed — there is no earlier one (DIV at boot is deterministic on
+    ; hardware and emulators alike, so seeding there gives the same world
+    ; every power-on). SELECT+START forces the classic WORLD_SEED so the
+    ; integration tests and the reference model get a reproducible world.
+    call DrawTitle
+    xor a, a
+    ldh [rSCY], a                   ; power-on scroll registers are undefined
+    ldh [rSCX], a
+    ld a, LCDCF_ON | LCDCF_BGON | LCDCF_BG8000 | LCDCF_BG9800
+    ldh [rLCDC], a
+.title:
+    ldh a, [rLY]                    ; leave the current VBlank...
+    cp SCRN_Y
+    jr nc, .title
+    call WaitVBlankLY               ; ...and spin to the next: one tick/frame
+    ld hl, wTitleTick
+    inc [hl]
+    call ReadInput
+    ld a, [wNewKeys]
+    and PAD_START
+    jr z, .title
+    ld a, [wTitleTick]              ; seed = press frame ^ DIV sub-frame bits
+    ld b, a
+    ldh a, [rDIV]
+    xor b
+    ld b, a
+    ld a, [wCurKeys]
+    and PAD_SELECT
+    jr z, .seeded
+    ld b, WORLD_SEED                ; SELECT held: the classic world
+.seeded:
+    ld a, b
+    ldh [hWorldSeed], a
+    call WaitVBlankLY               ; safe point to turn the LCD back off
+    xor a, a
+    ldh [rLCDC], a                  ; (InitMap below overwrites the title text)
 
     call InitPlayer                 ; choose a passable start tile
     call UpdateView                 ; derive the camera from the player
@@ -149,3 +189,26 @@ MainLoop:
     call hOAMDMA
     call DrainTalkQ                 ; typewriter/menu writes, bounded
     jr MainLoop
+
+; -----------------------------------------------------------------------------
+; DrawTitle: write the title strings straight to SCRN0 (call with the LCD off).
+; The strings are charmap'd, so each byte already IS a font tile id; the
+; cleared tile map (tile 0 = grass) is the backdrop.
+; -----------------------------------------------------------------------------
+DrawTitle:
+    ld hl, _SCRN0 + 6 * 32 + 6      ; row 6, centred (8 chars)
+    ld de, TitleName
+    call .puts
+    ld hl, _SCRN0 + 10 * 32 + 4     ; row 10, centred (11 chars)
+    ld de, TitlePrompt
+    ; fall through
+.puts:
+    ld a, [de]
+    and a, a
+    ret z
+    ld [hl+], a
+    inc de
+    jr .puts
+
+TitleName:   db "ZOMB BOY", 0
+TitlePrompt: db "PRESS START", 0

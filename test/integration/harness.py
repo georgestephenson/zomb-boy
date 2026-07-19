@@ -20,6 +20,8 @@ sys.path.insert(0, os.path.join(ROOT, "test", "model"))
 
 from pyboy import PyBoy  # noqa: E402
 
+import worldgen_model  # noqa: E402
+
 OAM_BASE = 0xFE00
 
 
@@ -42,7 +44,20 @@ def load_symbols():
 
 
 class Game:
-    def __init__(self, settle=150, poison=None):
+    def __init__(self, settle=150, poison=None, seed="classic", press_frame=90):
+        """Boot the ROM and press through the PRESS START title screen.
+
+        The world seed is captured from the START-press timing, so:
+          seed="classic"  hold SELECT while pressing START -> the fixed
+                          WORLD_SEED ($A5) world every layout-sensitive test
+                          assumes (and the reference model's default).
+          seed="random"   plain START at `press_frame` -> a press-timing seed
+                          (deterministic per press_frame under PyBoy, but a
+                          different world for a different press_frame).
+          seed=None       never press START; stays on the title screen.
+        After boot the reference model is re-seeded from the ROM's actual
+        hWorldSeed, so gen_tile_type comparisons work at any seed.
+        """
         assert os.path.exists(ROM), f"ROM not built: {ROM} (run `make` first)"
         # The ROM is now CGB-compatible ($80 header) so it also runs on DMG; force
         # CGB here since these tests validate the colour/double-speed path. (PyBoy
@@ -59,8 +74,22 @@ class Game:
                 self.pyboy.memory[a] = poison
             for a in range(0x8000, 0xA000):
                 self.pyboy.memory[a] = poison
+        if seed is None:
+            self.tick(settle)
+            return
+        # PyBoy's CGB boot ROM (logo) runs until frame ~64, so the title
+        # screen is only up from frame ~73 — press_frame must stay beyond it.
+        self.tick(press_frame)
+        if seed == "classic":
+            self.hold("select")
+        self.hold("start")
+        self.tick(4)                    # let ReadInput see the edge
+        self.release("start")
+        if seed == "classic":
+            self.release("select")
         if settle:
             self.tick(settle)
+        worldgen_model.set_seed(self.r8("hWorldSeed"))
 
     # --- lifecycle ---
     def close(self):

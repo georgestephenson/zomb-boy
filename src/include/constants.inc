@@ -5,6 +5,9 @@ IF !DEF(CONSTANTS_INC)
 DEF CONSTANTS_INC EQU 1
 
 ; --- World generation -------------------------------------------------------
+; The "classic" seed. The actual seed lives in hWorldSeed, captured on the
+; title screen from the START-press timing; SELECT+START forces this value so
+; tests and the reference model stay deterministic (worldgen_model.py default).
 DEF WORLD_SEED     EQU $A5
 
 ; Biome ids (a coarse, domain-warped field selects one per region; each biome
@@ -272,5 +275,22 @@ DEF TINT_THRESH    EQU 17
 
 DEF PAL_BG_UI      EQU 4           ; BG palette for the whole talk screen
                                    ; (0-3 belong to the biome terrain)
+
+; --- Survivor portraits (talk.asm ShowPortrait + generated portrait_data.asm) -
+; A 56x56 portrait is a 7x7 BG-tile block on the talk screen (49 tiles is far
+; past the 40-OBJ limit, so it can only be background). Its tiles occupy a
+; reserved VRAM window clear of terrain/OBJ (0..30) and font (128+); its three
+; colour palettes take the free BG slots 5/6/7. Descriptor layout is documented
+; in portrait_data.asm and read by ShowPortrait.
+DEF PORTRAIT_COLS  EQU 7
+DEF PORTRAIT_ROWS  EQU 7
+DEF PORTRAIT_NTILES EQU PORTRAIT_COLS * PORTRAIT_ROWS   ; 49
+DEF PORTRAIT_TILE_BASE EQU 64      ; first VRAM tile id (64..112, before FONT_BASE)
+DEF PORTRAIT_COL0  EQU 6           ; top-left BG cell (centred above the text box)
+DEF PORTRAIT_ROW0  EQU 2
+DEF PAL_BG_PORTRAIT EQU 5          ; portrait uses BG palettes 5/6/7
+DEF NUM_PORTRAIT_PALS EQU 3
+DEF PORTRAIT_ATTR_OFF EQU NUM_PORTRAIT_PALS * 8         ; 24: palettes -> attr map
+DEF PORTRAIT_TILE_OFF EQU PORTRAIT_ATTR_OFF + PORTRAIT_NTILES  ; 73: -> tile data
 
 ENDC

@@ -122,6 +122,8 @@ Built in vertical slices (see [doc 02 §6](docs/design/02-world-and-exploration.
 - [x] v0.2 — endless streaming world, water + roads, walk animation
 - [x] Music playback (hUGEDriver + hUGETracker pipeline, demo song)
 - [x] v0.3 — wandering zombies with line-of-sight → battle trigger (placeholder)
+- [x] Title screen with a random world seed per playthrough (START-press
+      timing; SELECT+START replays the classic seed)
 - [x] v0.4 — survivors: 10 personas, grammar dialogue, 8-tone random menus,
       affinity, 3-round outcomes
 - [ ] Gift items + real survivor combat (wire the outcome placeholders up)

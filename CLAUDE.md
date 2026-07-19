@@ -52,7 +52,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 
 | Module | Responsibility |
 |--------|----------------|
-| `main.asm` | Entry ($0100), boot init, main loop (`wGameMode` dispatch) |
+| `main.asm` | Entry ($0100), boot init, title screen (seed capture), main loop (`wGameMode` dispatch) |
 | `world.asm` | Tile generator, map init, BG streaming (the engine) |
 | `player.asm` | Movement, collision, camera, sprite |
 | `entity.asm` | Zombie AI + LOS; the shared 16-byte entity struct + pool helpers |
@@ -69,7 +69,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `ram.asm` | **All** WRAM/HRAM variables (one place) |
 | `util.asm` | 16-bit LE pointer math (`Inc16Ptr`/`Dec16Ptr`/`Add16Ptr`) |
 | `include/constants.inc` | Shared `EQU` constants |
-| `include/charmap.inc` | ASCII → font-tile `charmap` (dialogue strings only) |
+| `include/charmap.inc` | ASCII → font-tile `charmap` (dialogue + title strings) |
 
 ### Main loop (main.asm)
 Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
@@ -141,9 +141,18 @@ scroll updates — so there's no seam or one-frame latency.
   regenerate just that edge — this is what makes the world endless. Every visible
   cell is always current; off-screen margin cells may be stale but aren't shown.
 - **`Hash8` is a permutation-table value-noise hash** (256-byte `PermTable`,
-  page-aligned so an index is just `ld l,a`). Seeded by `(WORLD_SEED + salt)`;
+  page-aligned so an index is just `ld l,a`). Seeded by `(hWorldSeed + salt)`;
   callers put the coord-transformed inputs in `wHX/wHY` and pass a salt in `B`.
   It replaced an ad-hoc add/xor/swap hash that produced **diagonal streaks**.
+- **The seed is per-playthrough, captured on the title screen** (`Start` in
+  main.asm): the world generates only after START, and `hWorldSeed` = the
+  press-frame counter ^ `rDIV` — human timing is the only entropy source on a
+  cartridge (DIV *at boot* is deterministic, don't seed there). **SELECT+START
+  forces the classic `WORLD_SEED` ($A5)** — that's how the harness and the
+  reference model's default stay reproducible. The seed is one byte, so
+  `worldgen_model.py` sweeps **all 256 possible worlds** (spawn passable,
+  spawn area walkable, biomes vary) on every run; `--seed N` runs the full
+  statistics at one seed.
 - **`GenTileType` is biome-driven.** A coarse, domain-warped `CalcBiome` field
   (~64-tile cells) picks city / plains / forest / marsh; each biome assembles its
   own features from shared noise fields (`WaterField`, `TreeQuad`), so water
@@ -161,8 +170,14 @@ scroll updates — so there's no seam or one-frame latency.
   That's why boot (`InitMap`, 1024 tiles) and per-step `GenStrip` run under **CGB
   double-speed** (enabled in `Start`, *gated on running on CGB*). Double-speed also
   lets `BLIT_CHUNK` push a whole strip in one VBlank. If you add per-tile work,
-  watch boot time (the integration tests boot at `settle=150` frames — keep
-  `InitMap` well under that; on DMG there's no double-speed so it's ~2x slower).
+  watch boot time (the harness allows `settle=150` frames after its title
+  START-press for `InitMap` + spawns — keep well under that; on DMG there's no
+  double-speed so it's ~2x slower). The harness presses **SELECT+START through
+  the title** (classic seed) at `press_frame=90` (PyBoy's boot-ROM logo runs
+  until frame ~64, so the title only exists from ~73) and re-seeds the
+  reference model from the ROM's actual `hWorldSeed` so tilemap comparisons
+  hold at any seed (`Game(seed="random", press_frame=N)` boots a random world;
+  see `test_seed.py`).
 
 ### Audio (audio.asm + vendored hUGEDriver)
 - Music uses **hUGEDriver**, vendored (committed, public domain) under

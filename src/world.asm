@@ -454,7 +454,7 @@ IsSolid::
 ; Clobbers A,C,L; preserves B,D,E. Mirror of worldgen_model.py:hash8.
 ; -----------------------------------------------------------------------------
 Hash8:
-    ld a, WORLD_SEED
+    ldh a, [hWorldSeed]
     add a, b                    ; seed + salt
     ld h, HIGH(PermTable)
     ld c, a

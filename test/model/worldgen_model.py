@@ -23,7 +23,16 @@ Generator design (keep in lockstep with src/world.asm — change both together):
     per biome. Roads (a meandering 16-grid) and houses are city-only.
 """
 
-WORLD_SEED = 0xA5
+DEFAULT_SEED = 0xA5      # the "classic" seed (WORLD_SEED in constants.inc);
+                         # SELECT+START on the title screen forces it in-game
+WORLD_SEED = DEFAULT_SEED
+
+
+def set_seed(seed: int) -> None:
+    """Reseed the model. The integration harness calls this with the ROM's
+    actual hWorldSeed so tilemap comparisons are seed-agnostic."""
+    global WORLD_SEED
+    WORLD_SEED = seed & 0xFF
 
 # --- tile ids (also the VRAM tile index for background tiles) ---------------
 TILE_GRASS, TILE_BRUSH, TILE_FLOWER, TILE_DIRT = 0, 1, 2, 3
@@ -218,9 +227,9 @@ def find_start():
     return x, 0
 
 
-def main() -> int:
-    assert sorted(PERM) == list(range(256)), "PERM is not a permutation of 0..255"
-
+def check_seed(seed: int) -> int:
+    """The full statistical + invariant check at one seed (a 256x256 sample)."""
+    set_seed(seed)
     names = {TILE_GRASS: "grass", TILE_BRUSH: "brush", TILE_FLOWER: "flower",
              TILE_DIRT: "dirt ", TILE_WATER: "water", TILE_ROAD: "road ",
              TILE_WALL: "wall ", TILE_FLOOR: "floor", TILE_DOOR: "door ",
@@ -269,5 +278,59 @@ def main() -> int:
     return 0 if ok else 1
 
 
+def sweep(n: int = 48) -> int:
+    """Exhaustive reliability check: the in-game seed is one byte, so EVERY
+    possible world can be vetted. Per seed this runs cheaper invariants than
+    check_seed (which does the full statistics at one seed): the boot spawn
+    scan must land on a passable tile, the spawn neighbourhood must not be
+    degenerate (boxed in by solids), and the biome field must actually vary.
+    """
+    bad = []
+    for seed in range(256):
+        set_seed(seed)
+        sx, sy = find_start()
+        if gen_tile_type(sx, sy) in SOLID:
+            bad.append((seed, "boot spawn scan found no passable tile"))
+            continue
+        total = n * n
+        walkable = sum(1 for y in range(n) for x in range(n)
+                       if gen_tile_type(x, y) not in SOLID)
+        if walkable < total // 4:
+            bad.append((seed, f"spawn area only {100*walkable//total}% walkable"))
+        biomes = {biome(x * 48, y * 48) for x in range(12) for y in range(12)}
+        if len(biomes) < 2:
+            bad.append((seed, "biome field is constant over a 576-tile span"))
+    set_seed(DEFAULT_SEED)
+    if bad:
+        for seed, why in bad:
+            print(f"FAIL: seed 0x{seed:02X}: {why}")
+        return 1
+    print(f"PASS: all 256 seeds ok (spawn passable, >=25% walkable in the "
+          f"{n}x{n} spawn area, biomes vary)")
+    return 0
+
+
+def main(argv) -> int:
+    assert sorted(PERM) == list(range(256)), "PERM is not a permutation of 0..255"
+    seed = DEFAULT_SEED
+    do_sweep = True
+    args = list(argv)
+    while args:
+        a = args.pop(0)
+        if a == "--seed":                 # full check at one specific seed
+            seed = int(args.pop(0), 0)
+            do_sweep = False
+        elif a == "--no-sweep":
+            do_sweep = False
+        else:
+            print(f"usage: worldgen_model.py [--seed N] [--no-sweep]")
+            return 2
+    rc = check_seed(seed)
+    if do_sweep:
+        rc |= sweep()
+    return rc
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import sys
+    raise SystemExit(main(sys.argv[1:]))
