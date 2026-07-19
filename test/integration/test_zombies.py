@@ -92,25 +92,30 @@ def _plant_zombie_facing_player(game):
 def test_los_detects_player_on_land():
     # Control for the swim test: a zombie staring at the adjacent player raises
     # the alert (switches to MODE_ALERT).
+    # Tick a couple frames, not one: a single PyBoy frame need not span the main
+    # loop's UpdateZombies (the loop is VBlank-locked, so where the frame boundary
+    # falls in it shifts with any code-size change), and MODE_ALERT persists for
+    # ALERT_FRAMES once set — so 2 frames reliably captures the detection.
     from harness import Game
     g = Game()
     try:
         g.pyboy.memory[g.addr("wSwimming")] = 0
         _plant_zombie_facing_player(g)
-        g.tick(1)
+        g.tick(2)
         assert g.r8("wGameMode") == MODE_ALERT, "zombie should spot the player"
     finally:
         g.close()
 
 
 def test_los_blind_while_player_swims():
-    # In the water the player is hidden: the same staring zombie must not detect.
+    # In the water the player is hidden: the same staring zombie must not detect
+    # (over the same 2-frame window the land control uses).
     from harness import Game
     g = Game()
     try:
         g.pyboy.memory[g.addr("wSwimming")] = 1
         _plant_zombie_facing_player(g)
-        g.tick(1)
+        g.tick(2)
         assert g.r8("wGameMode") == MODE_OVERWORLD, "swimming player was detected"
     finally:
         g.close()

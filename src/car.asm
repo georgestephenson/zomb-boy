@@ -13,6 +13,11 @@
 ; member: there is only ever one, and boarding just flips wInCar rather than
 ; moving anything, so no view/streaming edge is disturbed. It reuses the shared
 ; entity helpers (EntScreenPos, StepGen, CheckZombieAt/NPCAt) via wEnt/wGen.
+;
+; The car is a 16x16 (2x2-tile) sprite drawn across OAM slots OAM_CAR..OAM_CAR+3
+; (see DrawCar / DrawCar2x2), centred on its tile. Getting out leaves the car
+; parked where you stopped and steps the PLAYER out onto an adjacent tile (armed
+; via wCarEject, walked next frame by UpdatePlayer — the normal, seam-free path).
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
@@ -102,9 +107,10 @@ CheckCarToggle::
     xor a, a
     ld [wSwimming], a          ; you can't be swimming from the driver's seat
     ld [wSplashTimer], a
+    ld [wCarEject], a          ; drop any stale get-out step
     jr .consumeA
 .exit:
-    call ExitCar               ; park adjacent + clear wInCar
+    call ExitCar               ; park where you stopped + eject the player
     ; fall through
 .consumeA:
     call ComposeHUD            ; swap the energy/fuel readout in immediately
@@ -116,32 +122,17 @@ CheckCarToggle::
     ret
 
 ; -----------------------------------------------------------------------------
-; ExitCar: leave the car. Park it on an adjacent passable, unoccupied tile
-; (facing direction first, then a fixed sweep) so it ends up right next to where
-; you stopped; if hemmed in on all sides, park on the player's own tile. The
-; player stays put (no scroll). Sets wCarFacing to the travel direction.
+; ExitCar: leave the car. It stays parked exactly where you stopped
+; (wCarWX/WY = the player's current tile) and the PLAYER steps out onto an
+; adjacent passable, unoccupied tile (facing direction first, then a fixed
+; sweep). The step is *armed* via wCarEject and walked next idle frame by
+; UpdatePlayer, so it rides the normal walk + streaming path (no view seam). If
+; hemmed in on all sides, the player stays on the car tile (re-board to leave).
 ; -----------------------------------------------------------------------------
 ExitCar:
     xor a, a
     ld [wInCar], a
-    ld a, [wFacing]
-    ld [wCarFacing], a
-    ld a, [wFacing]
-    call TryParkDir
-    ret z
-    ld a, EFACE_DOWN
-    call TryParkDir
-    ret z
-    ld a, EFACE_UP
-    call TryParkDir
-    ret z
-    ld a, EFACE_LEFT
-    call TryParkDir
-    ret z
-    ld a, EFACE_RIGHT
-    call TryParkDir
-    ret z
-    ; boxed in: park under the player (you can just drive off again)
+    ; the car keeps the tile the player just vacated
     ld a, [wPlayerWX]
     ld [wCarWX], a
     ld a, [wPlayerWX+1]
@@ -150,11 +141,32 @@ ExitCar:
     ld [wCarWY], a
     ld a, [wPlayerWY+1]
     ld [wCarWY+1], a
+    ld a, [wFacing]
+    ld [wCarFacing], a
+    ; pick an ejection direction for the player: face dir first, then a sweep
+    ld a, [wFacing]
+    call TryEjectDir
+    ret z
+    ld a, EFACE_DOWN
+    call TryEjectDir
+    ret z
+    ld a, EFACE_UP
+    call TryEjectDir
+    ret z
+    ld a, EFACE_LEFT
+    call TryEjectDir
+    ret z
+    ld a, EFACE_RIGHT
+    call TryEjectDir
+    ret z
+    ; boxed in: no eject armed; the player stays on the parked car tile
     ret
 
-; TryParkDir: A = EFACE_* candidate. If player+step(dir) is passable terrain and
-; free of a zombie/NPC, store it as the car position and return Z; else NZ.
-TryParkDir:
+; TryEjectDir: A = EFACE_* candidate. If player+step(dir) is passable terrain and
+; free of a zombie/NPC, arm the deferred player step-out that way (wCarEject =
+; dir+1) and return Z; else NZ. (Water is solid here, so the car never ejects you
+; into the drink even though you *can* swim on foot.)
+TryEjectDir:
     push af
     ld a, [wPlayerWX]
     ld [wGenX], a
@@ -165,27 +177,24 @@ TryParkDir:
     ld a, [wPlayerWY+1]
     ld [wGenY+1], a
     pop af
-    call StepGen
+    push af
+    call StepGen               ; wGen = tile one step in that direction
     call GenTileType
     call IsSolid
-    jr nz, .no                 ; wall/tree/water -> not a parking spot
+    jr nz, .no                 ; wall/tree/water -> not an exit tile
     call CheckZombieAt
     and a
     jr nz, .no
     call CheckNPCAt
     and a
     jr nz, .no
-    ld a, [wGenX]
-    ld [wCarWX], a
-    ld a, [wGenX+1]
-    ld [wCarWX+1], a
-    ld a, [wGenY]
-    ld [wCarWY], a
-    ld a, [wGenY+1]
-    ld [wCarWY+1], a
-    xor a, a                   ; Z = parked
+    pop af                     ; A = the accepted direction
+    inc a                      ; store dir+1 (0 = "no eject")
+    ld [wCarEject], a
+    xor a, a                   ; Z = armed
     ret
 .no:
+    pop af
     or a, 1                    ; NZ = no good
     ret
 
@@ -222,31 +231,17 @@ CheckCarAt::
     ret
 
 ; =============================================================================
-; Rendering
+; Rendering — the car is a 16x16 (2x2) sprite in slots OAM_CAR..OAM_CAR+3.
 ; =============================================================================
-; DrawCarDriving: the car takes the player's fixed screen cell (slot 0) while
-; driving, facing the way the player faces.
-DrawCarDriving::
-    ld hl, wShadowOAM              ; slot 0 (OAM_PLAYER)
-    ld a, SPR_Y
-    ld [hl+], a
-    ld a, SPR_X
-    ld [hl+], a
-    ld a, [wFacing]
-    call CarTileAttr              ; -> B=tile, C=attr
-    ld a, b
-    ld [hl+], a
-    ld a, c
-    ld [hl], a
-    ret
-
-; DrawParkedCar: draw the parked car (OAM_CAR slot) when on foot and on-screen;
-; otherwise hide it. Reuses EntScreenPos via wEnt for identical culling, camera
-; lag and HUD-band clipping to the other world sprites.
-DrawParkedCar::
+; DrawCar: draw the one car. Driving -> it takes the player's fixed screen cell
+; (the on-foot player slot 0 is hidden in DrawEntities); parked and on-screen ->
+; at its world position (culled like the other sprites via EntScreenPos); parked
+; and off-screen -> hide all four slots. One call handles every case.
+DrawCar::
     ld a, [wInCar]
     and a
-    jr nz, .hide                  ; driving -> the car is at slot 0, not here
+    jr nz, .driving
+    ; --- parked: world sprite, reuse EntScreenPos for culling + camera lag ---
     call ClearEnt
     ld a, [wCarWX]
     ld [wEnt + EO_WXLO], a
@@ -256,47 +251,112 @@ DrawParkedCar::
     ld [wEnt + EO_WYLO], a
     ld a, [wCarWY+1]
     ld [wEnt + EO_WYHI], a
-    call EntScreenPos             ; -> A=visible, wScrX/wScrY
+    call EntScreenPos             ; -> A=visible, wScrX/wScrY = 8x8 anchor
     and a
     jr z, .hide
-    ld hl, wShadowOAM + OAM_CAR * 4
-    ld a, [wScrY]
-    ld [hl+], a
-    ld a, [wScrX]
-    ld [hl+], a
     ld a, [wCarFacing]
-    call CarTileAttr             ; -> B=tile, C=attr
-    ld a, b
-    ld [hl+], a
-    ld a, c
-    ld [hl], a
-    ret
+    jr DrawCar2x2
+.driving:
+    ld a, SPR_X
+    ld [wScrX], a
+    ld a, SPR_Y
+    ld [wScrY], a
+    ld a, [wFacing]
+    jr DrawCar2x2
 .hide:
     xor a, a
-    ld [wShadowOAM + OAM_CAR * 4], a   ; Y = 0 -> off-screen
+    ld [wShadowOAM + (OAM_CAR + 0) * 4], a   ; Y = 0 -> off-screen
+    ld [wShadowOAM + (OAM_CAR + 1) * 4], a
+    ld [wShadowOAM + (OAM_CAR + 2) * 4], a
+    ld [wShadowOAM + (OAM_CAR + 3) * 4], a
     ret
 
-; CarTileAttr: A = facing -> B = tile id, C = OAM attr (OBJ palette 0; X-flip for
-; left). down = base+0, up = base+1, side = base+2 (mirror for left).
-CarTileAttr:
+; DrawCar2x2: A = facing; wScrX/wScrY = the 8x8 anchor OAM position. Paint the
+; four quadrant tiles into OAM_CAR..OAM_CAR+3, centred on the anchor (each
+; quadrant offset +/-4 px). down/up are left-right symmetric (right column =
+; X-flip of the stored left tile); side stores all four and X-flips the whole
+; 16x16 for left. Quadrant order is TL, TR, BL, BR.
+DrawCar2x2:
+    call CarTATable               ; DE -> 4x(tile, attr) for this facing
+    ld hl, wShadowOAM + OAM_CAR * 4
+    ld b, 0                       ; quad index 0..3 (bit0 = right, bit1 = bottom)
+.quad:
+    ; --- Y = wScrY + (bottom ? +4 : -4) ---
+    ld a, b
+    and 2
+    jr z, .yUp
+    ld c, 4
+    jr .yAdd
+.yUp:
+    ld c, -4
+.yAdd:
+    ld a, [wScrY]
+    add a, c
+    ld [hl+], a                   ; OAM Y
+    ; --- X = wScrX + (right ? +4 : -4) ---
+    ld a, b
+    and 1
+    jr z, .xLeft
+    ld c, 4
+    jr .xAdd
+.xLeft:
+    ld c, -4
+.xAdd:
+    ld a, [wScrX]
+    add a, c
+    ld [hl+], a                   ; OAM X
+    ld a, [de]                    ; tile
+    inc de
+    ld [hl+], a
+    ld a, [de]                    ; attr (OBJ pal 0, +/-X-flip)
+    inc de
+    ld [hl+], a
+    inc b
+    ld a, b
+    cp 4
+    jr nz, .quad
+    ret
+
+; CarTATable: A = facing -> DE = 4-entry (tile, attr) descriptor (TL, TR, BL, BR).
+CarTATable:
     cp EFACE_UP
     jr z, .up
     cp EFACE_LEFT
     jr z, .left
     cp EFACE_RIGHT
     jr z, .right
-    ld b, TILE_CAR_BASE + 0       ; down
-    ld c, 0
+    ld de, CarDownTA
     ret
 .up:
-    ld b, TILE_CAR_BASE + 1
-    ld c, 0
+    ld de, CarUpTA
     ret
 .left:
-    ld b, TILE_CAR_BASE + 2
-    ld c, OAMF_XFLIP
+    ld de, CarLeftTA
     ret
 .right:
-    ld b, TILE_CAR_BASE + 2
-    ld c, 0
+    ld de, CarRightTA
     ret
+
+; down / up: symmetric, so TR/BR are the left tile with OAMF_XFLIP.
+CarDownTA:
+    db TILE_CAR_DOWN_T, 0
+    db TILE_CAR_DOWN_T, OAMF_XFLIP
+    db TILE_CAR_DOWN_B, 0
+    db TILE_CAR_DOWN_B, OAMF_XFLIP
+CarUpTA:
+    db TILE_CAR_UP_T, 0
+    db TILE_CAR_UP_T, OAMF_XFLIP
+    db TILE_CAR_UP_B, 0
+    db TILE_CAR_UP_B, OAMF_XFLIP
+; side (right profile): four distinct quadrants, no flip.
+CarRightTA:
+    db TILE_CAR_SIDE_TL, 0
+    db TILE_CAR_SIDE_TR, 0
+    db TILE_CAR_SIDE_BL, 0
+    db TILE_CAR_SIDE_BR, 0
+; side facing left: X-flip the whole 16x16 — swap columns and mirror each tile.
+CarLeftTA:
+    db TILE_CAR_SIDE_TR, OAMF_XFLIP
+    db TILE_CAR_SIDE_TL, OAMF_XFLIP
+    db TILE_CAR_SIDE_BR, OAMF_XFLIP
+    db TILE_CAR_SIDE_BL, OAMF_XFLIP

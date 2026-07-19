@@ -82,6 +82,18 @@ UpdatePlayer::
 
 ; --- IDLE ---
 .idle:
+    ; just got out of the car? step out one tile in the armed direction, using
+    ; the normal walk + streaming path (wCarEject = EFACE_*+1, set by ExitCar).
+    ld a, [wCarEject]
+    and a
+    jr z, .noEject
+    ld b, a
+    xor a, a
+    ld [wCarEject], a          ; consume it
+    ld a, b
+    dec a                      ; dir+1 -> EFACE_*
+    jp TryStartStep            ; on foot now -> commits the step + flags the stream
+.noEject:
     call ReadHeldDir           ; A = EFACE_* or $FF
     cp $FF
     ret z
