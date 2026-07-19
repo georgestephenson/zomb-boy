@@ -89,6 +89,15 @@ SECTION "NPC State", WRAM0
 wNPCs::             ds MAX_NPCS * ENT_SIZE
 wNPCIdx::           ds 1               ; loop index into wNPCs
 
+; Dynamic spawn manager (entity.asm UpdateSpawns): respawn throttles + the
+; scratch CullFarPool scans a pool through. Timers armed by InitSpawns.
+SECTION "Spawn State", WRAM0
+wZombSpawnTimer::   ds 1               ; frames until the next zombie respawn try
+wNPCSpawnTimer::    ds 1               ; ... and the next survivor respawn try
+wPoolBase::         ds 2               ; base address of the pool being culled
+wPoolCount::        ds 1               ; ... its entity count
+wPoolIdx::          ds 1               ; ... loop index / stashed free-slot index
+
 ; Drivable car (car.asm): a single world object the player can board and drive.
 ; Zeroed by ClearRAM at boot, then positioned + fuelled by InitCar.
 SECTION "Car State", WRAM0

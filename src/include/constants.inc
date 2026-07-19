@@ -130,6 +130,20 @@ DEF ZOMBIE_RUN_MAX EQU 5           ; max steps in a run
 DEF SIGHT_RANGE    EQU 5           ; tiles a zombie can see straight ahead
 DEF ALERT_FRAMES   EQU 45          ; how long the "!" shows before the battle
 
+; --- Dynamic spawning / despawning (entity.asm UpdateSpawns) -----------------
+; Zombies and survivors are spawned in a ring just OUTSIDE the visible window as
+; the player explores, and destroyed once they stray too far behind. Spawn
+; positions come from the dynamic LFSR (Rand), NOT the terrain hash, so every
+; encounter is fresh — walking back over the same ground never reproduces the
+; same one — and the fixed-size pools keep the count (and memory) bounded. A
+; just-spawned entity is always > SIGHT_RANGE away, so it can never alert the
+; instant it appears. Distances are Chebyshev: max(|dx|, |dy|) in tiles.
+DEF ENT_SPAWN_DIST    EQU 12       ; ring radius of a fresh spawn (just off-screen)
+DEF ENT_CULL_DIST     EQU 15       ; despawn once this far from the player
+DEF ZOMB_SPAWN_PERIOD EQU 20       ; frames between zombie respawn attempts
+DEF NPC_SPAWN_PERIOD  EQU 90       ; survivors respawn less often (they're rarer)
+DEF NPC_SPAWN_TARGET  EQU 4        ; keep about this many survivors around you
+
 ; --- Sprite tiles (continue after the player's 14..19) ----------------------
 DEF TILE_ZOMBIE_BASE EQU 20        ; down A/B=20/21, up=22/23, side=24/25
 DEF TILE_BUBBLE    EQU 26          ; the "!" alert bubble

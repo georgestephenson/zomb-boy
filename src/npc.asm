@@ -108,6 +108,40 @@ InitNPCs::
     ret
 
 ; -----------------------------------------------------------------------------
+; SpawnNPC: the survivor half of the dynamic spawn manager (entity.asm
+; UpdateSpawns calls this when the survivor pool is below NPC_SPAWN_TARGET).
+; Places one survivor with a RANDOM persona in a free NPC slot on the spawn ring.
+; A fresh survivor is someone you haven't met, so affinity starts neutral and
+; EO_MET stays 0 (ClearEnt zeroed it) — the first hello is a stranger's.
+; -----------------------------------------------------------------------------
+SpawnNPC::
+    ld de, wNPCs
+    ld b, MAX_NPCS
+    call FindFreeSlot
+    ret nc
+    ld [wPoolIdx], a           ; stash the free slot index
+    call PickRingTile
+    ret nc                     ; ring tile blocked -> skip this attempt
+    call ClearEnt
+    ld a, 1
+    ld [wEnt + EO_ACTIVE], a
+    call EntFromGen            ; wEnt position <- wGen (the ring tile)
+    ld a, EFACE_DOWN
+    ld [wEnt + EO_FACING], a
+    call Rand
+    and 15
+    cp PERSONA_COUNT
+    jr c, .persok
+    sub PERSONA_COUNT          ; fold 10..15 down into 0..5
+.persok:
+    ld [wEnt + EO_PERSONA], a
+    ld a, AFFIN_START
+    ld [wEnt + EO_AFFIN], a
+    ld a, [wPoolIdx]
+    ld de, wNPCs
+    jp CopyPoolOut             ; write into the slot (tail call)
+
+; -----------------------------------------------------------------------------
 ; CheckNPCAt: is an active NPC on tile (wGenX, wGenY)? A = index+1, or 0 if
 ; free. Scans wNPCs directly (doesn't touch wEnt), so it's safe from player
 ; and zombie movement code alike.

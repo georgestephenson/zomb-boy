@@ -57,8 +57,8 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `title_data.asm` | Title image: palettes + tiles + tile/attr maps (ROMX BANK[3]) |
 | `world.asm` | Tile generator, map init, BG streaming (the engine) |
 | `player.asm` | Movement, collision, camera, sprite |
-| `entity.asm` | Zombie AI + LOS; the shared 16-byte entity struct + pool helpers |
-| `npc.asm` | Survivor NPCs: spawn, world render, occupancy, A-press talk trigger |
+| `entity.asm` | Zombie AI + LOS; shared 16-byte entity struct + pool helpers; the dynamic spawn/despawn manager (`UpdateSpawns`) for both pools |
+| `npc.asm` | Survivor NPCs: initial spawn, dynamic respawn (`SpawnNPC`), world render, occupancy, A-press talk trigger |
 | `talk.asm` | Dialogue screen (MODE_TALK): SCRN1 UI, state machine, VRAM queue |
 | `dialogue.asm` | Grammar composer (bounded) + persona/tone affinity math |
 | `dialogue_data.asm` | Personas, word banks, templates (ROMX; charmap strings) |
@@ -80,7 +80,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
 ```
 overworld: UpdateSound → ReadInput → UpdateSurvival → UpdatePlayer → UpdateView
-           → (GenStrip if moved) → UpdateZombies → CheckTalkStart
+           → (GenStrip if moved) → UpdateZombies → UpdateSpawns → CheckTalkStart
            → ComputeCamLag → DrawEntities
            WaitVBlank → OAM DMA → SetScroll → PushHUD → BlitStream
 talk mode: UpdateSound → ReadInput → UpdateTalk (fills wTalkQ)
@@ -93,6 +93,31 @@ START in the overworld calls `EnterMenu`; `UpdateSound` is gated on `wOptMusic`
 `GenStrip` builds the incoming edge into a WRAM buffer (heavy, outside VBlank);
 `BlitStream` pushes it to VRAM (tight, inside VBlank) in the **same frame** the
 scroll updates — so there's no seam or one-frame latency.
+
+### Dynamic spawning (entity.asm `UpdateSpawns` / npc.asm `SpawnNPC`)
+- **Encounters are procedural, not fixed.** `InitZombies`/`InitNPCs` still seed a
+  starting cluster near the spawn (deterministic — the boot state the older tests
+  assume), but each overworld frame `UpdateSpawns` (called right after
+  `UpdateZombies`) **culls** any zombie/survivor whose Chebyshev distance from the
+  player exceeds `ENT_CULL_DIST` (frees its pool slot) and, on a throttled timer,
+  **respawns** one in a ring at `ENT_SPAWN_DIST` — just outside the visible window —
+  when the pool is below target (zombies → `MAX_ZOMBIES`, survivors →
+  `NPC_SPAWN_TARGET`). So the world stays populated wherever you go, encounters
+  never repeat when you backtrack, and the fixed pools cap count (memory safety).
+- **Spawn positions come from the dynamic LFSR (`Rand`), NOT the terrain hash** —
+  that's the whole point: the same ground yields a different encounter each visit.
+  `PickRingTile` picks one of four sides + a −8..+7 offset (so one axis is always
+  `ENT_SPAWN_DIST` out → off-screen, and always `> SIGHT_RANGE` so a fresh spawn
+  can never alert the instant it appears), then rejects solid/occupied tiles
+  (water is solid, so nothing spawns in it). Respawned survivors get a **random
+  persona** and neutral affinity (a stranger you haven't met).
+- **The manager only touches `Rand` when it actually spawns.** While a pool is full
+  (nothing culled — i.e. you haven't travelled far) it consumes no RNG and
+  perturbs nothing, so behaviour near the spawn is byte-identical to before — which
+  is why the whole existing suite still passes unchanged. `ENT_CULL_DIST` (15) is
+  set above the boot cluster's reach so the starting entities don't cull-then-
+  respawn during boot. `InitSpawns` arms the timers; state is in ram.asm's
+  "Spawn State" section.
 
 ### HUD (hud.asm, docs/design/03 — v0: meters visible + draining, non-lethal)
 - The status bar is the **hardware window** over the **bottom 8 px**

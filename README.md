@@ -47,6 +47,12 @@ your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
   walk animation. The player stays centered while the world scrolls under it.
 - **Zombies.** Wandering shufflers with line-of-sight; get spotted and a "!"
   alert triggers the (placeholder) battle transition.
+- **Procedural encounters.** Zombies and survivors aren't all parked at the
+  start any more: as you explore, a spawn manager destroys anyone who falls too
+  far behind and respawns fresh ones (from the dynamic RNG, not the terrain
+  hash) in a ring just off-screen — so the world stays populated wherever you
+  wander, encounters never repeat when you backtrack, and fixed pools keep the
+  count bounded.
 - **Survivors & dialogue.** Ten personas (policeman, scientist, cheerleader,
   maid, businessman, prepper, medic, raider, preacher, farmer) stand in the
   world; face one, press **A**, and a dialogue screen opens. Every round is
