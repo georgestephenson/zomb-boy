@@ -4,8 +4,10 @@ still or walking (the camera lag must be applied to sprites too, else zombies
 appear to zoom around when the player moves).
 """
 ENT_SIZE = 16
-EO_ACTIVE, EO_WXLO, EO_WYLO, EO_DIR = 0, 1, 3, 6
+EO_ACTIVE, EO_WXLO, EO_WYLO, EO_FACING, EO_DIR = 0, 1, 3, 5, 6
 MAX_ZOMBIES = 8
+EFACE_LEFT = 2
+MODE_OVERWORLD, MODE_ALERT = 0, 1
 
 
 def _ent(game, i, off):
@@ -68,3 +70,47 @@ def test_zombie_motion_smooth_when_player_walks(game):
     worst = _max_onscreen_jump(game, 90)
     game.release("right")
     assert worst <= 3, f"zombie sprite jumped {worst}px/frame while player walks"
+
+
+def _plant_zombie_facing_player(game):
+    """Park zombie 0 one tile right of the player, idle, facing left at it — an
+    unobstructed adjacent line, so CheckLOS resolves immediately."""
+    px, py = game.r16("wPlayerWX"), game.r16("wPlayerWY")
+    base = game.addr("wZombies")
+
+    def w16(a, v):
+        game.pyboy.memory[a] = v & 0xFF
+        game.pyboy.memory[a + 1] = (v >> 8) & 0xFF
+
+    game.pyboy.memory[base + EO_ACTIVE] = 1
+    w16(base + EO_WXLO, (px + 1) & 0xFFFF)
+    w16(base + EO_WYLO, py & 0xFFFF)
+    game.pyboy.memory[base + EO_FACING] = EFACE_LEFT
+    game.pyboy.memory[base + EO_DIR] = 0xFF  # idle: won't wander off this frame
+
+
+def test_los_detects_player_on_land():
+    # Control for the swim test: a zombie staring at the adjacent player raises
+    # the alert (switches to MODE_ALERT).
+    from harness import Game
+    g = Game()
+    try:
+        g.pyboy.memory[g.addr("wSwimming")] = 0
+        _plant_zombie_facing_player(g)
+        g.tick(1)
+        assert g.r8("wGameMode") == MODE_ALERT, "zombie should spot the player"
+    finally:
+        g.close()
+
+
+def test_los_blind_while_player_swims():
+    # In the water the player is hidden: the same staring zombie must not detect.
+    from harness import Game
+    g = Game()
+    try:
+        g.pyboy.memory[g.addr("wSwimming")] = 1
+        _plant_zombie_facing_player(g)
+        g.tick(1)
+        assert g.r8("wGameMode") == MODE_OVERWORLD, "swimming player was detected"
+    finally:
+        g.close()

@@ -31,6 +31,8 @@ InitPlayer::
     ld [wPlayerWX+1], a
     ld [wPlayerWY], a
     ld [wPlayerWY+1], a
+    ld [wSwimming], a           ; start on dry land (InitPlayer scans to a passable
+    ld [wSplashTimer], a        ; tile, and water is solid, so never in water)
     ld b, 64                    ; bounded search
 .scan:
     ld a, [wPlayerWX]
@@ -195,8 +197,14 @@ TryStartStep:
     ld a, [wStepDir]
     call StepGen               ; steps wGenX/wGenY (shared with entity code)
     call GenTileType
+    ld [wDestTile], a          ; remember it: drives the swim/splash test at .ok
     call IsSolid
-    jr nz, .blocked            ; solid terrain
+    jr z, .notSolid            ; passable terrain
+    ; solid tile — but the player can swim, so water is the one walkable "solid".
+    ld a, [wDestTile]
+    cp TILE_WATER
+    jr nz, .blocked            ; genuinely solid (wall / tree)
+.notSolid:
     call CheckZombieAt         ; a zombie is standing there
     and a, a
     jr nz, .blocked
@@ -219,6 +227,20 @@ TryStartStep:
     ld [wPlayerWY], a
     ld a, [wGenY+1]
     ld [wPlayerWY+1], a
+    ; --- swim state: crossing the land/water boundary splashes (sound + sprite) ---
+    ld a, [wDestTile]
+    cp TILE_WATER
+    ld b, 0                     ; b = new swim state (cp above set the flags)
+    jr nz, .swimSet
+    ld b, 1
+.swimSet:
+    ld a, [wSwimming]
+    cp b
+    jr z, .swimDone            ; no boundary crossed this step
+    ld a, b
+    ld [wSwimming], a
+    call TriggerSplash
+.swimDone:
     ; trigger the incoming-edge stream for this direction
     ld a, [wStepDir]
     call DirToMoveDir
@@ -323,6 +345,9 @@ DrawPlayerSprite::
     ld [wShadowOAM + 0], a
     ld a, SPR_X
     ld [wShadowOAM + 1], a
+    ld a, [wSwimming]
+    and a, a
+    jr nz, .swim               ; submerged: head-and-shoulders tiles, no walk cycle
     ld a, [wFacing]
     cp EFACE_UP
     jr z, .up
@@ -351,4 +376,66 @@ DrawPlayerSprite::
     ld [wShadowOAM + 2], a
     ld a, c
     ld [wShadowOAM + 3], a
+    ret
+; --- swimming: one tile per facing (down/up/side), palette 0 like on land ---
+.swim:
+    ld a, [wFacing]
+    cp EFACE_UP
+    jr z, .swimUp
+    cp EFACE_LEFT
+    jr z, .swimLeft
+    cp EFACE_RIGHT
+    jr z, .swimRight
+    ld a, TILE_SWIM_BASE + 0    ; down
+    ld c, 0
+    jr .swimFin
+.swimUp:
+    ld a, TILE_SWIM_BASE + 1
+    ld c, 0
+    jr .swimFin
+.swimLeft:
+    ld a, TILE_SWIM_BASE + 2
+    ld c, OAMF_XFLIP
+    jr .swimFin
+.swimRight:
+    ld a, TILE_SWIM_BASE + 2
+    ld c, 0
+.swimFin:
+    ld [wShadowOAM + 2], a
+    ld a, c
+    ld [wShadowOAM + 3], a
+    ret
+
+; -----------------------------------------------------------------------------
+; TriggerSplash: kick the enter/leave-water feedback — a short noise-channel
+; blip (audio.asm) plus the splash sprite for SWIM_SPLASH_FRAMES frames.
+; -----------------------------------------------------------------------------
+TriggerSplash:
+    ld a, SWIM_SPLASH_FRAMES
+    ld [wSplashTimer], a
+    jp PlaySplash              ; tail-call: its ret returns for us
+
+; -----------------------------------------------------------------------------
+; DrawSplash: overlay the splash burst on the player while the timer runs, then
+; hide the slot. Called from DrawEntities each overworld frame.
+; -----------------------------------------------------------------------------
+DrawSplash::
+    ld hl, wShadowOAM + OAM_SPLASH * 4
+    ld a, [wSplashTimer]
+    and a, a
+    jr z, .hide
+    dec a
+    ld [wSplashTimer], a
+    ld a, SPR_Y                ; sits on the player (fixed screen position)
+    ld [hl+], a
+    ld a, SPR_X
+    ld [hl+], a
+    ld a, TILE_SPLASH
+    ld [hl+], a
+    ld a, 2                    ; OBJ palette 2 (white spray, like the bubble)
+    ld [hl], a
+    ret
+.hide:
+    xor a, a
+    ld [hl], a                 ; Y = 0 -> off-screen
     ret

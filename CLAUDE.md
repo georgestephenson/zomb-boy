@@ -110,6 +110,19 @@ scroll updates — so there's no seam or one-frame latency.
   with OAM Y >= 145 (its 8-px box would reach the bar). The player never can
   (fixed at screen row 9). Day/night palettes and starvation damage are LATER.
 
+### Swimming (player.asm / entity.asm / hud.asm)
+- **Water stays solid in `PassTable`** — zombies still avoid it and LOS occlusion
+  is unchanged. Only the *player's* `TryStartStep` special-cases `TILE_WATER` as
+  the one walkable "solid", so the worldgen model/tests need no change. `wSwimming`
+  tracks the player's current tile (set at step-commit from `wDestTile`).
+- Crossing the land↔water boundary fires `TriggerSplash`: a short ch4 noise blip
+  (`PlaySplash`, audio.asm — borrows the channel from the music for one tick) plus
+  the splash sprite at `OAM_SPLASH` (slot 20) for `SWIM_SPLASH_FRAMES`.
+- While swimming the player draws single-frame head-and-shoulders tiles
+  (`TILE_SWIM_BASE` 53..55, bottom rows transparent so the water shows through),
+  energy drains an extra point per in-game minute (`UpdateSurvival`), and
+  `CheckLOS` early-returns "unseen" so zombies can't detect you in the water.
+
 ### Dialogue (npc/talk/dialogue*, docs/design/05)
 - The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on
   SCRN0 is untouched, so exit is just an LCDC flip + `SetScroll`. Entry builds

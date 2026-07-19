@@ -150,6 +150,17 @@ UpdateSurvival::
     dec a
     ld [wEnergy], a
 .noEnergy:
+    ; swimming is exhausting: bleed an extra energy point every in-game minute
+    ; (~16x the base rate), saturating at 0.
+    ld a, [wSwimming]
+    and a, a
+    jr z, .compose
+    ld a, [wEnergy]
+    and a, a
+    jr z, .compose
+    dec a
+    ld [wEnergy], a
+.compose:
     call ComposeHUD
     ld a, 1
     ld [wHUDDirty], a

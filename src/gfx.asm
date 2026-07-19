@@ -499,6 +499,45 @@ Tiles::
     dw `00000013
     dw `00000013
     dw `00000013
+; Swimming sprites (OBJ pal 0, like the walking player): head + shoulders only;
+; the bottom two rows are colour 0 (transparent), so the water tile shows through
+; and the body reads as submerged. One frame per facing — no walk cycle in water.
+; --- 53: swim down (face + eyes) ---
+    dw `00111100
+    dw `01333310
+    dw `01222210
+    dw `01212110
+    dw `01222210
+    dw `13333331
+    dw `00000000
+    dw `00000000
+; --- 54: swim up (back of head, no eyes) ---
+    dw `00111100
+    dw `01333310
+    dw `01222210
+    dw `01222210
+    dw `01222210
+    dw `13333331
+    dw `00000000
+    dw `00000000
+; --- 55: swim side (right profile, one eye; X-flip for left) ---
+    dw `00111000
+    dw `01333100
+    dw `01333331
+    dw `01212100
+    dw `01222100
+    dw `13333331
+    dw `00000000
+    dw `00000000
+; --- 56: splash burst (OBJ pal 2; colour 3 = white droplets around the player) ---
+    dw `00000000
+    dw `03000030
+    dw `00000000
+    dw `30000003
+    dw `30000003
+    dw `00000000
+    dw `03000030
+    dw `00000000
 TilesEnd::
 
 ; Per-persona survivor world sprites (OBJ), 3 tiles each: down, up, side

@@ -56,6 +56,9 @@ wTurnTimer::        ds 1               ; frames left of the turn-in-place delay
 wCamLagX::          ds 1
 wCamLagY::          ds 1
 wCurTile::          ds 1               ; scratch: last generated tile type
+wDestTile::         ds 1               ; tile the player is stepping onto (swim test)
+wSwimming::         ds 1               ; 1 while the player stands on a water tile
+wSplashTimer::      ds 1               ; frames left to draw the enter/leave splash
 
 ; VRAM streaming: one column/row of fresh tiles queued for the next VBlank.
 ; Buffer holds quads {addrLo, addrHi, tile, attr} so the VBlank blit is tight.

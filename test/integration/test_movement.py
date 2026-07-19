@@ -1,7 +1,10 @@
 """Player movement: turn-before-walk weight, smooth step timing, and collision.
 Facing enum: 0 down, 1 up, 2 left, 3 right.
 """
-from worldgen_model import gen_tile_type, SOLID
+from worldgen_model import gen_tile_type, SOLID, TILE_WATER
+
+# The player can swim, so water is walkable; only walls/trees truly block.
+BLOCKING = SOLID - {TILE_WATER}
 
 STEP_TOTAL = 16
 TURN_DELAY = 7
@@ -58,9 +61,10 @@ def test_movement_is_weighty_not_instant(game):
     assert min(gaps) >= STEP_TOTAL - 2, f"a step was too fast: {min(gaps)} frames"
 
 
-def test_never_stands_on_solid_tile(game):
-    # Wander a long, varied path; the player's logical tile must never be solid
-    # (tree/wall/water) — that would mean collision let it walk into an obstacle.
+def test_never_stands_on_blocking_tile(game):
+    # Wander a long, varied path; the player's logical tile must never be a
+    # blocking obstacle (tree/wall) — that would mean collision let it walk into
+    # one. Water is allowed now: the player swims (energy drains fast in it).
     for d in ["right", "down", "left", "up", "right", "right",
               "down", "down", "left", "up", "left", "down"]:
         game.hold(d)
@@ -68,6 +72,6 @@ def test_never_stands_on_solid_tile(game):
             game.tick(1)
             x, y = _pos(game)
             t = gen_tile_type(x, y)
-            assert t not in SOLID, f"player on solid tile {t} at ({x},{y})"
+            assert t not in BLOCKING, f"player on blocking tile {t} at ({x},{y})"
         game.release(d)
         game.tick(2)

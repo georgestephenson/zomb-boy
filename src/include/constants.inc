@@ -45,6 +45,13 @@ DEF TILE_TREE_BL   EQU 12
 DEF TILE_TREE_BR   EQU 13
 ; Player OBJ tiles: down A/B = 14/15, up = 16/17, side = 18/19
 DEF TILE_PLAYER_BASE EQU 14
+; Swimming: only the head + shoulders show above the waterline, so these are
+; single-frame per direction (bottom rows transparent -> the water BG shows
+; through). Ids 53..56 sit in the gap between the UI tiles (..52) and the
+; portrait block (64+), so nothing downstream shifts.
+DEF TILE_SWIM_BASE EQU 53          ; down = 53, up = 54, side = 55 (X-flip left)
+DEF TILE_SPLASH    EQU 56          ; the enter/leave-water splash burst
+DEF SWIM_SPLASH_FRAMES EQU 18      ; how long the splash sprite lingers
 
 ; --- Screen / camera --------------------------------------------------------
 DEF VIEW_COLS      EQU 20          ; 160/8 visible tile columns
@@ -146,6 +153,7 @@ DEF EO_MET        EQU 15           ; nonzero once you've talked to them —
                                    ; return visits greet differently
 
 DEF OAM_NPC0       EQU 10          ; NPCs use OAM slots 10..10+MAX_NPCS-1
+DEF OAM_SPLASH     EQU 20          ; the water splash (first free slot after NPCs)
 
 ; The menu cursor (survivor world sprites are per-persona now: TILE_PSURV_BASE,
 ; defined below with the font ids since they load after the font glyphs)

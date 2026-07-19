@@ -38,3 +38,18 @@ InitSound::
 ; one call per frame. Clobbers a/bc/de/hl — fine at the top of the loop.
 UpdateSound::
     jp hUGE_dosound                 ; tail-call: hUGE_dosound's ret returns for us
+
+; Play a short splash blip on the noise channel (ch4) for entering/leaving water.
+; This writes ch4 directly, borrowing it from the music for an instant: the driver
+; re-owns the channel on its next tick, which is exactly a splash's length anyway.
+; NR51 (set in InitSound) already routes ch4 to both speakers.
+PlaySplash::
+    ld a, %00110000                 ; NR41: length timer (64-t) -> a brief burst
+    ldh [rNR41], a
+    ld a, $F2                       ; NR42: full volume, envelope down (quick decay)
+    ldh [rNR42], a
+    ld a, $37                       ; NR43: noise divisor/shift -> a wet "plip" pitch
+    ldh [rNR43], a
+    ld a, $C0                       ; NR44: trigger (bit7) + length-enable (bit6)
+    ldh [rNR44], a
+    ret

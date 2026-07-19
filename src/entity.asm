@@ -249,6 +249,12 @@ UpdateZombieAI:
 ; (Gen calls) only runs when the player is actually in line.
 ; -----------------------------------------------------------------------------
 CheckLOS:
+    ld a, [wSwimming]
+    and a, a
+    jr z, .look
+    xor a, a                    ; player is in the water: hidden, no detection
+    ret
+.look:
     ld a, [wEnt + EO_FACING]
     cp EFACE_LEFT
     jr z, .horiz
@@ -333,6 +339,7 @@ UpdateAlert::
 ; DrawEntities: player sprite (slot 0) + all visible zombies (+ bubble) + NPCs.
 DrawEntities::
     call DrawPlayerSprite
+    call DrawSplash
     call DrawZombies
     call DrawNPCs
     ret

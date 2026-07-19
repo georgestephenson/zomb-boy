@@ -109,6 +109,21 @@ def test_meters_drain_on_schedule():
         g.close()
 
 
+def test_swimming_drains_energy_fast():
+    g = Game()
+    try:
+        # Standing in water bleeds an extra energy point every in-game minute,
+        # far faster than the base 1-per-16-minutes drain. Poke the swim flag
+        # (reaching real water at the classic seed is layout-dependent).
+        g.pyboy.memory[g.addr("wSwimming")] = 1
+        e0 = g.r8("wEnergy")
+        assert e0 > 0
+        g.tick(CLOCK_MINUTE_FRAMES + 2)     # one in-game minute
+        assert g.r8("wEnergy") <= e0 - 1, "swimming should drain energy each minute"
+    finally:
+        g.close()
+
+
 def test_meters_saturate_at_zero():
     g = Game()
     try:
