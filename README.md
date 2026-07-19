@@ -1,8 +1,18 @@
 # Zomb Boy
 
+[![CI](https://github.com/georgestephenson/zomb-boy/actions/workflows/ci.yml/badge.svg)](https://github.com/georgestephenson/zomb-boy/actions/workflows/ci.yml)
+[![Deploy Pages](https://github.com/georgestephenson/zomb-boy/actions/workflows/pages.yml/badge.svg)](https://github.com/georgestephenson/zomb-boy/actions/workflows/pages.yml)
+
 A monster-battler-style **Game Boy Color** game where the "creatures" are zombies
 and the world is an **endless, procedurally-generated** survival landscape.
 Written in Z80 (SM83) assembly with [RGBDS](https://rgbds.gbdev.io/).
+
+### ▶ [Play it in your browser](https://georgestephenson.github.io/zomb-boy/)
+
+No install, no emulator download — the latest `main` build runs in-browser via
+[GitHub Pages](https://georgestephenson.github.io/zomb-boy/) (rebuilt on every
+push). Arrow keys to move, <kbd>X</kbd>/<kbd>Z</kbd> for A/B, <kbd>Enter</kbd> to
+start.
 
 > Status: **v0.4** — an infinite streaming world with wandering zombies
 > (line-of-sight alerts) and **talkable survivors**: five personas who speak in

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zomb Boy — play in your browser</title>
+  <meta name="description" content="Play Zomb Boy, an endless procedurally-generated Game Boy Color zombie-survival game, right in your browser — or download the .gbc ROM.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🧟</text></svg>">
+
+  <!-- Pixel fonts to match the game's on-screen text. Press Start 2P for
+       headings/buttons; VT323 (also pixel, but legible at paragraph size) for
+       body copy. Served from the same CDN family the page already depends on. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
+  <style>
+    /* Palette lifted straight from the ROM's CGB palettes (src/gfx.asm),
+       BGR555 -> RGB8. These are the literal colours the game draws with. */
+    :root {
+      --bg:        #0d150e;  /* near-black green (world outline, darkened) */
+      --bg-panel:  #14201a;
+      --paper:     #fff7d6;  /* talk-screen paper (BG palette 4, colour 0)  */
+      --ink:       #192142;  /* talk-screen ink   (BG palette 4, colour 3)  */
+      --grass:     #63b552;  /* land palette, mid green                     */
+      --grass-lt:  #adef63;  /* land palette, pale green                    */
+      --red:       #e62121;  /* player body (OBJ palette 0, colour 3)       */
+      --water:     #52c5e6;  /* water palette, light blue                   */
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--paper);
+      font-family: "VT323", monospace;
+      font-size: 22px;
+      line-height: 1.15;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 28px 16px 48px;
+      /* subtle grid, like a tile map */
+      background-image:
+        linear-gradient(rgba(99,181,82,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,181,82,0.05) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    a { color: var(--water); }
+
+    header { text-align: center; margin-bottom: 22px; }
+    h1 {
+      font-family: "Press Start 2P", monospace;
+      font-size: clamp(1.4rem, 6vw, 2.4rem);
+      margin: 0;
+      line-height: 1.2;
+      text-shadow: 3px 3px 0 #000;
+    }
+    h1 .z { color: var(--red); }
+    h1 .b { color: var(--grass-lt); }
+    .tagline { color: var(--grass-lt); margin-top: 12px; font-size: 1.25rem; }
+
+    /* Emulator mount. 160x144 native, scaled up crisp. */
+    #game-wrap {
+      width: 100%;
+      max-width: 720px;
+      aspect-ratio: 10 / 9;
+      background: #000;
+      border: 4px solid var(--grass);
+      box-shadow: 6px 6px 0 rgba(0,0,0,0.5);
+      overflow: hidden;
+    }
+    #game { width: 100%; height: 100%; }
+    #game-wrap canvas { image-rendering: pixelated; }
+
+    /* Blocky "dialogue box" panels — 4px ink border, hard (blur-free) shadow. */
+    .panel {
+      max-width: 720px;
+      width: 100%;
+      margin-top: 24px;
+      background: var(--paper);
+      color: var(--ink);
+      border: 4px solid var(--ink);
+      box-shadow: 6px 6px 0 rgba(0,0,0,0.45);
+      padding: 18px 22px 22px;
+    }
+    .panel h2 {
+      font-family: "Press Start 2P", monospace;
+      font-size: 0.85rem;
+      margin: 0 0 14px;
+      color: var(--red);
+    }
+    .panel p { margin: 0 0 10px; }
+    .panel p:last-child { margin-bottom: 0; }
+
+    /* Chunky pixel button. */
+    .btn {
+      display: inline-block;
+      font-family: "Press Start 2P", monospace;
+      font-size: 0.9rem;
+      text-decoration: none;
+      color: var(--ink);
+      background: var(--grass-lt);
+      border: 3px solid var(--ink);
+      padding: 14px 20px;
+      box-shadow: 4px 4px 0 var(--ink);
+      transition: transform 0.02s, box-shadow 0.02s;
+    }
+    .btn:hover { background: var(--grass); }
+    .btn:active { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--ink); }
+    .btn .rom { display: block; font-size: 0.6rem; margin-top: 8px; color: var(--ink); opacity: 0.7; }
+
+    .platforms { list-style: none; padding: 0; margin: 12px 0 0; }
+    .platforms li { padding: 3px 0 3px 26px; position: relative; }
+    .platforms li::before { content: "▸"; position: absolute; left: 6px; color: var(--grass); }
+
+    kbd {
+      font-family: "Press Start 2P", monospace;
+      font-size: 0.62em;
+      background: var(--ink); color: var(--paper);
+      border-radius: 2px; padding: 3px 5px; margin: 0 1px;
+      vertical-align: middle;
+    }
+    .keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 24px; }
+
+    footer { margin-top: 30px; color: var(--grass); font-size: 1.1rem; text-align: center; }
+    footer a { color: var(--grass-lt); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="z">ZOMB</span> <span class="b">BOY</span></h1>
+    <div class="tagline">An endless, procedurally-generated Game Boy Color zombie-survival game.</div>
+  </header>
+
+  <div id="game-wrap"><div id="game"></div></div>
+
+  <!-- Download + run-it-anywhere -->
+  <section class="panel">
+    <h2>Take it with you</h2>
+    <p style="text-align:center; margin-bottom:16px;">
+      <a class="btn" href="zombboy.gbc" download="zombboy.gbc">
+        ⬇ DOWNLOAD ROM
+        <span class="rom">zombboy.gbc · 64 KB</span>
+      </a>
+    </p>
+    <p>
+      This is a real, standard Game Boy Color cartridge image — the exact same
+      file this page plays. Load it into your own emulator and it runs on
+      almost anything:
+    </p>
+    <ul class="platforms">
+      <li>Your <strong>phone</strong> — a GBC emulator app (Delta, Provenance, mGBA…)</li>
+      <li>Your <strong>PC or console</strong> — RetroArch runs on Windows, Mac, Linux, Steam Deck, even a hacked Switch or PlayStation</li>
+      <li>Your <strong>graphing calculator</strong> — yes, people put GB emulators on a TI-84</li>
+      <li>Your <strong>actual Game Boy</strong> — flash it to an EverDrive / flashcart and play it on real Game Boy Color hardware</li>
+    </ul>
+  </section>
+
+  <!-- Controls -->
+  <section class="panel">
+    <h2>Controls</h2>
+    <div class="keys">
+      <p>Move — <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></p>
+      <p>A (talk / confirm) — <kbd>Z</kbd></p>
+      <p>B (cancel) — <kbd>X</kbd></p>
+      <p>Start — <kbd>Enter</kbd></p>
+      <p>Select — <kbd>Shift</kbd></p>
+      <p>Menu / remap — <kbd>⚙</kbd> toolbar</p>
+    </div>
+    <p style="margin-top:14px;">
+      On the title screen, press <kbd>Enter</kbd> (Start) — your press timing
+      seeds a fresh random world. Hold <kbd>Shift</kbd>+<kbd>Enter</kbd>
+      (Select+Start) for the classic fixed seed. Keys are remappable and a
+      gamepad works too, via the gear menu in the emulator toolbar.
+    </p>
+  </section>
+
+  <footer>
+    Source on <a href="https://github.com/georgestephenson/zomb-boy">GitHub</a> ·
+    Emulated by <a href="https://emulatorjs.org/">EmulatorJS</a>
+  </footer>
+
+  <!-- Stop the browser's own scroll/space handling from fighting the emulator.
+       Arrow keys, space and PageUp/Down otherwise scroll the page. We swallow
+       them unless focus is in a text field (e.g. EmulatorJS's key-remap inputs),
+       so the emulator gets the keystroke and the page stays put. -->
+  <script>
+    (function () {
+      var blocked = { ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1,
+                      " ":1, Spacebar:1, PageUp:1, PageDown:1, Home:1, End:1 };
+      window.addEventListener("keydown", function (e) {
+        var t = e.target;
+        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+        if (blocked[e.key]) e.preventDefault();
+      }, { passive: false });
+    })();
+
+    window.EJS_player = "#game";
+    window.EJS_core = "gb";
+    window.EJS_gameUrl = "zombboy.gbc";
+    window.EJS_gameName = "Zomb Boy";
+    window.EJS_pathtodata = "https://cdn.emulatorjs.org/stable/data/";
+    window.EJS_startOnLoaded = true;
+    window.EJS_backgroundColor = "#0d150e";
+  </script>
+  <script src="https://cdn.emulatorjs.org/stable/data/loader.js"></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+name: Deploy Pages
+
+# Build the ROM and publish a playable, in-browser build to GitHub Pages.
+# The site is web/index.html (an EmulatorJS embed) plus the freshly-built
+# zombboy.gbc dropped in beside it. Live at:
+#   https://georgestephenson.github.io/zomb-boy/
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent Pages deploy; don't cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache pinned toolchain
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile', 'tools/fetch-*.sh', 'tools/setup-testenv.sh') }}
+
+      - name: Build ROM
+        run: make
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp web/index.html _site/index.html
+          cp build/zombboy.gbc _site/zombboy.gbc
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

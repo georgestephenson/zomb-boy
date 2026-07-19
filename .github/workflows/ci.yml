@@ -1,0 +1,46 @@
+name: CI
+
+# Build the ROM and run the full test suite on every push / PR.
+# The build is self-bootstrapping: `make` fetches the pinned RGBDS +
+# hardware.inc into .tools/, and run-tests.sh creates the pinned PyBoy venv
+# there too — so we just cache .tools/ and call the same targets a human does.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pinned RGBDS asset is a Linux x86_64 tarball and the PyBoy venv is
+      # platform-specific, so key the cache on the version pins + fetch scripts.
+      # A miss just means the fetch scripts re-download (they verify checksums).
+      - name: Cache pinned toolchain + test venv
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile', 'tools/fetch-*.sh', 'tools/setup-testenv.sh') }}
+
+      - name: Build ROM
+        run: make
+
+      - name: Run tests
+        run: make test
+
+      # Handy for downloading the built cart straight off a green run.
+      - name: Upload ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: zombboy.gbc
+          path: build/zombboy.gbc
+          if-no-files-found: error
