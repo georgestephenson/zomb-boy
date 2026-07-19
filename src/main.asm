@@ -147,6 +147,8 @@ Start::                             ; exported: the menu's EXIT soft-resets here
     call InitZombies
     call InitNPCs
     call InitCar                    ; one drivable car near the start
+    call InitSpawns                 ; arm the dynamic respawn timers
+    call InitLoot                   ; scatter starting pickups + arm loot respawns
     call InitHUD                    ; meters/clock + the window row (LCD is off)
     call InitInventory              ; party (just the player) + starting bag + options
 
@@ -197,7 +199,10 @@ MainLoop:
     and a, a
     call nz, GenStrip               ; build incoming column/row (outside VBlank)
     call UpdateZombies              ; wander + line-of-sight (may trigger alert)
+    call UpdateSpawns               ; cull far zombies/survivors + respawn fresh ones
+    call UpdateLootSpawns           ; cull far loot + respawn fresh pickups/containers
     call CheckCarToggle             ; A next to the car -> board it / drive off
+    call CheckLoot                  ; grab food underfoot / open a faced container
     call CheckTalkStart             ; A at a survivor -> EnterTalk (MODE_TALK)
     ld a, [wGameMode]
     cp MODE_TALK

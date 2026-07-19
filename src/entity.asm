@@ -218,6 +218,9 @@ UpdateZombieAI:
     call CheckCarAt             ; nor onto the parked car
     and a, a
     jr nz, .blocked
+    call CheckLootSolidAt       ; nor into a crate/pot/chest
+    and a, a
+    jr nz, .blocked
     call EntFromGen             ; commit new position
     ; start the visual slide from the tile it just left
     ld a, [wEnt + EO_DIR]
@@ -355,6 +358,7 @@ DrawEntities::
     call DrawSplash             ; hides its slot when not swimming (always, in a car)
     call DrawZombies
     call DrawNPCs
+    call DrawLoot               ; world pickups + containers (OAM_LOOT..)
     call DrawCar                ; the 2x2 car (OAM_CAR..+3): driving or parked
     ret
 
@@ -633,7 +637,7 @@ GenFromEnt:
     ld a, [wEnt + EO_WYHI]
     ld [wGenY+1], a
     ret
-EntFromGen:
+EntFromGen::
     ld a, [wGenX]
     ld [wEnt + EO_WXLO], a
     ld a, [wGenX+1]
@@ -803,3 +807,288 @@ AddSByteAt16::
     add a, [hl]
     ld [hl], a
     ret
+
+; =============================================================================
+; Dynamic spawn manager — random encounters that despawn behind you.
+;
+; Each overworld frame UpdateSpawns culls any zombie/survivor more than
+; ENT_CULL_DIST tiles from the player (freeing its pool slot), then — on a
+; throttled timer — respawns one in a ring just outside the visible window if the
+; pool is below its target. Spawn positions come from the dynamic LFSR (Rand),
+; NOT the terrain hash, so revisiting the same ground never reproduces the same
+; encounter. RNG is only touched when a spawn actually happens, so while the
+; pools are full the manager is inert and perturbs nothing (the boot cluster and
+; every near-spawn test see identical behaviour).
+; =============================================================================
+
+; InitSpawns: arm the respawn timers (call once at boot, after the pools fill).
+InitSpawns::
+    ld a, ZOMB_SPAWN_PERIOD
+    ld [wZombSpawnTimer], a
+    ld a, NPC_SPAWN_PERIOD
+    ld [wNPCSpawnTimer], a
+    ret
+
+; UpdateSpawns: cull far entities, then maybe respawn. Overworld only.
+UpdateSpawns::
+    ld hl, wZombies             ; cull far zombies
+    ld b, MAX_ZOMBIES
+    call SetPool
+    call CullFarPool
+    ld hl, wNPCs                ; cull far survivors
+    ld b, MAX_NPCS
+    call SetPool
+    call CullFarPool
+    ; --- throttled zombie respawn ---
+    ld hl, wZombSpawnTimer
+    dec [hl]
+    jr nz, .npc
+    ld a, ZOMB_SPAWN_PERIOD
+    ld [wZombSpawnTimer], a
+    ld de, wZombies
+    ld b, MAX_ZOMBIES
+    call CountActivePool
+    cp MAX_ZOMBIES
+    jr nc, .npc                 ; pool full -> no spawn, no RNG consumed
+    call SpawnZombie
+.npc:
+    ; --- throttled survivor respawn ---
+    ld hl, wNPCSpawnTimer
+    dec [hl]
+    ret nz
+    ld a, NPC_SPAWN_PERIOD
+    ld [wNPCSpawnTimer], a
+    ld de, wNPCs
+    ld b, MAX_NPCS
+    call CountActivePool
+    cp NPC_SPAWN_TARGET
+    ret nc                      ; enough survivors -> no spawn, no RNG consumed
+    jp SpawnNPC                 ; npc.asm builds the survivor (tail call)
+
+; SetPool: HL = base, B = count -> stash for CullFarPool.
+SetPool::
+    ld a, l
+    ld [wPoolBase], a
+    ld a, h
+    ld [wPoolBase+1], a
+    ld a, b
+    ld [wPoolCount], a
+    ret
+
+; CullFarPool: deactivate every active entity in the pool (wPoolBase/wPoolCount)
+; whose Chebyshev distance from the player exceeds ENT_CULL_DIST.
+CullFarPool::
+    xor a, a
+    ld [wPoolIdx], a
+.loop:
+    ld a, [wPoolBase]
+    ld e, a
+    ld a, [wPoolBase+1]
+    ld d, a
+    ld a, [wPoolIdx]
+    call CopyPoolIn             ; A=idx, DE=base -> wEnt
+    ld a, [wEnt + EO_ACTIVE]
+    and a, a
+    jr z, .next
+    call EntTooFar
+    and a, a
+    jr z, .next
+    xor a, a
+    ld [wEnt + EO_ACTIVE], a    ; despawn: free the slot
+    ld a, [wPoolBase]
+    ld e, a
+    ld a, [wPoolBase+1]
+    ld d, a
+    ld a, [wPoolIdx]
+    call CopyPoolOut
+.next:
+    ld a, [wPoolIdx]
+    inc a
+    ld [wPoolIdx], a
+    ld hl, wPoolCount
+    cp [hl]
+    jr c, .loop
+    ret
+
+; CountActivePool: DE = base, B = count -> A = number of active entities.
+CountActivePool::
+    ld l, e
+    ld h, d
+    ld c, 0
+.loop:
+    ld a, [hl]
+    and a, a
+    jr z, .skip
+    inc c
+.skip:
+    ld a, l
+    add a, ENT_SIZE
+    ld l, a
+    jr nc, .nc
+    inc h
+.nc:
+    dec b
+    jr nz, .loop
+    ld a, c
+    ret
+
+; EntTooFar: A = 1 (NZ) if wEnt is farther than ENT_CULL_DIST from the player on
+; either axis (Chebyshev), else A = 0 (Z). Uses PXmEX/PYmEY (player - ent).
+EntTooFar:
+    call PXmEX
+    call FarMag
+    ret nz
+    call PYmEY
+    ; fall through
+; FarMag: HL = signed 16-bit delta -> A = 1 (NZ) if |HL| > ENT_CULL_DIST, else 0.
+FarMag:
+    bit 7, h
+    jr z, .pos
+    call Neg16HL
+.pos:
+    ld a, h
+    and a, a
+    jr nz, .far                 ; |delta| >= 256 tiles -> far
+    ld a, l
+    cp ENT_CULL_DIST + 1
+    jr nc, .far
+    xor a, a
+    ret
+.far:
+    ld a, 1
+    or a, a
+    ret
+
+; FindFreeSlot: DE = base, B = count. If a slot has EO_ACTIVE == 0, returns CY
+; set and A = its index; else NC. Scans EO_ACTIVE directly (no wEnt copy).
+FindFreeSlot::
+    ld l, e
+    ld h, d
+    ld c, 0
+.loop:
+    ld a, [hl]
+    and a, a
+    jr z, .found
+    ld a, l
+    add a, ENT_SIZE
+    ld l, a
+    jr nc, .nc
+    inc h
+.nc:
+    inc c
+    ld a, c
+    cp b
+    jr c, .loop
+    or a, a                     ; no free slot -> clear carry
+    ret
+.found:
+    ld a, c
+    scf
+    ret
+
+; GenFromPlayer: seed wGenX/wGenY with the player's world tile.
+GenFromPlayer:
+    ld a, [wPlayerWX]
+    ld [wGenX], a
+    ld a, [wPlayerWX+1]
+    ld [wGenX+1], a
+    ld a, [wPlayerWY]
+    ld [wGenY], a
+    ld a, [wPlayerWY+1]
+    ld [wGenY+1], a
+    ret
+
+; PickRingTile: pick a random tile on the ENT_SPAWN_DIST ring around the player
+; (one of the four sides, offset -8..+7 along it — so one axis is always DIST
+; tiles out, i.e. off-screen). CY + wGenX/wGenY = the tile if it's passable and
+; unoccupied; else NC (caller skips this attempt, tries again next period).
+PickRingTile::
+    call GenFromPlayer
+    call Rand
+    and 3
+    ld e, a                     ; side 0..3
+    call Rand
+    and 15
+    sub 8                       ; perpendicular offset -8..+7 (signed byte)
+    ld d, a
+    ld a, e
+    and a, a
+    jr z, .top
+    dec a
+    jr z, .bot
+    dec a
+    jr z, .left
+    ; right: dx = +DIST, dy = perp
+    ld a, ENT_SPAWN_DIST
+    ld hl, wGenX
+    call AddSByteAt16
+    ld a, d
+    ld hl, wGenY
+    call AddSByteAt16
+    jr .validate
+.top:                           ; dy = -DIST, dx = perp
+    ld a, 256 - ENT_SPAWN_DIST
+    ld hl, wGenY
+    call AddSByteAt16
+    ld a, d
+    ld hl, wGenX
+    call AddSByteAt16
+    jr .validate
+.bot:                           ; dy = +DIST, dx = perp
+    ld a, ENT_SPAWN_DIST
+    ld hl, wGenY
+    call AddSByteAt16
+    ld a, d
+    ld hl, wGenX
+    call AddSByteAt16
+    jr .validate
+.left:                          ; dx = -DIST, dy = perp
+    ld a, 256 - ENT_SPAWN_DIST
+    ld hl, wGenX
+    call AddSByteAt16
+    ld a, d
+    ld hl, wGenY
+    call AddSByteAt16
+.validate:
+    call GenTileType
+    call IsSolid                ; water is solid too -> never spawn in the water
+    jr nz, .fail
+    call CheckZombieAt
+    and a, a
+    jr nz, .fail
+    call CheckNPCAt
+    and a, a
+    jr nz, .fail
+    call CheckCarAt
+    and a, a
+    jr nz, .fail
+    call CheckLootAt            ; don't spawn on top of existing loot
+    and a, a
+    jr nz, .fail
+    scf
+    ret
+.fail:
+    or a, a                     ; clear carry
+    ret
+
+; SpawnZombie: place one wandering zombie in a free pool slot on the ring.
+SpawnZombie:
+    ld de, wZombies
+    ld b, MAX_ZOMBIES
+    call FindFreeSlot
+    ret nc
+    ld [wPoolIdx], a            ; stash the free slot index
+    call PickRingTile
+    ret nc                      ; ring tile blocked -> skip this attempt
+    call ClearEnt
+    ld a, 1
+    ld [wEnt + EO_ACTIVE], a
+    call EntFromGen             ; wEnt position <- wGen (the ring tile)
+    call Rand
+    and 3
+    ld [wEnt + EO_FACING], a    ; random initial facing
+    ld a, EDIR_IDLE
+    ld [wEnt + EO_DIR], a
+    ld a, [wPoolIdx]
+    ld de, wZombies
+    jp CopyPoolOut             ; write into the slot (tail call)

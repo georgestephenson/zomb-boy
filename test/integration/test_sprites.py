@@ -1,11 +1,11 @@
 """Sprite hygiene — regression test for the "white squiggle" (garbage sprites).
 
 We only ever draw the player (slot 0), zombies (1..8), the alert bubble (9),
-survivor NPCs (10..19), the water splash (20) and the car (21..24 — a 2x2
-sprite). All other OAM slots must stay hidden (Y == 0). A bug in ClearShadowOAM
-once left slots holding a stale counter ramp -> visible garbage on hardware.
+survivor NPCs (10..19), the water splash (20), the car (21..24 — a 2x2 sprite)
+and world loot (25..32). All other OAM slots must stay hidden (Y == 0). A bug in
+ClearShadowOAM once left slots holding a stale counter ramp -> garbage on hardware.
 """
-FIRST_UNUSED_SLOT = 25  # after OAM_SPLASH (20) + the car's 2x2 block (21..24)
+FIRST_UNUSED_SLOT = 33  # after OAM_LOOT (25) + MAX_LOOT (8) loot slots (25..32)
 
 
 def _assert_unused_hidden(game):

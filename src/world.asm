@@ -173,7 +173,7 @@ GenCity:                        ; house already handled in GenTileType
 ; The caller floors the coords to a feature anchor (chunk for houses, 2x2 block
 ; for terrain) so multi-tile features see one consistent biome.
 ; -----------------------------------------------------------------------------
-CalcBiome:
+CalcBiome::
     call LoadHfromBi
     call ShiftH
     call ShiftH
