@@ -144,7 +144,11 @@ inventory — **in the speaking persona's own voice** (each persona carries its
 own 8 context banks: the raider menaces your pistol with "DROP THE PISTOL AND
 WALK.", the preacher tuts "PUT THE PISTOL AWAY, CHILD.", the medic wants it
 off the cots) — with a per-conversation used-mask so the same remark never
-fires twice in one talk.
+fires twice in one talk. When an observation fires, the turn's closing
+question **follows the same thread** from a matching per-persona bank — the
+medic who just said "SIT DOWN. LET ME SEE THAT." asks "WHERE DOES IT HURT?",
+the farmer who noticed you starving offers "COULD YOU EAT A BAKED SPUD?" —
+so the two-page beat reads as one continuous thought.
 
 Still placeholder: the **gift** hands over no item yet (no inventory), and
 **hostile** plays the battle-flash stand-in — both resolve and announce

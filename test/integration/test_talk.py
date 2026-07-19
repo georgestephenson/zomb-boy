@@ -52,9 +52,11 @@ TONE_LABEL_VARIANTS = [  # [tone] -> set of labels across all moods x variants
 ]
 LABEL_MAX = 7
 
-# Lockstep copy of the POLICEMAN's hurt bank (observation banks are per-
-# persona now — dialogue_data.asm CtxPolice; NPC 0 is the policeman).
+# Lockstep copies of the POLICEMAN's hurt banks (context banks are per-
+# persona — dialogue_data.asm CtxPolice; NPC 0 is the policeman). The first
+# is the observation bank, the second its follow-up-question bank.
 HURT_WORDS = ("FILE A REPORT", "CODE THREE")
+POLICE_HURT_FOLLOWUPS = ("CAN YOU STILL WALK?", "WHO DID THIS TO YOU?")
 
 
 def expected_delta(tone_id, traits=POLICE_TRAITS):
@@ -398,6 +400,26 @@ def test_observation_notices_low_hp(game):
     assert game.r8("wCtxUsed") & 1, "CTX_HURT not marked used"
     press(game, "b")
     game.pyboy.memory[game.addr("wHP")] = 100
+
+
+def test_question_follows_up_the_observation(game):
+    """A turn whose observation fired must CLOSE on the persona's follow-up
+    question for the same context — observation and question read as one
+    thought (low HP -> the policeman asks if you can still walk)."""
+    goto_npc0(game)
+    game.pyboy.memory[game.addr("wHP")] = 10
+    start_talk(game)
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    press(game, "a")
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    assert game.r8("wTalkPhase") == TPH_OBS, "no observation page on turn 1"
+    press(game, "a")
+    assert wait_for(game, lambda: game.r8("wTalkState") == TS_WAIT)
+    assert game.r8("wTalkPhase") == TPH_QUEST
+    text = flow_text(game)
+    assert any(q in text for q in POLICE_HURT_FOLLOWUPS), \
+        f"question doesn't follow up the hurt observation: '{text}'"
+    press(game, "b")
 
 
 def test_observation_names_equipped_weapon(game):

@@ -76,6 +76,7 @@ EnterTalk::
     ld a, $FF                  ; topic/question repeat-guards: nothing yet
     ld [wLastTopic], a
     ld [wLastQuest], a
+    ld [wCtxKind], a           ; (= CTX_NONE) no observation made this turn
     xor a, a
     ld [wCtxUsed], a           ; no context remarked on yet this conversation
     inc a
@@ -213,6 +214,8 @@ UpdateTalk::
     call Rand                  ; later turns: a coin flip decides whether a
     and a, 1                   ; remark comes before the question — NPC turns
     ld [wTalkObs], a           ; run an unpredictable 2-3 pages
+    ld a, CTX_NONE             ; fresh turn: no observation made yet, so the
+    ld [wCtxKind], a           ; question defaults to the generic bank
 .reveal:
     ld a, REVEAL_SLOW
     ld [wRevSpeed], a

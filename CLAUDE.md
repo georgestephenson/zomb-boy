@@ -309,8 +309,11 @@ scroll updates — so there's no seam or one-frame latency.
   and an NPC turn is **2-3 pages**: their sentence (greeting round 1; rounds
   2+ a **prompt** line — `ComposePrompt`, continuation openers + topic), an
   *optional* **observation** page, and always a closing **question** page
-  (`ComposeQuestion`, per-persona `PO_QUESTS` banks, `wLastQuest` repeat
-  guard) that hands you the menu. Turn 1 always tries the observation; later
+  that hands you the menu. The question FOLLOWS UP the observation when one
+  fired (`wCtxKind` carries the CTX_* into `ComposeQuestion`, which asks
+  from the persona's context-question bank — "SIT DOWN. LET ME SEE THAT."
+  → "WHERE DOES IT HURT?"); otherwise it draws from the generic per-persona
+  `PO_QUESTS` bank (`wLastQuest` repeat guard). Turn 1 always tries the observation; later
   turns coin-flip it (`wTalkObs`), so turn length is unpredictable. Phases:
   `TPH_GREET/PROMPT → [TPH_OBS] → TPH_QUEST → menu → TPH_REACT`. Reactions
   are a bucket quip plus a **tone tag** answering the specific tone picked
@@ -331,9 +334,10 @@ scroll updates — so there's no seam or one-frame latency.
     equipped weapon (`CTRL_ITEM` splices the actual item name from
     `wPartyEquip`), then the `wClockH` time-of-day bucket as a backstop.
     The line itself comes from the TALKING persona's own `PO_CTX` table
-    (8 banks, index CTX_*): the raider menaces your pistol ("DROP THE
-    PISTOL AND WALK."), the preacher tuts at it ("PUT THE PISTOL AWAY,
-    CHILD."). `wCtxUsed` (bitmask) stops a context repeating within one
+    (16 banks: 8 observations + 8 follow-up questions, index CTX_*): the
+    raider menaces your pistol ("DROP THE PISTOL AND WALK."), the preacher
+    tuts at it ("PUT THE PISTOL AWAY, CHILD.") — and each closes the turn
+    with its own follow-up question for that context. `wCtxUsed` (bitmask) stops a context repeating within one
     conversation; if nothing is fresh the turn just skips to the question.
 - **Tones:** a pool of `TONE_COUNT` (8) covering every trait axis both ways
   (NICE FLIRT JOKE RUDE GUARDED CHEER GRIM DEMAND). Each menu offers a random
@@ -531,8 +535,9 @@ scroll updates — so there's no seam or one-frame latency.
   in `ram.asm`, not scattered.
 - **A new persona:** data + art. In `dialogue_data.asm` add a `PersonaTable`
   record (name, 4 traits in -60..+60, noun + topic + **question** banks +
-  a **`PO_CTX` context table** — 8 in-voice observation banks indexed by
-  `CTX_*`, every `CTX_WEAPON` line carrying `CTRL_ITEM`; `PO_PAL` — pick any
+  a **`PO_CTX` context table** — 16 in-voice banks indexed by `CTX_*`
+  (8 observations, then 8 follow-up questions ending in `?`), every
+  `CTX_WEAPON` observation carrying `CTRL_ITEM`; `PO_PAL` — pick any
   OBJ palette 3..7, shared tints are fine; the record is
   `PERSONA_SIZE` = 16 bytes, question bank at `PO_QUESTS`, questions must end
   in `?`), bump `PERSONA_COUNT`/`MAX_NPCS` +

@@ -489,18 +489,22 @@ OutReward:
 .f1: db "FOR YOU, FRIEND. TAKE THIS!", CTRL_END
 
 ; -----------------------------------------------------------------------------
-; Context observation banks: PER-PERSONA and in-voice. Each persona record's
-; PO_CTX points at a table of 8 banks (index by CTX_*) — the same live-state
-; trigger lands completely differently depending on who's talking: the raider
-; menaces your pistol, the preacher tuts at it, the medic wants it away from
-; the cots. dialogue.asm PickContext decides WHICH context fires (priority +
-; wCtxUsed); the talking persona decides HOW it's said.
+; Context banks: PER-PERSONA and in-voice. Each persona record's PO_CTX points
+; at a table of 16 banks: entries 0..7 are OBSERVATIONS (index by CTX_*) and
+; entries 8..15 the matching FOLLOW-UP QUESTIONS — when an observation fires,
+; the turn's closing question continues the same thought ("SIT DOWN. LET ME
+; SEE THAT." -> "WHERE DOES IT HURT?"). The same live-state trigger lands
+; completely differently depending on who's talking: the raider menaces your
+; pistol, the preacher tuts at it, the medic wants it away from the cots.
+; dialogue.asm PickContext decides WHICH context fires (priority + wCtxUsed);
+; the talking persona decides HOW it's said and WHAT it asks next.
 ; AUTHORING RULES: lines stand alone on a page (must fit 3x18); every
-; CTX_WEAPON line must carry CTRL_ITEM (the tests and the model rely on the
-; remark naming the actual item).
+; CTX_WEAPON observation must carry CTRL_ITEM (the tests and the model rely
+; on the remark naming the actual item); follow-up questions end in '?'.
 ; -----------------------------------------------------------------------------
 CtxPolice:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -541,9 +545,44 @@ CtxPolice:
     dw .y0, .y1
 .y0: db "ALL QUIET ON MY WATCH.", CTRL_END
 .y1: db "MIDDAY. NOTHING TO REPORT.", CTRL_END
+.qhurt:
+    db 2
+    dw .qh0, .qh1
+.qh0: db "CAN YOU STILL WALK?", CTRL_END
+.qh1: db "WHO DID THIS TO YOU?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "RATIONS RUN OUT, CITIZEN?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "SLEEPING ROUGH, ARE YOU?", CTRL_END
+.qweapon:
+    db 2
+    dw .qw0, .qw1
+.qw0: db "EVER FIRED THAT ", CTRL_ITEM, "?", CTRL_END
+.qw1: db "IS THE ", CTRL_ITEM, " REGISTERED?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "WHY ARE YOU OUT PAST CURFEW?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "ANYTHING TO REPORT TODAY?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "HEADING HOME BEFORE DARK?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "SEEN ANYTHING SUSPICIOUS?", CTRL_END
 
 CtxScientist:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -584,9 +623,43 @@ CtxScientist:
     dw .y0, .y1
 .y0: db "PEAK SUN. PEAK DATA.", CTRL_END
 .y1: db "CONDITIONS ARE STABLE TODAY.", CTRL_END
+.qhurt:
+    db 2
+    dw .qh0, .qh1
+.qh0: db "MAY I SAMPLE THAT WOUND?", CTRL_END
+.qh1: db "DOES IT ITCH OR BURN?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "SYMPTOMS BESIDES THE HUNGER?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "HOW MANY HOURS DID YOU SLEEP?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "MAY I RUN TESTS ON THE ", CTRL_ITEM, "?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "DO YOU TRACK THEIR NIGHT HABITS?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "READY FOR TODAY'S TRIALS?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "STAYING FOR THE NIGHT READINGS?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "CARE TO ASSIST AN EXPERIMENT?", CTRL_END
 
 CtxCheer:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -627,9 +700,42 @@ CtxCheer:
     dw .y0, .y1
 .y0: db "PERFECT DAY FOR A ROUTINE!", CTRL_END
 .y1: db "SUN'S OUT! POMS OUT!", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "DOES IT HURT WHEN YOU CHEER?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "WANT HALF MY GRANOLA BAR?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "NEED A WAKE-UP CHANT?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "CAN YOU TWIRL THAT ", CTRL_ITEM, "?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "NIGHT PRACTICE. YOU IN?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "READY FOR MORNING DRILLS?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "ONE MORE ROUTINE BEFORE DARK?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "PERFECT WEATHER, RIGHT?", CTRL_END
 
 CtxMaid:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -670,9 +776,42 @@ CtxMaid:
     dw .y0, .y1
 .y0: db "A FINE DAY FOR AIRING LINENS.", CTRL_END
 .y1: db "DUST DANCES IN THE NOON SUN.", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "SHALL I FETCH BANDAGES, DEAR?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "SHALL I PUT THE KETTLE ON?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "SHALL I MAKE UP THE GUEST BED?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "SHALL I POLISH THE ", CTRL_ITEM, "?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "WORKING LATE, ARE WE?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "BREAKFAST BEFORE YOU GO?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "STAYING FOR SUPPER, DEAR?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "LOVELY DRYING WEATHER, ISN'T IT?", CTRL_END
 
 CtxBiz:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -713,9 +852,42 @@ CtxBiz:
     dw .y0, .y1
 .y0: db "PRIME BUSINESS HOURS.", CTRL_END
 .y1: db "LUNCH MEETING RAN LONG.", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "GOT INSURANCE FOR THAT?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "WOULD YOU WORK FOR FOOD?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "BURNOUT, OR JUST LAZY?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "WOULD YOU SELL THE ", CTRL_ITEM, "?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "TRADING AFTER HOURS, ARE WE?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "READY TO TALK NUMBERS?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "CLOSING TIME. FINAL OFFERS?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "GOT A LUNCH SLOT FREE?", CTRL_END
 
 CtxPrepper:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -756,9 +928,42 @@ CtxPrepper:
     dw .y0, .y1
 .y0: db "TOO EXPOSED IN DAYLIGHT.", CTRL_END
 .y1: db "CLEAR SKIES. DRONE WEATHER.", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "WERE YOU BITTEN OR SCRATCHED?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "TRADED ALL YOUR RATIONS AWAY?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "WHO KEEPS WATCH WHILE YOU SLEEP?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "WHERE DID YOU GET THE ", CTRL_ITEM, "?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "SEE ANY LIGHTS OUT THERE?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "COUNT YOUR SUPPLIES TODAY?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "IS YOUR SHELTER SET FOR NIGHT?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "NOTICE ANY DRONES TODAY?", CTRL_END
 
 CtxMedic:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -799,9 +1004,43 @@ CtxMedic:
     dw .y0, .y1
 .y0: db "QUIET WARD TODAY. GOOD.", CTRL_END
 .y1: db "SUN HELPS THE HEALING.", CTRL_END
+.qhurt:
+    db 2
+    dw .qh0, .qh1
+.qh0: db "WHERE DOES IT HURT?", CTRL_END
+.qh1: db "MAY I CLEAN THAT WOUND?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "ANY DIZZINESS WITH THE HUNGER?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "DOUBLE VISION? RINGING EARS?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "ANY INJURIES FROM THE ", CTRL_ITEM, "?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "SLEEPING ENOUGH THESE NIGHTS?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "HOW ARE YOU FEELING TODAY?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "RESTING BEFORE NIGHTFALL?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "DRINKING ENOUGH WATER?", CTRL_END
 
 CtxRaider:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -842,9 +1081,42 @@ CtxRaider:
     dw .y0, .y1
 .y0: db "BROAD DAYLIGHT? BOLD OF YOU.", CTRL_END
 .y1: db "SUN'S UP. RATES ARE TOO.", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "WANT ME TO FINISH THE JOB?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "TRADE YOUR BOOTS FOR BREAD?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "TOO TIRED TO RUN, HUH?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "THINK THAT ", CTRL_ITEM, " SCARES ME?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "OUT ALONE AFTER DARK?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "GOT ANYTHING WORTH TAKING?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "PAYING THE NIGHT RATE?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "YOU LOST OR JUST STUPID?", CTRL_END
 
 CtxPreacher:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -885,9 +1157,42 @@ CtxPreacher:
     dw .y0, .y1
 .y0: db "THE SUN SHINES ON THE SAVED.", CTRL_END
 .y1: db "GLORIOUS NOON! CAN YOU FEEL IT?", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "SHALL I PRAY OVER THAT WOUND?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "WILL YOU BREAK BREAD WITH US?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "WHEN DID YOU LAST TRULY REST?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "WILL THE ", CTRL_ITEM, " BRING YOU PEACE?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "SHALL WE KEEP VIGIL TOGETHER?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "DID YOU GIVE THANKS FOR DAWN?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "WILL YOU JOIN EVENSONG?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "ISN'T THIS LIGHT A BLESSING?", CTRL_END
 
 CtxFarmer:
-    dw .hurt, .hungry, .tired, .weapon, .night, .morning, .dusk, .day
+    dw .hurt,  .hungry,  .tired,  .weapon,  .night,  .morning,  .dusk,  .day
+    dw .qhurt, .qhungry, .qtired, .qweapon, .qnight, .qmorning, .qdusk, .qday
 .hurt:
     db 2
     dw .h0, .h1
@@ -928,6 +1233,38 @@ CtxFarmer:
     dw .y0, .y1
 .y0: db "GOOD GROWING SUN TODAY.", CTRL_END
 .y1: db "HAY WON'T CUT ITSELF.", CTRL_END
+.qhurt:
+    db 1
+    dw .qh0
+.qh0: db "WANT SOME OF MY LINIMENT?", CTRL_END
+.qhungry:
+    db 1
+    dw .qg0
+.qg0: db "COULD YOU EAT A BAKED SPUD?", CTRL_END
+.qtired:
+    db 1
+    dw .qt0
+.qt0: db "EVER SLEPT IN A HAYLOFT?", CTRL_END
+.qweapon:
+    db 1
+    dw .qw0
+.qw0: db "CAN THAT ", CTRL_ITEM, " CLEAR VARMINTS?", CTRL_END
+.qnight:
+    db 1
+    dw .qn0
+.qn0: db "HEAR THE DOGS BARKING TOO?", CTRL_END
+.qmorning:
+    db 1
+    dw .qm0
+.qm0: db "HELP ME FEED THE HENS?", CTRL_END
+.qdusk:
+    db 1
+    dw .qd0
+.qd0: db "STAYING FOR SUPPER THEN?", CTRL_END
+.qday:
+    db 1
+    dw .qy0
+.qy0: db "GOOD HAYING WEATHER, AIN'T IT?", CTRL_END
 
 ; CTRL_ITEM's safety net when no weapon is equipped (an authored line could
 ; use the slot anywhere; CTX_WEAPON itself only fires armed).

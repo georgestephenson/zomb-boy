@@ -7,9 +7,11 @@ drift from what's checked. It then simulates the composer's exact tokenising +
 greedy wrap (dialogue.asm: EmitFrag/FlushWord) over EVERY reachable sentence:
 
     greeting/prompt = opener-or-continuation(mood) + topic(persona)
-    observation     = one line from the PERSONA'S OWN context banks (PO_CTX,
-                      8 banks indexed by CTX_*; CTRL_ITEM = an item name)
-    question        = one persona question fragment (the turn's last beat)
+    observation     = one line from the PERSONA'S OWN context banks (PO_CTX
+                      entries 0..7, indexed by CTX_*; CTRL_ITEM = an item name)
+    question        = the turn's last beat: the persona's FOLLOW-UP bank for
+                      the observed context (PO_CTX entries 8..15), or a
+                      generic persona question on turns with no observation
     react           = bucket quip + tone tag (liked/disliked by delta sign)
     outcome         = one closing fragment
 
@@ -208,10 +210,13 @@ def main() -> int:
         topics = read_bank(rom, le16(rom, off + 8), f"topics[{i}]")
         pal = rom[off + 10]
         quests = read_bank(rom, le16(rom, off + 12), f"quests[{i}]")
+        ctx_ptrs = read_ptr_table(rom, le16(rom, off + 14), N_CTX * 2,
+                                  f"ctxtable[{i}]")
         ctx = [read_bank(rom, a, f"ctx[{i}][{c}]") for c, a in
-               enumerate(read_ptr_table(rom, le16(rom, off + 14), N_CTX,
-                                        f"ctxtable[{i}]"))]
-        personas.append((name, traits, nouns, topics, pal, quests, ctx))
+               enumerate(ctx_ptrs[:N_CTX])]
+        ctxq = [read_bank(rom, a, f"ctxq[{i}][{c}]") for c, a in
+                enumerate(ctx_ptrs[N_CTX:])]
+        personas.append((name, traits, nouns, topics, pal, quests, ctx, ctxq))
 
     openers = [read_bank(rom, a, f"openers[{m}]") for m, a in
                enumerate(read_ptr_table(rom, syms["OpenerMoods"], N_MOODS, "OpenerMoods"))]
@@ -268,11 +273,17 @@ def main() -> int:
                     ok = False
     QMARK = FONT_BASE + CHARSET.index("?")
     CTX_WEAPON = 3
-    for i, (name, traits, nouns, topics, pal, quests, ctx) in enumerate(personas):
+    for i, (name, traits, nouns, topics, pal, quests, ctx, ctxq) in enumerate(personas):
         for q in quests:
             if q[-1] != QMARK:
                 print(f"FAIL: persona {i} question '{decode(q)}' doesn't end in ?")
                 ok = False
+        for c, bank in enumerate(ctxq):
+            for q in bank:
+                if q[-1] != QMARK:
+                    print(f"FAIL: persona {i} ctx follow-up '{decode(q)}' "
+                          f"doesn't end in ?")
+                    ok = False
         for line in ctx[CTX_WEAPON]:
             if CTRL_ITEM not in line:
                 print(f"FAIL: persona {i} weapon remark '{decode(line)}' "
@@ -328,7 +339,7 @@ def main() -> int:
     # Line shapes as composed by dialogue.asm: greeting/prompt = head + topic
     # (adjectives from the trait-tinted mood bank); reaction = bucket quip +
     # tone tag matching the delta's sign; outcome fragments stand alone.
-    for p, (name, traits, nouns_b, topics, _, quests, ctx) in enumerate(personas):
+    for p, (name, traits, nouns_b, topics, _, quests, ctx, ctxq) in enumerate(personas):
         for m in range(N_MOODS):
             adjs_b = adjs[eff_mood(traits[1], m)]
             heads = [(h, f"greet p{p} m{m}") for h in openers[m]] + \
@@ -342,6 +353,9 @@ def main() -> int:
             for c, bank in enumerate(ctx):
                 for line in bank:
                     check_line([], line, nouns_b, adjs_b, f"ctx p{p}[{c}] m{m}")
+            for c, bank in enumerate(ctxq):
+                for line in bank:
+                    check_line([], line, nouns_b, adjs_b, f"ctxq p{p}[{c}] m{m}")
     for quips, tag_tables, pol in ((reacts[0] + reacts[1], tags_liked, "liked"),
                                    (reacts[3] + reacts[4], tags_disliked, "disliked")):
         for quip in quips:

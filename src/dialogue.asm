@@ -205,10 +205,30 @@ EmitTopic:
     jp EmitFrag
 
 ; ComposeQuestion: every NPC turn's last beat — they put a question to you and
-; the reply menu answers it. Per-persona banks (PO_QUESTS), subject-threaded
-; like the topics; wLastQuest keeps the same question from repeating rounds.
+; the reply menu answers it. A turn whose observation fired FOLLOWS IT UP: the
+; question comes from the persona's context-question bank for the same CTX_*
+; ("SIT DOWN. LET ME SEE THAT." -> "WHERE DOES IT HURT?"), so the two beats
+; read as one thought. Turns without an observation ask from the generic
+; per-persona bank (PO_QUESTS; wLastQuest keeps those from repeating rounds).
 ComposeQuestion::
     call ResetCompose
+    ld a, [wCtxKind]
+    inc a                      ; CTX_NONE ($FF) -> 0
+    jr z, .generic
+    dec a
+    push af
+    ld a, CTX_NONE             ; one follow-up per observation
+    ld [wCtxKind], a
+    ld c, PO_CTX
+    call GetPersonaField       ; HL = the persona's context table
+    ld d, h
+    ld e, l
+    pop af
+    add a, CTX_COUNT           ; entries 8..15 are the question banks
+    call DerefTable
+    call PickPlain
+    jp EmitFrag
+.generic:
     ld c, PO_QUESTS
     call GetPersonaField       ; HL = question bank
     call PickQuestFrag
@@ -225,6 +245,7 @@ ComposeObservation::
     inc a                      ; CTX_NONE ($FF) -> 0
     ret z                      ; A = 0: nothing fresh to say
     dec a
+    ld [wCtxKind], a           ; the question beat follows this context up
     push af
     call ResetCompose
     pop af
