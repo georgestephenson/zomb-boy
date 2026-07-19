@@ -203,34 +203,16 @@ UpdatePlayer::
 TryStartStep:
     ld [wStepDir], a
     ld [wFacing], a
-    ; in a car with an empty tank you can still turn, but you can't drive off
     ld a, [wInCar]
     and a
-    jr z, .haveFuel
-    ld a, [wFuel]
-    and a
-    jr z, .blocked
-.haveFuel:
-    ; target = current tile stepped one in the chosen direction (into wGen)
-    ld a, [wPlayerWX]
-    ld [wGenX], a
-    ld a, [wPlayerWX+1]
-    ld [wGenX+1], a
-    ld a, [wPlayerWY]
-    ld [wGenY], a
-    ld a, [wPlayerWY+1]
-    ld [wGenY+1], a
-    ld a, [wStepDir]
-    call StepGen               ; steps wGenX/wGenY (shared with entity code)
+    jr nz, .driving
+    ; --- on foot: check the single destination tile ---
+    call GenPlayerStep         ; wGen = player + one step (dir); shared with entity
     call GenTileType
     ld [wDestTile], a          ; remember it: drives the swim/splash test at .ok
     call IsSolid
     jr z, .notSolid            ; passable terrain
-    ; solid tile. On foot the player swims, so water is the one walkable "solid";
-    ; a car can't float, so while driving every solid tile (water included) blocks.
-    ld a, [wInCar]
-    and a
-    jr nz, .blocked
+    ; solid tile. On foot the player swims, so water is the one walkable "solid".
     ld a, [wDestTile]
     cp TILE_WATER
     jr nz, .blocked            ; genuinely solid (wall / tree)
@@ -241,9 +223,19 @@ TryStartStep:
     call CheckNPCAt            ; a survivor is standing there (talk instead)
     and a, a
     jr nz, .blocked
-    call CheckCarAt            ; the parked car — board it with A, don't walk onto it
+    call CheckCarAt            ; the parked 2x2 car — board it with A, don't walk on
     and a, a
     jr nz, .blocked
+    jr .ok
+.driving:
+    ; --- driving: an empty tank strands you; else the car's 2x2 leading edge (the
+    ;     two tiles it newly covers) must be clear. Water blocks — a car can't float.
+    ld a, [wFuel]
+    and a
+    jr z, .blocked
+    call CheckDriveEdge        ; Z if both leading footprint tiles are clear
+    jr nz, .blocked
+    call GenPlayerStep         ; wGen = the new top-left anchor, for the commit
     jr .ok
 .blocked:
     ; bump — stay idle, keep facing
