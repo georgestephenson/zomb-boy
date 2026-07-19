@@ -339,8 +339,9 @@ UpdateAlert::
 ; =============================================================================
 ; Rendering
 ; =============================================================================
-; DrawEntities: slot 0 = player, or the car when driving; then zombies (+ bubble),
-; NPCs, and the parked car (its own slot, hidden while driving).
+; DrawEntities: slot 0 = player (hidden while driving); then zombies (+ bubble),
+; NPCs, and the car (its own 2x2 block OAM_CAR.., at the player cell when driving
+; or its world position when parked — DrawCar handles both).
 DrawEntities::
     ld a, [wInCar]
     and a
@@ -348,12 +349,13 @@ DrawEntities::
     call DrawPlayerSprite
     jr .rest
 .driving:
-    call DrawCarDriving         ; the car occupies the player's cell (slot 0)
+    xor a, a
+    ld [wShadowOAM + OAM_PLAYER * 4], a   ; hide the on-foot player; DrawCar owns the cell
 .rest:
     call DrawSplash             ; hides its slot when not swimming (always, in a car)
     call DrawZombies
     call DrawNPCs
-    call DrawParkedCar          ; OAM_CAR slot (hidden while driving)
+    call DrawCar                ; the 2x2 car (OAM_CAR..+3): driving or parked
     ret
 
 ; DrawZombies: hide the entity sprite slots, then draw each active + on-screen

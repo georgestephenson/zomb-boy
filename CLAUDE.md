@@ -133,22 +133,38 @@ scroll updates — so there's no seam or one-frame latency.
   onto it**.
 - **Boarding flips `wInCar`; it never moves the player**, so no view/streaming
   edge is disturbed (the fix for the one-tile-teleport seam problem). `A` while
-  facing the parked car boards; `A` while driving calls `ExitCar`, which parks
-  on an adjacent passable tile (facing dir first, then a sweep). `CheckCarToggle`
+  facing the parked car boards; `A` while driving calls `ExitCar`. `CheckCarToggle`
   runs in the overworld loop *before* `CheckTalkStart` and **consumes the A press**
   (`res 4, wNewKeys`) on either action; `CheckTalkStart` also early-returns while
   `wInCar` (no talking from the driver's seat).
-- While driving: the car sprite takes **slot 0** (`DrawCarDriving`, tiles
-  `TILE_CAR_BASE` 211..213 — down/up/side, X-flip left, OBJ pal 0) and the parked
-  slot `OAM_CAR` (21) is hidden; steps use `CAR_STEP_SPEED` (2 = **2x** pace);
-  water is **not** walkable (the swim exception in `TryStartStep` is gated to on
-  foot); each committed tile burns one `wFuel` and recomposes the HUD.
+- **Getting out ejects the *player*, not the car** (`ExitCar`): the car stays
+  parked exactly where you stopped (`wCarWX/WY` = your tile) and the player steps
+  out onto an adjacent passable, unoccupied tile (`TryEjectDir`: facing dir first,
+  then a sweep; water is solid here so you never eject into it; boxed in → you
+  stay on the car tile). The step is **deferred, not teleported**: `ExitCar` only
+  *arms* `wCarEject` (= `EFACE_*+1`); `UpdatePlayer`'s idle path consumes it next
+  frame and runs the normal `TryStartStep`, so the walk-out rides the ordinary
+  step + streaming path and disturbs no view edge (same seam-avoidance reason
+  boarding doesn't move you). One frame of car/player overlap at the fixed cell
+  before the step begins reads as climbing out.
+- While driving: the car is a **16×16 (2×2) sprite** in OAM slots
+  `OAM_CAR`..`OAM_CAR+3` (21..24), centred on the fixed player cell (the on-foot
+  player slot 0 is hidden). Parked, the same 4-slot block sits at the car's world
+  position, culled via `EntScreenPos` like the other sprites. `DrawCar` handles
+  both cases and `DrawCar2x2` paints the quadrants (TL/TR/BL/BR): down/up are
+  left-right symmetric so the right column is the stored left tile with
+  `OAMF_XFLIP`; side stores all four quadrants and X-flips the whole 16×16 for
+  left (`Car{Down,Up,Right,Left}TA` descriptors). Steps use `CAR_STEP_SPEED`
+  (2 = **2x** pace); water is **not** walkable (the swim exception in
+  `TryStartStep` is gated to on foot); each committed tile burns one `wFuel` and
+  recomposes the HUD.
 - **Fuel replaces energy in the HUD while driving** (`ComposeHUD` branches on
   `wInCar`: `TILE_HUD_FUEL` gas-pump glyph + `wFuel`), and `UpdateSurvival`
   **skips the energy drain** in the car. Empty tank (`wFuel == 0`) → the fuel
   gate in `TryStartStep` blocks movement (you can still turn). Adding the fuel
   glyph bumped `FONT_GLYPHS` 52→53, so `TILE_PSURV_BASE` is now 181 (persona
-  world tiles 181..210; car tiles 211..213 appended to `PersonaTiles`).
+  world tiles 181..210; the car's **8** tiles `TILE_CAR_BASE` 211..218 — 2 each
+  for down/up + 4 for side — are appended to `PersonaTiles`).
 
 ### Dialogue (npc/talk/dialogue*, docs/design/05)
 - The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on

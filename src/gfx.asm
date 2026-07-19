@@ -547,8 +547,8 @@ TilesEnd::
 ; outline/eyes/dark accents, 2 = face/light accents, 3 = hair/outfit, tinted
 ; via the persona record's PO_PAL — distinct headgear silhouettes keep the
 ; personas tellable even with shared tints (and on DMG's single grey ramp).
-; The drivable car's 3 world tiles (TILE_CAR_BASE = 211..213) are appended
-; after the personas so the same LoadTiles copy streams them into VRAM too.
+; The drivable car's 8 world tiles (TILE_CAR_BASE = 211..218; a 2x2 sprite) are
+; appended after the personas so the same LoadTiles copy streams them into VRAM.
 PersonaTiles::
 ; --- 180: policeman down (peaked cap) ---
     dw `00333300
@@ -820,34 +820,82 @@ PersonaTiles::
     dw `13333331
     dw `01333310
     dw `00133100
-; Drivable car world sprites (OBJ palette 0 — red body, black windows/wheels).
-; tile = TILE_CAR_BASE + dir (0 down / 1 up / 2 side; X-flip side for left).
-; --- 211: car down (front toward bottom) ---
-    dw `00333300
-    dw `03333330
-    dw `13111131
-    dw `03333330
-    dw `03111130
-    dw `13333331
-    dw `03333330
-    dw `00311300
-; --- 212: car up (front toward top) ---
-    dw `00311300
-    dw `03333330
-    dw `13333331
-    dw `03111130
-    dw `03333330
-    dw `13111131
-    dw `03333330
-    dw `00333300
-; --- 213: car side (right profile; X-flip for left) ---
+; Drivable car world sprites (OBJ palette 0 — colour 3 = red body, 1 = black
+; wheels/grille, 2 = pale glass). The car is a 16x16 (2x2) sprite; car.asm
+; assembles the quadrants (see DrawCar2x2). down/up are left-right symmetric, so
+; only the LEFT column tiles are stored (the right column is the same tile with
+; OAMF_XFLIP); side stores all four quadrants (the whole 16x16 X-flips for left).
+; --- 211: car down, top-left half (front toward bottom; TR = X-flip) ---
+    dw `00033333
+    dw `00333333
+    dw `00332222
+    dw `00332222
+    dw `01133333
+    dw `01133333
+    dw `00333333
+    dw `00333333
+; --- 212: car down, bottom-left half ---
+    dw `00333333
+    dw `00332222
+    dw `00332222
+    dw `01133333
+    dw `01133333
+    dw `00333333
+    dw `00033111
+    dw `00033333
+; --- 213: car up, top-left half (front toward top; TR = X-flip) ---
+    dw `00033333
+    dw `00033111
+    dw `00333333
+    dw `01133333
+    dw `01133333
+    dw `00332222
+    dw `00332222
+    dw `00333333
+; --- 214: car up, bottom-left half ---
+    dw `00333333
+    dw `00332222
+    dw `00332222
+    dw `01133333
+    dw `01133333
+    dw `00333333
+    dw `00333333
+    dw `00033333
+; --- 215: car side top-left (right profile: rear roof + windows) ---
     dw `00000000
-    dw `00333000
-    dw `03111330
+    dw `00000000
+    dw `00000033
+    dw `00000332
+    dw `00333332
+    dw `03333333
     dw `33333333
     dw `33333333
-    dw `31133113
-    dw `01100110
+; --- 216: car side top-right (windshield + hood + front nose) ---
+    dw `00000000
+    dw `00000000
+    dw `33330000
+    dw `22233000
+    dw `22233333
+    dw `33333333
+    dw `33333333
+    dw `33333333
+; --- 217: car side bottom-left (rear wheel) ---
+    dw `03333333
+    dw `01133333
+    dw `11113333
+    dw `11113333
+    dw `01100000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+; --- 218: car side bottom-right (front wheel) ---
+    dw `33333330
+    dw `33333110
+    dw `33331111
+    dw `33331111
+    dw `00000110
+    dw `00000000
+    dw `00000000
     dw `00000000
 PersonaTilesEnd::
 

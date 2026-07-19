@@ -154,7 +154,8 @@ DEF EO_MET        EQU 15           ; nonzero once you've talked to them —
 
 DEF OAM_NPC0       EQU 10          ; NPCs use OAM slots 10..10+MAX_NPCS-1
 DEF OAM_SPLASH     EQU 20          ; the water splash (first free slot after NPCs)
-DEF OAM_CAR        EQU 21          ; the parked car's world sprite (car.asm)
+DEF OAM_CAR        EQU 21          ; the car's 2x2 world sprite (car.asm): four OBJ
+                                   ; slots 21..24 (TL, TR, BL, BR), parked or driven
 
 ; The menu cursor (survivor world sprites are per-persona now: TILE_PSURV_BASE,
 ; defined below with the font ids since they load after the font glyphs)
@@ -377,10 +378,21 @@ DEF PORTRAIT_TILE_OFF EQU PORTRAIT_ATTR_OFF + PORTRAIT_NTILES  ; 73: -> tile dat
 ; --- Drivable car (car.asm) -------------------------------------------------
 ; One car spawns near the player start. Board it with A while adjacent and
 ; facing it; it drives at double speed and burns FUEL (which takes over the
-; energy slot in the HUD) instead of the player's energy. Its 3 world-sprite
-; tiles (down/up/side, X-flip for left) are appended to PersonaTiles in gfx.asm,
-; so LoadTiles streams them into VRAM right after the personas.
-DEF TILE_CAR_BASE  EQU TILE_PSURV_BASE + PERSONA_COUNT * 3   ; down / up / side
+; energy slot in the HUD) instead of the player's energy. Getting out parks the
+; car where you stopped and steps the PLAYER onto an adjacent tile.
+; The car is a 16x16 (2x2-tile) sprite: 8 world-sprite tiles (ids 211..218)
+; appended to PersonaTiles in gfx.asm, so LoadTiles streams them into VRAM right
+; after the personas. down/up are left-right symmetric (2 tiles each, X-flip the
+; right column); side needs 4 tiles (the whole 16x16 X-flips for left).
+DEF TILE_CAR_BASE    EQU TILE_PSURV_BASE + PERSONA_COUNT * 3
+DEF TILE_CAR_DOWN_T  EQU TILE_CAR_BASE + 0   ; down: top / bottom half (left tile;
+DEF TILE_CAR_DOWN_B  EQU TILE_CAR_BASE + 1   ;   right tile = X-flip of it)
+DEF TILE_CAR_UP_T    EQU TILE_CAR_BASE + 2   ; up: top / bottom half (left tile)
+DEF TILE_CAR_UP_B    EQU TILE_CAR_BASE + 3
+DEF TILE_CAR_SIDE_TL EQU TILE_CAR_BASE + 4   ; side (right profile): the 4 quadrants
+DEF TILE_CAR_SIDE_TR EQU TILE_CAR_BASE + 5
+DEF TILE_CAR_SIDE_BL EQU TILE_CAR_BASE + 6
+DEF TILE_CAR_SIDE_BR EQU TILE_CAR_BASE + 7
 DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP_SPEED)
 DEF CAR_SPAWN_DX   EQU 0           ; spawn offset from the player start (tiles)
 DEF CAR_SPAWN_DY   EQU 3
