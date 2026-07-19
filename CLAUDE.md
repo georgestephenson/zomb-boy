@@ -60,6 +60,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `talk.asm` | Dialogue screen (MODE_TALK): SCRN1 UI, state machine, VRAM queue |
 | `dialogue.asm` | Grammar composer (bounded) + persona/tone affinity math |
 | `dialogue_data.asm` | Personas, word banks, templates (ROMX; charmap strings) |
+| `hud.asm` | Window-layer status bar (HP/food/energy/clock) + the survival tick |
 | `battle.asm` | Placeholder battle transition (flash) |
 | `rng.asm` | 16-bit LFSR (`Rand`) — dynamic behaviour, NOT worldgen |
 | `video.asm` | VBlank sync, OAM DMA, palettes, font loader, scroll; VBlank IRQ vector |
@@ -74,15 +75,40 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 ### Main loop (main.asm)
 Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
 ```
-overworld: UpdateSound → ReadInput → UpdatePlayer → UpdateView → (GenStrip if moved)
-           → UpdateZombies → CheckTalkStart → ComputeCamLag → DrawEntities
-           WaitVBlank → OAM DMA → SetScroll → BlitStream
+overworld: UpdateSound → ReadInput → UpdateSurvival → UpdatePlayer → UpdateView
+           → (GenStrip if moved) → UpdateZombies → CheckTalkStart
+           → ComputeCamLag → DrawEntities
+           WaitVBlank → OAM DMA → SetScroll → PushHUD → BlitStream
 talk mode: UpdateSound → ReadInput → UpdateTalk (fills wTalkQ)
            WaitVBlank → OAM DMA → DrainTalkQ
 ```
 `GenStrip` builds the incoming edge into a WRAM buffer (heavy, outside VBlank);
 `BlitStream` pushes it to VRAM (tight, inside VBlank) in the **same frame** the
 scroll updates — so there's no seam or one-frame latency.
+
+### HUD (hud.asm, docs/design/03 — v0: meters visible + draining, non-lethal)
+- The status bar is the **hardware window** over the **bottom 8 px**
+  (WY=SCRN_Y-8, WX=7), sourced from **SCRN1 row 0** — free because the talk
+  layout starts at row 1. **The window is not a sizable rectangle: it renders
+  from (WX,WY) to the screen's bottom-right corner**, so a top bar would cover
+  the whole world with SCRN1 (this bug shipped once) — only a bottom band, or
+  an LYC raster split, can make a partial-height window.
+  Talk mode runs with the window bit off; `BuildTalkScreen` wipes the row and
+  `ExitTalkScreen` restores it via `DrawHUDRow` (tiles + `hIsCGB`-gated attrs)
+  inside its exit VBlank. Both overworld LCDC writes (main.asm boot,
+  ExitTalkScreen) must carry `LCDCF_WINON | LCDCF_WIN9C00`.
+- Row layout is exactly 20 cells: `[HP]100 [food]100 [energy]100 HH:MM`, using
+  four extra font glyphs (colon, HP ligature, apple, bolt — ids in
+  constants.inc). `ComposeHUD` renders into `wHUDText` in the logic phase;
+  **`PushHUD` (VBlank) is skipped on any frame that blits a world strip** so
+  the DMG budget holds — it must run *before* `BlitStream` eats `wStrKind`.
+- Meters are 0..`METER_MAX` (100) **saturating**; drains fire on power-of-2
+  in-game-minute boundaries (`FOOD/ENERGY_DRAIN_MINS` — keep them powers of 2,
+  the tick masks a minute counter). The clock ticks only in overworld mode
+  (`CLOCK_MINUTE_FRAMES` frames/minute); time pauses in talk/alert.
+- Sprites render **on top of** the window, so `EntScreenPos` culls any sprite
+  with OAM Y >= 145 (its 8-px box would reach the bar). The player never can
+  (fixed at screen row 9). Day/night palettes and starvation damage are LATER.
 
 ### Dialogue (npc/talk/dialogue*, docs/design/05)
 - The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on

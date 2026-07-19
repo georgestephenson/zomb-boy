@@ -490,6 +490,12 @@ EntScreenPos::
     ld hl, wCamLagY
     sub [hl]
     ld [wScrY], a
+    ; clip at the HUD band: the window overlays the bottom 8 px (scanlines
+    ; SCRN_Y-8..) and sprites render on top of it, so hide any sprite whose
+    ; 8-px box would reach it: screen top = OAM Y - 16, so overlap starts at
+    ; OAM Y - 16 + 7 >= SCRN_Y - 8, i.e. OAM Y >= 145
+    cp SCRN_Y - 8 + 16 - 7
+    jr nc, .off
     ld a, 1
     ret
 .off:

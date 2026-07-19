@@ -125,6 +125,7 @@ Start:
     ld [wRngState+1], a
     call InitZombies
     call InitNPCs
+    call InitHUD                    ; meters/clock + the window row (LCD is off)
 
     call InitSound                  ; power on the APU + start the demo song
 
@@ -133,7 +134,7 @@ Start:
     call hOAMDMA                    ; clean OAM before the first visible frame
     call SetScroll
 
-    ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9800
+    ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9800 | LCDCF_WINON | LCDCF_WIN9C00
     ldh [rLCDC], a
 
     ld a, IEF_VBLANK
@@ -156,6 +157,7 @@ MainLoop:
     and a, a                        ; MODE_OVERWORLD == 0
     jr nz, .alert
     ; --- overworld ---
+    call UpdateSurvival             ; clock + meter drains (time flows only here)
     call UpdatePlayer
     call UpdateView
     ld a, [wMoveDir]
@@ -178,6 +180,8 @@ MainLoop:
     ld a, HIGH(wShadowOAM)
     call hOAMDMA
     call SetScroll
+    call PushHUD                    ; HUD row if dirty (skipped on strip frames;
+                                    ; must run BEFORE BlitStream eats wStrKind)
     call BlitStream                 ; push the queued strip into VRAM
     jr MainLoop
 

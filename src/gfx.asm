@@ -350,6 +350,10 @@ Font1bpp::
     db $00,$66,$66,$00,$7C,$C6,$00,$00  ; face: mad (frown)
     db $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; solid box border
     db $00,$00,$7E,$7E,$3C,$18,$00,$00  ; "press A" down-arrow
+    db $00,$00,$30,$30,$00,$30,$30,$00  ; HUD: clock colon
+    db $00,$00,$AC,$AA,$EC,$A8,$A8,$00  ; HUD: "HP" ligature (3x5 H + P)
+    db $10,$38,$7C,$FE,$FE,$FE,$7C,$00  ; HUD: food (apple)
+    db $0E,$1C,$38,$7C,$18,$30,$60,$40  ; HUD: energy (lightning bolt)
 Font1bppEnd::
 
 ; CGB palettes: 4 colours each, BGR555, `dw` = little-endian (matches rBCPD).

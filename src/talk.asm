@@ -280,7 +280,9 @@ ExitTalkScreen:
     call WaitVBlank
     ld a, HIGH(wShadowOAM)
     call hOAMDMA
-    ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9800
+    call DrawHUDRow            ; BuildTalkScreen wiped SCRN1 row 0 — restore the
+                               ; window HUD (tiles + attrs) inside this VBlank
+    ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9800 | LCDCF_WINON | LCDCF_WIN9C00
     ldh [rLCDC], a
     call SetScroll
     ret

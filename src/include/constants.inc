@@ -259,7 +259,12 @@ DEF TILE_FACE_NEUT  EQU FONT_BASE + 44
 DEF TILE_FACE_MAD   EQU FONT_BASE + 45
 DEF TILE_UIBOX      EQU FONT_BASE + 46   ; solid border tile
 DEF TILE_UIARROW    EQU FONT_BASE + 47   ; "press A" indicator
-DEF FONT_GLYPHS     EQU 48
+DEF TILE_HUD_COLON  EQU FONT_BASE + 48   ; clock separator (no charmap entry:
+DEF TILE_HUD_HP     EQU FONT_BASE + 49   ;  the HUD composes tile ids at
+DEF TILE_HUD_FOOD   EQU FONT_BASE + 50   ;  runtime, not from strings)
+DEF TILE_HUD_ENERGY EQU FONT_BASE + 51
+DEF FONT_GLYPHS     EQU 52
+DEF TILE_DIGIT0     EQU FONT_BASE + 27   ; '0' (digits are contiguous 0-9)
 
 ; Dialogue string control codes (must stay below FONT_BASE; no glyph maps here)
 DEF CTRL_END       EQU 0
@@ -268,6 +273,19 @@ DEF CTRL_ADJ       EQU 2           ; expand a mood-adjective likewise
 DEF CTRL_SUBJ      EQU 3           ; expand the conversation's SUBJECT noun —
                                    ; picked once per conversation, so the NPC
                                    ; keeps talking about the same thing
+
+; --- HUD / survival meters (docs/design/03; v0: visible + draining, non-lethal)
+; The HUD is the hardware window over the BOTTOM 8 px (the window always runs
+; to the screen's bottom-right corner), sourced from SCRN1 row 0 — free
+; because the talk screen's layout starts at row 1. See hud.asm.
+DEF HUD_COLS       EQU VIEW_COLS   ; one full text row
+DEF METER_MAX      EQU 100         ; meters are 0..100, saturating (no wrap)
+DEF CLOCK_MINUTE_FRAMES EQU 10     ; frames per in-game minute (day = 4 real min)
+DEF CLOCK_START_HOUR EQU 8         ; the run starts in the morning
+; Drain periods in in-game minutes. POWERS OF 2 ONLY: the tick masks a
+; free-running minute counter with (N-1).
+DEF FOOD_DRAIN_MINS   EQU 8        ; food 100 -> 0 in ~13 in-game hours
+DEF ENERGY_DRAIN_MINS EQU 16       ; energy drains at half that rate
 
 ; Trait-tinted adjectives: |T1| above this shifts the adjective bank one mood
 ; step (grim personas speak bleaker, hopeful ones warmer, at equal affinity).

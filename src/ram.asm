@@ -84,6 +84,18 @@ SECTION "NPC State", WRAM0
 wNPCs::             ds MAX_NPCS * ENT_SIZE
 wNPCIdx::           ds 1               ; loop index into wNPCs
 
+; HUD / survival meters (docs/design/03; v0 non-lethal) — see hud.asm.
+SECTION "HUD State", WRAM0
+wHP::               ds 1               ; 0..METER_MAX, saturating
+wFood::             ds 1
+wEnergy::           ds 1
+wClockH::           ds 1               ; in-game clock 00:00-23:59
+wClockM::           ds 1
+wClockFrame::       ds 1               ; frames into the current minute
+wClockMinCount::    ds 1               ; free-running minute counter (drain mask)
+wHUDDirty::         ds 1               ; nonzero: wHUDText needs a VRAM push
+wHUDText::          ds HUD_COLS        ; the composed row (font tile ids)
+
 ; Talk mode (survivor dialogue screen) — see talk.asm / dialogue.asm.
 SECTION "Talk State", WRAM0
 wTalkNPC::          ds 1               ; index of the NPC we're talking to
