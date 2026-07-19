@@ -454,21 +454,26 @@ scroll updates — so there's no seam or one-frame latency.
   `UpdateSound` (`hUGE_dosound`) advances one tick. Call `UpdateSound` **once per
   frame, outside VBlank** (top of the loop) — the loop is frame-locked by
   `WaitVBlank`, and keeping it out of the VBlank window spares that tight budget.
-- Song data is `ROMX`, in **bank 1 with the dialogue data** (that section is
-  pinned `BANK[1]`; song data must share it — see the ROM banking invariant
-  below).
+- Song data is `ROMX` in its **own bank** (it outgrew bank 1 when the
+  dialogue data grew): `InitSound`/`UpdateSound` bracket every driver call
+  with a switch to `BANK(song_demo)` and a restore of bank 1, per the ROM
+  banking invariant below. `test/integration/test_audio.py` asserts the
+  driver's WRAM tempo/order-count match the song and that the row cursor
+  advances — the headless canary for a broken bank seam (or driver/tracker
+  format drift, which fails the same way).
 - To swap the tune: export from hUGETracker as "RGBDS .asm", drop it in
   `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label.
 
 ## Conventions & invariants (don't break these)
 
-- **The cart is 64 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
-  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds song +
-  dialogue data (both read every frame); boot maps it explicitly (don't trust
-  MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
-  `ShowPortrait` (talk.asm), which restores bank 1 before returning. New banked
-  data must do the same: switch, read, restore bank 1 — nothing else may assume
-  another bank. **Cart RAM (`SECTION ... , SRAM`, the menu's SAVE block) is
+- **The cart is 128 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
+  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds the
+  dialogue data (read throughout talk mode); boot maps it explicitly (don't
+  trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
+  `ShowPortrait` (talk.asm); the song data floats in its own bank, mapped
+  **only** inside `InitSound`/`UpdateSound` (audio.asm) via `BANK(song_demo)`.
+  Both restore bank 1 before returning. New banked data must do the same:
+  switch, read, restore bank 1 — nothing else may assume another bank. **Cart RAM (`SECTION ... , SRAM`, the menu's SAVE block) is
   disabled by default; `DoSave` brackets every access with the `rRAMG` enable /
   disable writes** (and `rRAMB`=0) — never leave it enabled.
 - **RGBDS syntax, v4 `hardware.inc` names.** `ldh [rLCDC], a`, `ld [hl+], a`,

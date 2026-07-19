@@ -1,6 +1,6 @@
 ; =============================================================================
-; dialogue_data.asm — the grammar's word banks + persona records (ROMX bank 1;
-; the 32K ROM-only cart maps it flat, no banking needed).
+; dialogue_data.asm — the grammar's word banks + persona records (ROMX,
+; pinned BANK[1] — the default-mapped bank, so talk mode reads it freely).
 ;
 ; A *bank* is `db count` followed by `count` pointers to fragments. A fragment
 ; is charmap'd text (assembles straight to font tile ids), may embed CTRL_NOUN
@@ -24,9 +24,10 @@
 INCLUDE "include/constants.inc"
 INCLUDE "include/charmap.inc"
 
-; BANK[1]: the default-mapped ROMX bank (with the song data, which the linker
-; must also place here — bank 2's portraits leave it no room anyway). Code only
-; ever banks away from 1 transiently (ShowPortrait), restoring it on return.
+; BANK[1]: the default-mapped ROMX bank. This data owns it outright (the song
+; data outgrew the shared arrangement and lives in its own bank now — see
+; audio.asm). Code only ever banks away from 1 transiently (ShowPortrait,
+; InitSound/UpdateSound), restoring it on return.
 SECTION "Dialogue Data", ROMX, BANK[1]
 
 ; -----------------------------------------------------------------------------
