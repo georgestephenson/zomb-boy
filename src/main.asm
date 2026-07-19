@@ -146,6 +146,7 @@ Start:
     ld [wRngState+1], a
     call InitZombies
     call InitNPCs
+    call InitCar                    ; one drivable car near the start
     call InitHUD                    ; meters/clock + the window row (LCD is off)
 
     call InitSound                  ; power on the APU + start the demo song
@@ -185,6 +186,7 @@ MainLoop:
     and a, a
     call nz, GenStrip               ; build incoming column/row (outside VBlank)
     call UpdateZombies              ; wander + line-of-sight (may trigger alert)
+    call CheckCarToggle             ; A next to the car -> board it / drive off
     call CheckTalkStart             ; A at a survivor -> EnterTalk (MODE_TALK)
     ld a, [wGameMode]
     cp MODE_TALK

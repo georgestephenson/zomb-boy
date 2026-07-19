@@ -154,6 +154,7 @@ DEF EO_MET        EQU 15           ; nonzero once you've talked to them —
 
 DEF OAM_NPC0       EQU 10          ; NPCs use OAM slots 10..10+MAX_NPCS-1
 DEF OAM_SPLASH     EQU 20          ; the water splash (first free slot after NPCs)
+DEF OAM_CAR        EQU 21          ; the parked car's world sprite (car.asm)
 
 ; The menu cursor (survivor world sprites are per-persona now: TILE_PSURV_BASE,
 ; defined below with the font ids since they load after the font glyphs)
@@ -317,12 +318,13 @@ DEF TILE_HUD_COLON  EQU FONT_BASE + 48   ; clock separator (no charmap entry:
 DEF TILE_HUD_HP     EQU FONT_BASE + 49   ;  the HUD composes tile ids at
 DEF TILE_HUD_FOOD   EQU FONT_BASE + 50   ;  runtime, not from strings)
 DEF TILE_HUD_ENERGY EQU FONT_BASE + 51
-DEF FONT_GLYPHS     EQU 52
+DEF TILE_HUD_FUEL   EQU FONT_BASE + 52   ; gas pump (shown in place of energy while driving)
+DEF FONT_GLYPHS     EQU 53
 DEF TILE_DIGIT0     EQU FONT_BASE + 27   ; '0' (digits are contiguous 0-9)
 
 ; Per-persona survivor world sprites (gfx.asm PersonaTiles, loaded right after
 ; the font): 3 tiles per persona — down, up, side (X-flip for left). Ids
-; 180..209; OBJs can reach them (the OAM tile byte spans all of $8000-$8FFF).
+; 181..210; OBJs can reach them (the OAM tile byte spans all of $8000-$8FFF).
 DEF TILE_PSURV_BASE EQU FONT_BASE + FONT_GLYPHS
 
 ; Dialogue string control codes (must stay below FONT_BASE; no glyph maps here)
@@ -371,5 +373,17 @@ DEF PAL_BG_PORTRAIT EQU 5          ; portrait uses BG palettes 5/6/7
 DEF NUM_PORTRAIT_PALS EQU 3
 DEF PORTRAIT_ATTR_OFF EQU NUM_PORTRAIT_PALS * 8         ; 24: palettes -> attr map
 DEF PORTRAIT_TILE_OFF EQU PORTRAIT_ATTR_OFF + PORTRAIT_NTILES  ; 73: -> tile data
+
+; --- Drivable car (car.asm) -------------------------------------------------
+; One car spawns near the player start. Board it with A while adjacent and
+; facing it; it drives at double speed and burns FUEL (which takes over the
+; energy slot in the HUD) instead of the player's energy. Its 3 world-sprite
+; tiles (down/up/side, X-flip for left) are appended to PersonaTiles in gfx.asm,
+; so LoadTiles streams them into VRAM right after the personas.
+DEF TILE_CAR_BASE  EQU TILE_PSURV_BASE + PERSONA_COUNT * 3   ; down / up / side
+DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP_SPEED)
+DEF CAR_SPAWN_DX   EQU 0           ; spawn offset from the player start (tiles)
+DEF CAR_SPAWN_DY   EQU 3
+DEF FUEL_START     EQU METER_MAX   ; a full tank at spawn (0..METER_MAX, saturating)
 
 ENDC

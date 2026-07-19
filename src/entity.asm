@@ -215,6 +215,9 @@ UpdateZombieAI:
     call CheckNPCAt             ; nor shuffle onto a survivor
     and a, a
     jr nz, .blocked
+    call CheckCarAt             ; nor onto the parked car
+    and a, a
+    jr nz, .blocked
     call EntFromGen             ; commit new position
     ; start the visual slide from the tile it just left
     ld a, [wEnt + EO_DIR]
@@ -336,12 +339,21 @@ UpdateAlert::
 ; =============================================================================
 ; Rendering
 ; =============================================================================
-; DrawEntities: player sprite (slot 0) + all visible zombies (+ bubble) + NPCs.
+; DrawEntities: slot 0 = player, or the car when driving; then zombies (+ bubble),
+; NPCs, and the parked car (its own slot, hidden while driving).
 DrawEntities::
+    ld a, [wInCar]
+    and a
+    jr nz, .driving
     call DrawPlayerSprite
-    call DrawSplash
+    jr .rest
+.driving:
+    call DrawCarDriving         ; the car occupies the player's cell (slot 0)
+.rest:
+    call DrawSplash             ; hides its slot when not swimming (always, in a car)
     call DrawZombies
     call DrawNPCs
+    call DrawParkedCar          ; OAM_CAR slot (hidden while driving)
     ret
 
 ; DrawZombies: hide the entity sprite slots, then draw each active + on-screen

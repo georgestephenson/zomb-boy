@@ -144,8 +144,14 @@ UpdatePlayer::
 
 ; --- WALKING (animating a step) ---
 .walking:
+    ld b, STEP_SPEED           ; a car covers a tile in half the frames (2x pace)
+    ld a, [wInCar]
+    and a
+    jr z, .walkSpeed
+    ld b, CAR_STEP_SPEED
+.walkSpeed:
     ld a, [wStepOffset]
-    add a, STEP_SPEED
+    add a, b
     ld [wStepOffset], a
     cp STEP_TOTAL
     jr c, .walkContinue        ; step still in progress
@@ -185,6 +191,14 @@ UpdatePlayer::
 TryStartStep:
     ld [wStepDir], a
     ld [wFacing], a
+    ; in a car with an empty tank you can still turn, but you can't drive off
+    ld a, [wInCar]
+    and a
+    jr z, .haveFuel
+    ld a, [wFuel]
+    and a
+    jr z, .blocked
+.haveFuel:
     ; target = current tile stepped one in the chosen direction (into wGen)
     ld a, [wPlayerWX]
     ld [wGenX], a
@@ -200,7 +214,11 @@ TryStartStep:
     ld [wDestTile], a          ; remember it: drives the swim/splash test at .ok
     call IsSolid
     jr z, .notSolid            ; passable terrain
-    ; solid tile — but the player can swim, so water is the one walkable "solid".
+    ; solid tile. On foot the player swims, so water is the one walkable "solid";
+    ; a car can't float, so while driving every solid tile (water included) blocks.
+    ld a, [wInCar]
+    and a
+    jr nz, .blocked
     ld a, [wDestTile]
     cp TILE_WATER
     jr nz, .blocked            ; genuinely solid (wall / tree)
@@ -210,7 +228,11 @@ TryStartStep:
     jr nz, .blocked
     call CheckNPCAt            ; a survivor is standing there (talk instead)
     and a, a
-    jr z, .ok
+    jr nz, .blocked
+    call CheckCarAt            ; the parked car — board it with A, don't walk onto it
+    and a, a
+    jr nz, .blocked
+    jr .ok
 .blocked:
     ; bump — stay idle, keep facing
     ld a, PSTATE_IDLE
@@ -227,6 +249,19 @@ TryStartStep:
     ld [wPlayerWY], a
     ld a, [wGenY+1]
     ld [wPlayerWY+1], a
+    ; --- driving: no swim state; burn one unit of fuel per tile and refresh the
+    ;     HUD fuel readout (the tank was already checked non-empty above) ---
+    ld a, [wInCar]
+    and a
+    jr z, .footStep
+    ld a, [wFuel]
+    dec a
+    ld [wFuel], a
+    call ComposeHUD
+    ld a, 1
+    ld [wHUDDirty], a
+    jr .swimDone
+.footStep:
     ; --- swim state: crossing the land/water boundary splashes (sound + sprite) ---
     ld a, [wDestTile]
     cp TILE_WATER

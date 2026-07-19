@@ -1,11 +1,11 @@
 """Sprite hygiene — regression test for the "white squiggle" (garbage sprites).
 
 We only ever draw the player (slot 0), zombies (1..8), the alert bubble (9),
-survivor NPCs (10..19) and the water splash (20). All other OAM slots must stay
-hidden (Y == 0). A bug in ClearShadowOAM once left slots holding a stale counter
-ramp -> visible garbage on hardware.
+survivor NPCs (10..19), the water splash (20) and the parked car (21). All other
+OAM slots must stay hidden (Y == 0). A bug in ClearShadowOAM once left slots
+holding a stale counter ramp -> visible garbage on hardware.
 """
-FIRST_UNUSED_SLOT = 21  # after OAM_NPC0 (10) + MAX_NPCS, plus OAM_SPLASH (20)
+FIRST_UNUSED_SLOT = 22  # after OAM_SPLASH (20) + OAM_CAR (21)
 
 
 def _assert_unused_hidden(game):
@@ -39,9 +39,9 @@ def test_npc_sprites_use_survivor_tiles_and_palettes(game):
     """Regression: NPCTileAttr once clobbered DrawNPCs' OAM pointer, so
     visible NPCs kept tile 0 (grass) / palette 0 — near-invisible ghosts.
     Every on-screen NPC must use its persona's own world sprite (3 tiles per
-    persona from TILE_PSURV_BASE = 180: down/up/side; NPC in OAM slot
+    persona from TILE_PSURV_BASE = 181: down/up/side; NPC in OAM slot
     OAM_NPC0+i spawned with persona i) and an OBJ palette 3..7."""
-    PSURV_BASE = 180
+    PSURV_BASE = 181
     seen = 0
     for slot in range(10, 20):  # OAM_NPC0 .. +MAX_NPCS
         s = game.sprite(slot)

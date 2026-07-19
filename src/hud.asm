@@ -141,6 +141,9 @@ UpdateSurvival::
     dec a
     ld [wFood], a
 .noFood:
+    ld a, [wInCar]
+    and a
+    jr nz, .noEnergy           ; driving spares your energy — the car burns fuel
     ld a, [wClockMinCount]
     and ENERGY_DRAIN_MINS - 1
     jr nz, .noEnergy
@@ -184,9 +187,19 @@ ComposeHUD::
     call Put3
     ld a, FONT_BASE
     ld [hl+], a
+    ; third meter: energy on foot, fuel while driving (identical 1+3-cell width)
+    ld a, [wInCar]
+    and a
+    jr z, .energy
+    ld a, TILE_HUD_FUEL
+    ld [hl+], a
+    ld a, [wFuel]
+    jr .meter3
+.energy:
     ld a, TILE_HUD_ENERGY
     ld [hl+], a
     ld a, [wEnergy]
+.meter3:
     call Put3
     ld a, FONT_BASE
     ld [hl+], a

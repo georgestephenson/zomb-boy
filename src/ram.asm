@@ -87,6 +87,16 @@ SECTION "NPC State", WRAM0
 wNPCs::             ds MAX_NPCS * ENT_SIZE
 wNPCIdx::           ds 1               ; loop index into wNPCs
 
+; Drivable car (car.asm): a single world object the player can board and drive.
+; Zeroed by ClearRAM at boot, then positioned + fuelled by InitCar.
+SECTION "Car State", WRAM0
+wCarWX::            ds 2               ; parked car world tile X (16-bit LE)
+wCarWY::            ds 2               ; ... and Y
+wCarFacing::        ds 1               ; EFACE_* the parked car faces
+wInCar::            ds 1               ; 1 while the player is driving
+wFuel::             ds 1               ; 0..METER_MAX, saturating (drives the HUD
+                                       ; fuel readout; replaces energy while driving)
+
 ; HUD / survival meters (docs/design/03; v0 non-lethal) — see hud.asm.
 SECTION "HUD State", WRAM0
 wHP::               ds 1               ; 0..METER_MAX, saturating

@@ -155,6 +155,9 @@ CheckNPCAt::
 ; on the tile the player faces, open the conversation (switches to MODE_TALK).
 ; -----------------------------------------------------------------------------
 CheckTalkStart::
+    ld a, [wInCar]
+    and a
+    ret nz                     ; no chatting from the driver's seat
     ld a, [wNewKeys]
     and PAD_A
     ret z

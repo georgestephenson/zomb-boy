@@ -125,6 +125,31 @@ scroll updates — so there's no seam or one-frame latency.
   energy drains an extra point per in-game minute (`UpdateSurvival`), and
   `CheckLOS` early-returns "unseen" so zombies can't detect you in the water.
 
+### Driving (car.asm / player.asm / hud.asm)
+- One car spawns near the start (`InitCar`, offset `CAR_SPAWN_DX/DY`, nudged to a
+  passable tile). It's a **single world object** (`wCarWX/WY`, `wCarFacing`),
+  not an entity-pool member. `CheckCarAt` reports the parked tile so the player
+  (`TryStartStep`) and zombies both treat it as solid — you **board it, not walk
+  onto it**.
+- **Boarding flips `wInCar`; it never moves the player**, so no view/streaming
+  edge is disturbed (the fix for the one-tile-teleport seam problem). `A` while
+  facing the parked car boards; `A` while driving calls `ExitCar`, which parks
+  on an adjacent passable tile (facing dir first, then a sweep). `CheckCarToggle`
+  runs in the overworld loop *before* `CheckTalkStart` and **consumes the A press**
+  (`res 4, wNewKeys`) on either action; `CheckTalkStart` also early-returns while
+  `wInCar` (no talking from the driver's seat).
+- While driving: the car sprite takes **slot 0** (`DrawCarDriving`, tiles
+  `TILE_CAR_BASE` 211..213 — down/up/side, X-flip left, OBJ pal 0) and the parked
+  slot `OAM_CAR` (21) is hidden; steps use `CAR_STEP_SPEED` (2 = **2x** pace);
+  water is **not** walkable (the swim exception in `TryStartStep` is gated to on
+  foot); each committed tile burns one `wFuel` and recomposes the HUD.
+- **Fuel replaces energy in the HUD while driving** (`ComposeHUD` branches on
+  `wInCar`: `TILE_HUD_FUEL` gas-pump glyph + `wFuel`), and `UpdateSurvival`
+  **skips the energy drain** in the car. Empty tank (`wFuel == 0`) → the fuel
+  gate in `TryStartStep` blocks movement (you can still turn). Adding the fuel
+  glyph bumped `FONT_GLYPHS` 52→53, so `TILE_PSURV_BASE` is now 181 (persona
+  world tiles 181..210; car tiles 211..213 appended to `PersonaTiles`).
+
 ### Dialogue (npc/talk/dialogue*, docs/design/05)
 - The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on
   SCRN0 is untouched, so exit is just an LCDC flip + `SetScroll`. Entry builds

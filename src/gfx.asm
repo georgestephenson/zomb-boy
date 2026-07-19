@@ -542,11 +542,13 @@ TilesEnd::
 
 ; Per-persona survivor world sprites (OBJ), 3 tiles each: down, up, side
 ; (right profile; X-flip for left) — tile = TILE_PSURV_BASE + persona*3 + dir.
-; LoadTiles copies them right after the font glyphs ($8B40; ids 180..209 are
+; LoadTiles copies them right after the font glyphs ($8B50; ids 181..210 are
 ; reachable by OBJs, whose tile byte spans all of $8000-$8FFF). Colour 1 =
 ; outline/eyes/dark accents, 2 = face/light accents, 3 = hair/outfit, tinted
 ; via the persona record's PO_PAL — distinct headgear silhouettes keep the
 ; personas tellable even with shared tints (and on DMG's single grey ramp).
+; The drivable car's 3 world tiles (TILE_CAR_BASE = 211..213) are appended
+; after the personas so the same LoadTiles copy streams them into VRAM too.
 PersonaTiles::
 ; --- 180: policeman down (peaked cap) ---
     dw `00333300
@@ -818,6 +820,35 @@ PersonaTiles::
     dw `13333331
     dw `01333310
     dw `00133100
+; Drivable car world sprites (OBJ palette 0 — red body, black windows/wheels).
+; tile = TILE_CAR_BASE + dir (0 down / 1 up / 2 side; X-flip side for left).
+; --- 211: car down (front toward bottom) ---
+    dw `00333300
+    dw `03333330
+    dw `13111131
+    dw `03333330
+    dw `03111130
+    dw `13333331
+    dw `03333330
+    dw `00311300
+; --- 212: car up (front toward top) ---
+    dw `00311300
+    dw `03333330
+    dw `13333331
+    dw `03111130
+    dw `03333330
+    dw `13111131
+    dw `03333330
+    dw `00333300
+; --- 213: car side (right profile; X-flip for left) ---
+    dw `00000000
+    dw `00333000
+    dw `03111330
+    dw `33333333
+    dw `33333333
+    dw `31133113
+    dw `01100110
+    dw `00000000
 PersonaTilesEnd::
 
 ; -----------------------------------------------------------------------------
@@ -878,6 +909,7 @@ Font1bpp::
     db $00,$00,$AC,$AA,$EC,$A8,$A8,$00  ; HUD: "HP" ligature (3x5 H + P)
     db $10,$38,$7C,$FE,$FE,$FE,$7C,$00  ; HUD: food (apple)
     db $0E,$1C,$38,$7C,$18,$30,$60,$40  ; HUD: energy (lightning bolt)
+    db $78,$48,$7A,$4E,$4A,$7A,$78,$00  ; HUD: fuel (gas pump: body + hose)
 Font1bppEnd::
 
 ; CGB palettes: 4 colours each, BGR555, `dw` = little-endian (matches rBCPD).
