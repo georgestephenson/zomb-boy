@@ -897,6 +897,55 @@ PersonaTiles::
     dw `00000000
     dw `00000000
     dw `00000000
+; =============================================================================
+; World-loot sprites (219..223). One 8x8 tile each; drawn by loot.asm DrawLoot
+; on a shared OBJ palette (LootPal): apple on pal 0 (3=red), beans/chest on pal 2
+; (1=yellow 2=amber 3=white), crate/pot on pal 1 (1=black 3=brown).
+; --- 219: apple (red body, dark stem) ---
+    dw `00011000
+    dw `00133100
+    dw `01333310
+    dw `13333331
+    dw `13333331
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 220: beans can (amber tin, yellow label band) ---
+    dw `03333330
+    dw `03222230
+    dw `03111130
+    dw `03111130
+    dw `03111130
+    dw `03111130
+    dw `03222230
+    dw `03333330
+; --- 221: crate (brown box, black frame + X braces) ---
+    dw `11111111
+    dw `13333331
+    dw `13133131
+    dw `13313313
+    dw `13313313
+    dw `13133131
+    dw `13333331
+    dw `11111111
+; --- 222: pot / urn (brown, narrow neck + round belly) ---
+    dw `00311300
+    dw `00133100
+    dw `03333330
+    dw `33333333
+    dw `33333333
+    dw `33333333
+    dw `03333330
+    dw `00333300
+; --- 223: treasure chest (gold, banded lid + lock) ---
+    dw `00000000
+    dw `03333330
+    dw `32222223
+    dw `31111113
+    dw `32211223
+    dw `32222223
+    dw `32222223
+    dw `03333330
 PersonaTilesEnd::
 
 ; -----------------------------------------------------------------------------

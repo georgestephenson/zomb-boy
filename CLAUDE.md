@@ -66,6 +66,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `battle.asm` | Placeholder battle transition (flash) |
 | `menu.asm` | START pause menu (MODE_MENU): party/equip/bag/status/save/options/exit |
 | `items.asm` | Item database (type + name tables) + inventory helpers (party/bag init) |
+| `loot.asm` | World loot: dynamic pickup/container pool (reuses the entity struct + spawn manager); biome-flavoured kinds, food-eat + breakable-container interaction |
 | `rng.asm` | 16-bit LFSR (`Rand`) — dynamic behaviour, NOT worldgen |
 | `video.asm` | VBlank sync, OAM DMA, palettes, font loader, scroll; VBlank IRQ vector |
 | `input.asm` | Joypad read with edge detection |
@@ -80,7 +81,8 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
 ```
 overworld: UpdateSound → ReadInput → UpdateSurvival → UpdatePlayer → UpdateView
-           → (GenStrip if moved) → UpdateZombies → UpdateSpawns → CheckTalkStart
+           → (GenStrip if moved) → UpdateZombies → UpdateSpawns → UpdateLootSpawns
+           → CheckCarToggle → CheckLoot → CheckTalkStart
            → ComputeCamLag → DrawEntities
            WaitVBlank → OAM DMA → SetScroll → PushHUD → BlitStream
 talk mode: UpdateSound → ReadInput → UpdateTalk (fills wTalkQ)
@@ -118,6 +120,34 @@ scroll updates — so there's no seam or one-frame latency.
   set above the boot cluster's reach so the starting entities don't cull-then-
   respawn during boot. `InitSpawns` arms the timers; state is in ram.asm's
   "Spawn State" section.
+
+### World loot (loot.asm)
+- **Loot objects reuse the entity struct and the entity spawn manager.** `wLoot`
+  is a pool of `MAX_LOOT` 16-byte entity structs (the kind lives in `EO_KIND`,
+  the `EO_FACING` slot), managed by the exact same `SetPool`/`CullFarPool`/
+  `CountActivePool`/`FindFreeSlot`/`PickRingTile` helpers as the zombies/survivors
+  (all exported from entity.asm). `UpdateLootSpawns` (right after `UpdateSpawns`)
+  culls far loot and respawns toward `LOOT_TARGET` in the ring — same "only
+  touches `Rand` when it actually spawns" discipline, so it's inert near spawn.
+- **Kinds are biome-flavoured** (`PickLootKind`, from the ring tile's `CalcBiome`,
+  via the dynamic RNG not the terrain hash): forest → apples, city → beans,
+  everywhere → the odd container (crate/pot common, chest ~1/8). `InitLoot` seeds
+  a handful of **food only** near the spawn (containers are solid and would block
+  the movement tests' walk paths); a seed slot on a solid tile is skipped, never
+  nudged (a far nudge could trip a cull-then-respawn mid-test).
+- **Food vs containers.** Apples/beans are **non-solid**: `CheckLoot` auto-grabs
+  one on the player's own tile, and food restores hunger straight into `wFood`
+  (`AddFood`, saturating). Crates/pots/chests are **solid** — `CheckLootSolidAt`
+  is wired into `TryStartStep` (player) and `UpdateZombieAI` (zombies) next to
+  `CheckCarAt`, so you (and zombies) can't walk onto them — and are opened by
+  `CheckLoot` on an A-press facing them (consumes the press, like `CheckCarToggle`).
+  Opening rolls `CrateGear`/`ChestGear` into the bag (`AddItem`) or, for a crate's
+  ration pack, straight into the food meter. Loot draws in OAM slots
+  `OAM_LOOT`..(+`MAX_LOOT`) via `DrawLoot` (mirrors `DrawNPCs`); its 5 sprite
+  tiles (`TILE_LOOT_BASE` 219..223) are appended to `PersonaTiles` after the car,
+  sharing existing OBJ palettes (there are no free ones). State is in ram.asm's
+  "Loot State" section. **Ammo is intentionally not modelled yet** — it belongs on
+  ranged weapons once real combat lands (see docs/design/04 §3).
 
 ### HUD (hud.asm, docs/design/03 — v0: meters visible + draining, non-lethal)
 - The status bar is the **hardware window** over the **bottom 8 px**

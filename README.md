@@ -53,6 +53,11 @@ your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
   hash) in a ring just off-screen — so the world stays populated wherever you
   wander, encounters never repeat when you backtrack, and fixed pools keep the
   count bounded.
+- **Scavengeable loot.** Food and containers spawn the same way — biome-flavoured
+  (apples in forest, cans of beans in the city) and fresh every time. Walk over
+  food to eat it (it refills the hunger meter); break **crates and pots** (solid —
+  face them and press A) for everyday gear and ration packs; crack **treasure
+  chests** for the rare, valuable finds. Gear lands in your bag.
 - **Survivors & dialogue.** Ten personas (policeman, scientist, cheerleader,
   maid, businessman, prepper, medic, raider, preacher, farmer) stand in the
   world; face one, press **A**, and a dialogue screen opens. Every round is
@@ -70,8 +75,8 @@ your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
   (vendored, public domain) — the audio pipeline is wired end-to-end. Compose your
   own with `make hugetracker`; details in `vendor/hUGEDriver/PROVENANCE.md`.
 
-Not yet: real turn-based combat, items/gifts, food/sleep, houses/rivers, save
-system. See the roadmap below and the design docs.
+Not yet: real turn-based combat, survivor gifts, sleep pressure, houses/rivers,
+save system. See the roadmap below and the design docs.
 
 ## Project structure
 

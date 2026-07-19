@@ -218,6 +218,9 @@ UpdateZombieAI:
     call CheckCarAt             ; nor onto the parked car
     and a, a
     jr nz, .blocked
+    call CheckLootSolidAt       ; nor into a crate/pot/chest
+    and a, a
+    jr nz, .blocked
     call EntFromGen             ; commit new position
     ; start the visual slide from the tile it just left
     ld a, [wEnt + EO_DIR]
@@ -355,6 +358,7 @@ DrawEntities::
     call DrawSplash             ; hides its slot when not swimming (always, in a car)
     call DrawZombies
     call DrawNPCs
+    call DrawLoot               ; world pickups + containers (OAM_LOOT..)
     call DrawCar                ; the 2x2 car (OAM_CAR..+3): driving or parked
     ret
 
@@ -862,7 +866,7 @@ UpdateSpawns::
     jp SpawnNPC                 ; npc.asm builds the survivor (tail call)
 
 ; SetPool: HL = base, B = count -> stash for CullFarPool.
-SetPool:
+SetPool::
     ld a, l
     ld [wPoolBase], a
     ld a, h
@@ -873,7 +877,7 @@ SetPool:
 
 ; CullFarPool: deactivate every active entity in the pool (wPoolBase/wPoolCount)
 ; whose Chebyshev distance from the player exceeds ENT_CULL_DIST.
-CullFarPool:
+CullFarPool::
     xor a, a
     ld [wPoolIdx], a
 .loop:
@@ -1056,6 +1060,9 @@ PickRingTile::
     and a, a
     jr nz, .fail
     call CheckCarAt
+    and a, a
+    jr nz, .fail
+    call CheckLootAt            ; don't spawn on top of existing loot
     and a, a
     jr nz, .fail
     scf

@@ -98,6 +98,15 @@ wPoolBase::         ds 2               ; base address of the pool being culled
 wPoolCount::        ds 1               ; ... its entity count
 wPoolIdx::          ds 1               ; ... loop index / stashed free-slot index
 
+; World loot (loot.asm): a pool of pickups/containers reusing the entity struct
+; (kind in EO_KIND). Managed by the same cull/respawn machinery as the entities.
+SECTION "Loot State", WRAM0
+wLoot::             ds MAX_LOOT * ENT_SIZE
+wLootSpawnTimer::   ds 1               ; frames until the next loot respawn try
+wLootKind::         ds 1               ; scratch: the kind being placed
+wLootDX::           ds 1               ; scratch: InitLoot table dx/dy
+wLootDY::           ds 1
+
 ; Drivable car (car.asm): a single world object the player can board and drive.
 ; Zeroed by ClearRAM at boot, then positioned + fuelled by InitCar.
 SECTION "Car State", WRAM0

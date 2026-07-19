@@ -267,6 +267,9 @@ TryStartStep:
     call CheckCarAt            ; the parked 2x2 car — board it with A, don't walk on
     and a, a
     jr nz, .blocked
+    call CheckLootSolidAt      ; a crate/pot/chest — open it with A, don't walk on
+    and a, a
+    jr nz, .blocked
     jr .ok
 .driving:
     ; --- driving: an empty tank strands you; else the car's 2x2 leading edge (the

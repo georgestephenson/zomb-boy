@@ -407,6 +407,38 @@ DEF TILE_CAR_SIDE_TL EQU TILE_CAR_BASE + 4   ; side (right profile): the 4 quadr
 DEF TILE_CAR_SIDE_TR EQU TILE_CAR_BASE + 5
 DEF TILE_CAR_SIDE_BL EQU TILE_CAR_BASE + 6
 DEF TILE_CAR_SIDE_BR EQU TILE_CAR_BASE + 7
+
+; World-loot sprites — 5 tiles appended to PersonaTiles after the car's 8, so
+; LoadTiles streams them into VRAM right after the car (ids 219..223).
+DEF TILE_LOOT_BASE  EQU TILE_CAR_BASE + 8
+DEF TILE_LOOT_APPLE EQU TILE_LOOT_BASE + 0
+DEF TILE_LOOT_BEANS EQU TILE_LOOT_BASE + 1
+DEF TILE_LOOT_CRATE EQU TILE_LOOT_BASE + 2
+DEF TILE_LOOT_POT   EQU TILE_LOOT_BASE + 3
+DEF TILE_LOOT_CHEST EQU TILE_LOOT_BASE + 4
+; --- World loot (loot.asm): dynamic pickups + breakable containers ----------
+; Loot objects reuse the 16-byte entity struct (kind in EO_KIND) and the same
+; spawn manager as the entities: they appear in a ring just outside the view,
+; biome-flavoured (apples in forest, beans in city), and despawn once far. Food
+; is non-solid and grabbed by walking over it OR pressing A facing it; crates,
+; pots and chests are SOLID and opened with A while facing them, rolling their
+; loot into the bag (or, for a ration pack, straight into the food meter).
+DEF LOOT_APPLE     EQU 0            ; forest food: small hunger  (non-solid)
+DEF LOOT_BEANS     EQU 1            ; city food:   medium hunger (non-solid)
+DEF LOOT_CRATE     EQU 2            ; breakable: somewhat-rare loot (solid)
+DEF LOOT_POT       EQU 3            ; breakable: somewhat-rare loot (solid)
+DEF LOOT_CHEST     EQU 4            ; treasure:  valuable/rare loot (solid)
+DEF LOOT_COUNT     EQU 5
+DEF EO_KIND        EQU 5            ; loot kind, in the entity struct's EO_FACING slot
+DEF MAX_LOOT       EQU 8            ; pool cap (the memory bound)
+DEF LOOT_TARGET    EQU 3            ; keep about this many loot objects around you
+DEF LOOT_SPAWN_PERIOD EQU 40        ; frames between loot respawn attempts
+; Hunger restored on pickup (added to wFood, saturating at METER_MAX)
+DEF APPLE_FOOD     EQU 10           ; small
+DEF BEANS_FOOD     EQU 25           ; medium
+DEF RATION_FOOD    EQU 50           ; large (ration pack, from a crate/pot)
+DEF OAM_LOOT       EQU 25           ; loot OBJ slots 25..25+MAX_LOOT-1 (after the car)
+
 DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP_SPEED)
 DEF CAR_SPAWN_DX   EQU 0           ; spawn offset from the player start (tiles)
 DEF CAR_SPAWN_DY   EQU 3
