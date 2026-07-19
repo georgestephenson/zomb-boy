@@ -15,7 +15,12 @@
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
 
-SECTION "Dialogue", ROM0
+; ROMX BANK[1] — the default-mapped bank, beside the dialogue data it walks.
+; Safe because every caller (talk.asm, npc.asm's talk trigger) runs with bank 1
+; mapped: the only transient departures (ShowPortrait's portrait bank, the
+; audio seam's song bank) are self-contained and never re-enter the composer.
+; Moving it here frees ROM0, which filled up as the home-bank code grew.
+SECTION "Dialogue", ROMX, BANK[1]
 
 ; =============================================================================
 ; Compatibility math
