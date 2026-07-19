@@ -82,6 +82,18 @@ UpdatePlayer::
 
 ; --- IDLE ---
 .idle:
+    ; walking into a car? take the armed step ONTO it (wCarBoard = EFACE_*+1, set
+    ; by CheckCarToggle). StartBoardStep flips to driving when the step finishes.
+    ld a, [wCarBoard]
+    and a
+    jr z, .noBoard
+    ld b, a
+    xor a, a
+    ld [wCarBoard], a          ; consume it
+    ld a, b
+    dec a                      ; dir+1 -> EFACE_*
+    jp StartBoardStep
+.noBoard:
     ; just got out of the car? step out one tile in the armed direction, using
     ; the normal walk + streaming path (wCarEject = EFACE_*+1, set by ExitCar).
     ld a, [wCarEject]
@@ -172,6 +184,25 @@ UpdatePlayer::
     ld [wPlayerState], a
     xor a, a
     ld [wStepOffset], a
+    ; finished walking into the car? get in now — the door shuts and the HUD swaps
+    ; energy for fuel. wInCar flips only here, so the car never jumped on boarding.
+    ld a, [wBoarding]
+    and a
+    jr z, .stepDone
+    xor a, a
+    ld [wBoarding], a
+    ld [wSwimming], a          ; no swimming from the driver's seat
+    ld [wSplashTimer], a
+    ld [wCarEject], a          ; no stale get-out step
+    ld [wWalkFrame], a
+    ld a, 1
+    ld [wInCar], a
+    call PlayCarDoor           ; the door thud (audio.asm)
+    call ComposeHUD
+    ld a, 1
+    ld [wHUDDirty], a
+    ret
+.stepDone:
     call ReadHeldDir
     cp $FF
     jr z, .walkStop
@@ -253,11 +284,31 @@ TryStartStep:
     ld [wPlayerWY], a
     ld a, [wGenY+1]
     ld [wPlayerWY+1], a
-    ; --- driving: no swim state; burn one unit of fuel per tile and refresh the
-    ;     HUD fuel readout (the tank was already checked non-empty above) ---
+    ; --- driving: the car is a world object that moves as a unit, so advance its
+    ;     2x2 anchor in lockstep with the player (the seat offset stays constant);
+    ;     no swim state; burn one unit of fuel per tile and refresh the HUD fuel
+    ;     readout (the tank was already checked non-empty above) ---
     ld a, [wInCar]
     and a
     jr z, .footStep
+    ld a, [wCarWX]
+    ld [wGenX], a
+    ld a, [wCarWX+1]
+    ld [wGenX+1], a
+    ld a, [wCarWY]
+    ld [wGenY], a
+    ld a, [wCarWY+1]
+    ld [wGenY+1], a
+    ld a, [wStepDir]
+    call StepGen               ; step the car TL one tile the same way
+    ld a, [wGenX]
+    ld [wCarWX], a
+    ld a, [wGenX+1]
+    ld [wCarWX+1], a
+    ld a, [wGenY]
+    ld [wCarWY], a
+    ld a, [wGenY+1]
+    ld [wCarWY+1], a
     ld a, [wFuel]
     dec a
     ld [wFuel], a
@@ -366,7 +417,7 @@ ReadHeldDir:
     ret
 
 ; DirToMoveDir: A = EFACE_* -> DIR_* (the streaming direction code).
-DirToMoveDir:
+DirToMoveDir::
     ld e, a
     ld d, 0
     ld hl, DirMap

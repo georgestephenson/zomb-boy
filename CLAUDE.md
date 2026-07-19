@@ -131,47 +131,57 @@ scroll updates — so there's no seam or one-frame latency.
   object** (`wCarWX/WY`, `wCarFacing`), not an entity-pool member, but it
   **physically occupies a 2×2 tile footprint** whose **top-left** is `wCarWX/WY`.
 - **Collision is on all four tiles.** `CheckCarAt` returns true for any tile of
-  the footprint (`InSpan2` bounds each axis to `{anchor, anchor+1}`); its anchor
-  is `wCarWX/WY` when parked and the **player's tile** while driving (the car
-  rides at the player), so the on-foot player (`TryStartStep`) and zombies both
-  treat all four tiles as solid — you **board it, not walk onto it**, parked *or*
-  moving. The one exception is the **driver**: the car can't block its own body,
-  so driving movement uses `CheckDriveEdge` (below) instead of `CheckCarAt`.
-- **Boarding flips `wInCar`; it never moves the player**, so no view/streaming
-  edge is disturbed (the fix for the one-tile-teleport seam problem). Because the
-  driving footprint is anchored at the player, the parked 2×2 **snaps** to the
-  player-anchored 2×2 on board (≤1 tile, reads as pulling up to you — same class
-  of artifact the old 1-tile car had). `A` while facing any car tile boards; `A`
-  while driving calls `ExitCar`. `CheckCarToggle` runs in the overworld loop
-  *before* `CheckTalkStart` and **consumes the A press** (`res 4, wNewKeys`) on
-  either action; `CheckTalkStart` also early-returns while `wInCar`.
-- **Getting out ejects the *player*, not the car** (`ExitCar`): the car parks its
-  2×2 with the top-left at your final tile (`wCarWX/WY` = your tile) and the
-  player steps out to a passable, unoccupied tile **outside the footprint**
-  (`TryEjectDir`: facing dir first, then a sweep; it also rejects tiles still on
-  the car via `CheckCarAt`, so — with you at the top-left — a single step right or
-  down stays on the car and you climb out left/up; water is solid so you never
-  eject into it; boxed in → you stay on the car). The step is **deferred, not
-  teleported**: `ExitCar` only *arms* `wCarEject` (= `EFACE_*+1`); `UpdatePlayer`'s
-  idle path consumes it next frame and runs the normal `TryStartStep`, so the
-  walk-out rides the ordinary step + streaming path and disturbs no view edge.
+  the footprint (`InSpan2` bounds each axis to `{anchor, anchor+1}`); the anchor
+  is **always** `wCarWX/WY` — the car is a real world object that stays put when
+  parked and moves as a unit while driven (its anchor and the player advance
+  together each drive step), so the on-foot player (`TryStartStep`) and zombies
+  both treat all four tiles as solid in every state — you **board it, not walk
+  onto it**. The one exception is the **driver**: the car can't block its own
+  body, so driving movement uses `CheckDriveEdge` (below) instead of `CheckCarAt`.
+- **Boarding: you WALK into the car; it does not move to meet you.** `A` while
+  facing any car tile *arms* a walk-onto-the-car step (`wCarBoard`, consumed by
+  `UpdatePlayer`'s idle path → `StartBoardStep`). That step is a normal on-foot
+  walk (camera follows, world streams) that is simply *allowed* to step onto the
+  car; `wInCar` flips on only when the walk **finishes** (`player.asm` `.walking`
+  completion), which also thuds the door (`PlayCarDoor`) and swaps the HUD. Since
+  the flip happens with the player exactly on the car and the camera centred there
+  (lag 0), the car transitions from world-locked to camera-locked at the same
+  spot — no jump. `A` while driving calls `ExitCar`. `CheckCarToggle` runs in the
+  overworld loop *before* `CheckTalkStart` and **consumes the A press**
+  (`res 4, wNewKeys`); `CheckTalkStart` also early-returns while `wInCar`.
+- **Getting out steps the *player* off; the car stays put** (`ExitCar` — it no
+  longer moves `wCarWX/WY`). The player steps to a passable, unoccupied tile
+  **outside the footprint** (`TryEjectDir`: facing dir first, then a sweep; it
+  rejects tiles still on the car via `CheckCarAt`, so you climb out toward open
+  ground; water is solid so you never eject into it; boxed in → you stay on the
+  car). The step is **deferred**: `ExitCar` *arms* `wCarEject` (= `EFACE_*+1`);
+  `UpdatePlayer`'s idle path consumes it next frame via the normal `TryStartStep`,
+  so the walk-out rides the ordinary step + streaming path.
+- While driving, the player sits at one footprint tile — their **boarding seat**
+  (whichever tile they walked onto). The camera follows the player as always;
+  driving advances `wPlayerWX/WY` **and** `wCarWX/WY` in lockstep, so the seat
+  offset (`player − car`, each axis 0/1) stays constant.
 - While driving: the car is a **16×16 (2×2) sprite** in OAM slots
-  `OAM_CAR`..`OAM_CAR+3` (21..24), aligned to its footprint (top-left tile at the
-  fixed player cell, the others +8 px right/down; the on-foot player slot 0 is
-  hidden). Parked, the same 4-slot block sits at `wCarWX/WY`'s screen position,
-  culled via `EntScreenPos` like the other sprites (the anchor is the top-left, so
-  the car can vanish a tile early at the top/left screen edge — cosmetic).
-  `DrawCar` handles both cases and `DrawCar2x2` paints the quadrants (TL/TR/BL/BR)
-  at offsets `{0,8}`: down/up are left-right symmetric so the right column is the
-  stored left tile with `OAMF_XFLIP`; side stores all four quadrants and X-flips
-  the whole 16×16 for left (`Car{Down,Up,Right,Left}TA` descriptors).
+  `OAM_CAR`..`OAM_CAR+3` (21..24), **camera-locked** (no lag, like the player it
+  replaces) with its top-left at `playerCell − seat×8` px, so it sits on its own
+  tiles; the on-foot player slot 0 is hidden. Parked, the same 4-slot block sits
+  at `wCarWX/WY`'s screen position, culled via `EntScreenPos` like the other
+  sprites (the anchor is the top-left, so the car can vanish a tile early at the
+  top/left screen edge — cosmetic). `DrawCar` handles both cases and `DrawCar2x2`
+  paints the quadrants (TL/TR/BL/BR) at offsets `{0,8}`: down/up are left-right
+  symmetric so the right column is the stored left tile with `OAMF_XFLIP`; side
+  stores all four quadrants and X-flips the whole 16×16 for left
+  (`Car{Down,Up,Right,Left}TA` descriptors).
 - **Driving movement checks the footprint's leading edge, not one tile**
-  (`CheckDriveEdge`): the two tiles the 2×2 newly covers in the travel direction
-  must both be passable + free of zombie/NPC, so the car can't drive its body
-  through a wall (it needs a **2-wide corridor**). With the player at the
-  top-left, right/down step twice from the player and up/left once. Steps use
-  `CAR_STEP_SPEED` (2 = **2x** pace); water is **not** walkable (a car can't
-  float); each committed tile burns one `wFuel` and recomposes the HUD.
+  (`CheckDriveEdge`, from the `wCarWX/WY` anchor): the two tiles the 2×2 newly
+  covers in the travel direction must both be passable + free of zombie/NPC, so
+  the car can't drive its body through a wall (it needs a **2-wide corridor**).
+  With the anchor at the top-left, right/down step twice from it and up/left once.
+  Steps use `CAR_STEP_SPEED` (2 = **2x** pace); water is **not** walkable (a car
+  can't float); each committed tile burns one `wFuel` and recomposes the HUD.
+- **Enter/leave plays a door "thunk"** (`PlayCarDoor`, audio.asm) — a low, buzzy
+  noise-channel blip, the same music-channel-borrowing trick as the swim
+  `PlaySplash`.
 - **Fuel replaces energy in the HUD while driving** (`ComposeHUD` branches on
   `wInCar`: `TILE_HUD_FUEL` gas-pump glyph + `wFuel`), and `UpdateSurvival`
   **skips the energy drain** in the car. Empty tank (`wFuel == 0`) → the fuel

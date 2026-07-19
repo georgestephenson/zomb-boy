@@ -46,6 +46,24 @@ def _press_a(g):
     g.tick(3)
 
 
+def _tap_a(g):
+    g.hold("a")
+    g.tick(3)
+    g.release("a")
+
+
+def _poke_into_car(g):
+    """Shortcut for the physics tests: drop the player straight into the car
+    (skipping the walk-in) with the car's 2x2 anchored on the player (seat 0,0),
+    so wCarWX/WY and the player coincide the way boarding leaves them."""
+    px, py = _pos(g)
+    _w16(g, "wCarWX", px)
+    _w16(g, "wCarWY", py)
+    g.pyboy.memory[g.addr("wCarBoard")] = 0
+    g.pyboy.memory[g.addr("wBoarding")] = 0
+    g.pyboy.memory[g.addr("wInCar")] = 1
+
+
 def _drivable_lane(g):
     """A direction the 2x2 car can actually drive several tiles: its footprint
     (top-left at the player, extending one tile right and one down) must stay on
@@ -98,21 +116,32 @@ def test_car_spawns_on_foot_with_a_full_tank():
 def test_enter_and_exit_the_car():
     g = Game()
     try:
-        px, py = _pos(g)
-        # put the car on the tile directly to the player's right and face it
+        # a clear 3x2 block: the player's tile plus the car's 2x2 to its right
+        blk = _find_clear_block(g, 3, 2)
+        assert blk, "no clear 3x2 block near spawn to board in"
+        ax, ay = blk
+        car = (ax + 1, ay)
+        _reset_foot(g, ax, ay)
         g.pyboy.memory[g.addr("wFacing")] = EFACE_RIGHT
-        _w16(g, "wCarWX", px + 1)
-        _w16(g, "wCarWY", py)
+        _w16(g, "wCarWX", car[0])
+        _w16(g, "wCarWY", car[1])
         assert g.r8("wInCar") == 0
-        _press_a(g)
-        assert g.r8("wInCar") == 1, "A while facing the car should board it"
-        assert _pos(g) == (px, py), "boarding must not move the player's tile"
-        # A again gets out; the car parks on a tile next to where you stopped
-        _press_a(g)
+        # press A: the player WALKS into the car; wInCar flips only once the
+        # walk-onto-the-car step lands, and the car does not move to meet you.
+        _tap_a(g)
+        g.tick(30)
+        assert g.r8("wInCar") == 1, "player should be driving after walking in"
+        assert _pos(g) == car, "player should have walked onto the car tile"
+        assert (g.s16("wCarWX"), g.s16("wCarWY")) == car, \
+            "the car must not move when you board it"
+        # A again: get out. The car stays exactly where it is; you step off it.
+        _tap_a(g)
+        g.tick(30)
         assert g.r8("wInCar") == 0, "A while driving should get you out"
-        cx, cy = g.s16("wCarWX"), g.s16("wCarWY")
-        assert abs(cx - px) + abs(cy - py) <= 1, \
-            f"car should park next to the player: {(cx, cy)} vs {(px, py)}"
+        assert (g.s16("wCarWX"), g.s16("wCarWY")) == car, \
+            "the car must stay put when you get out"
+        footprint = {(car[0] + i, car[1] + j) for i in (0, 1) for j in (0, 1)}
+        assert _pos(g) not in footprint, "the player should have stepped off the car"
     finally:
         g.close()
 
@@ -222,7 +251,7 @@ def test_car_moves_twice_as_fast():
         _w16(g, "wPlayerWY", py)
         g.pyboy.memory[g.addr("wPlayerState")] = 0
         g.pyboy.memory[g.addr("wStepOffset")] = 0
-        g.pyboy.memory[g.addr("wInCar")] = 1
+        _poke_into_car(g)                      # car anchored on the player (seat 0,0)
         g.pyboy.memory[g.addr("wFuel")] = 100
         car = _min_step_gap(g, button)
         assert car, "car never moved"
@@ -236,7 +265,7 @@ def test_fuel_drains_but_energy_does_not_while_driving():
     g = Game()
     try:
         button = _drivable_lane(g) or "up"
-        g.pyboy.memory[g.addr("wInCar")] = 1
+        _poke_into_car(g)
         g.pyboy.memory[g.addr("wFuel")] = 100
         f0, e0 = g.r8("wFuel"), g.r8("wEnergy")
         g.walk(button, 60)                     # drive several tiles down the lane
@@ -251,7 +280,7 @@ def test_fuel_drains_but_energy_does_not_while_driving():
 def test_empty_tank_cannot_move():
     g = Game()
     try:
-        g.pyboy.memory[g.addr("wInCar")] = 1
+        _poke_into_car(g)
         g.pyboy.memory[g.addr("wFuel")] = 0
         p0 = _pos(g)
         for d, _dx, _dy in DIRS:
@@ -267,7 +296,7 @@ def test_hud_swaps_energy_for_fuel_while_driving():
         # on foot the third meter is energy
         assert g.r8(SCRN1 + 10) == HUD_ENERGY, "expected the energy icon on foot"
         # board (poke) and let a minute tick recompose + push the row
-        g.pyboy.memory[g.addr("wInCar")] = 1
+        _poke_into_car(g)
         g.pyboy.memory[g.addr("wFuel")] = 77
         g.tick(CLOCK_MINUTE_FRAMES + 2)
         row = [g.r8(SCRN1 + i) for i in range(20)]
