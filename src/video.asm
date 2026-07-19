@@ -77,7 +77,9 @@ InitAudio::
     ldh [rNR52], a              ; APU off
     ret
 
-; Copy tile graphics into VRAM ($8000). LCD should be off.
+; Copy tile graphics into VRAM: the main Tiles table to $8000, then the
+; per-persona survivor sprites after the font (TILE_PSURV_BASE). LCD should
+; be off.
 LoadTiles::
     ld hl, Tiles
     ld de, _VRAM
@@ -90,6 +92,17 @@ LoadTiles::
     ld a, b
     or a, c
     jr nz, .copy
+    ld hl, PersonaTiles
+    ld de, _VRAM + TILE_PSURV_BASE * 16
+    ld bc, PersonaTilesEnd - PersonaTiles
+.copyPersona:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .copyPersona
     ret
 
 ; Expand the 1bpp font/UI glyphs to 2bpp at $8800 (tile FONT_BASE). Writing the

@@ -309,27 +309,38 @@ BuildTalkScreen:
     ld a, b
     or a, c
     jr nz, .fill
-    ; text box: solid top/bottom rows...
+    ; dialogue box: a rounded panel frame (corners + edges)
     ld hl, _SCRN1 + BOX_ROW_TOP * 32
-    ld b, VIEW_COLS
-    ld a, TILE_UIBOX
+    ld a, TILE_PANEL_TL
+    ld [hl+], a
+    ld a, TILE_PANEL_T
+    ld b, VIEW_COLS - 2
 .top:
     ld [hl+], a
     dec b
     jr nz, .top
+    ld a, TILE_PANEL_TR
+    ld [hl], a
     ld hl, _SCRN1 + BOX_ROW_BOT * 32
-    ld b, VIEW_COLS
+    ld a, TILE_PANEL_BL
+    ld [hl+], a
+    ld a, TILE_PANEL_B
+    ld b, VIEW_COLS - 2
 .bot:
     ld [hl+], a
     dec b
     jr nz, .bot
+    ld a, TILE_PANEL_BR
+    ld [hl], a
     ; ...and side columns 0/19 on the rows between
     ld hl, _SCRN1 + (BOX_ROW_TOP + 1) * 32
     ld c, BOX_ROW_BOT - BOX_ROW_TOP - 1
 .sides:
+    ld a, TILE_PANEL_L
     ld [hl], a
     ld de, VIEW_COLS - 1
     add hl, de
+    ld a, TILE_PANEL_R
     ld [hl], a
     ld de, 32 - (VIEW_COLS - 1)
     add hl, de
@@ -340,26 +351,38 @@ BuildTalkScreen:
     call GetPersonaField       ; HL = name string
     ld de, _SCRN1 + NAME_ROW * 32 + NAME_COL
     call .puts
-    ; status card box (cols CARD_COL_L..CARD_COL_R, rows CARD_ROW_TOP..CARD_ROW_BOT)
-    ld a, TILE_UIBOX
+    ; status card: a rounded panel frame (cols CARD_COL_L..CARD_COL_R,
+    ; rows CARD_ROW_TOP..CARD_ROW_BOT)
     ld hl, _SCRN1 + CARD_ROW_TOP * 32 + CARD_COL_L
-    ld b, CARD_COL_R - CARD_COL_L + 1
+    ld a, TILE_PANEL_TL
+    ld [hl+], a
+    ld a, TILE_PANEL_T
+    ld b, CARD_COL_R - CARD_COL_L - 1
 .cardtop:
     ld [hl+], a
     dec b
     jr nz, .cardtop
+    ld a, TILE_PANEL_TR
+    ld [hl], a
     ld hl, _SCRN1 + CARD_ROW_BOT * 32 + CARD_COL_L
-    ld b, CARD_COL_R - CARD_COL_L + 1
+    ld a, TILE_PANEL_BL
+    ld [hl+], a
+    ld a, TILE_PANEL_B
+    ld b, CARD_COL_R - CARD_COL_L - 1
 .cardbot:
     ld [hl+], a
     dec b
     jr nz, .cardbot
+    ld a, TILE_PANEL_BR
+    ld [hl], a
     ld hl, _SCRN1 + (CARD_ROW_TOP + 1) * 32 + CARD_COL_L
     ld c, CARD_ROW_BOT - CARD_ROW_TOP - 1
 .cardside:
+    ld a, TILE_PANEL_L
     ld [hl], a                 ; left border
     ld de, CARD_COL_R - CARD_COL_L
     add hl, de
+    ld a, TILE_PANEL_R
     ld [hl], a                 ; right border
     ld de, 32 - (CARD_COL_R - CARD_COL_L)
     add hl, de
@@ -723,7 +746,7 @@ DrawWaitArrow:
     jr TalkEnq
 ClearWaitArrow:
     ld hl, _SCRN1 + BOX_ROW_BOT * 32 + TALK_ARROW_COL
-    ld a, TILE_UIBOX
+    ld a, TILE_PANEL_B         ; restore the panel's bottom edge
     ; fall through
 ; -----------------------------------------------------------------------------
 ; TalkEnq: HL = VRAM address, A = tile — queue one write for the next VBlank.

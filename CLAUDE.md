@@ -301,10 +301,15 @@ scroll updates — so there's no seam or one-frame latency.
 - **A new module:** create `src/<name>.asm` (the Makefile globs `src/**/*.asm`),
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
-- **A new persona:** data-only. In `dialogue_data.asm` add a `PersonaTable`
+- **A new persona:** data + art. In `dialogue_data.asm` add a `PersonaTable`
   record (name, 4 traits in -60..+60, noun + topic banks, `PO_PAL` — pick any
   OBJ palette 3..7, shared tints are fine), bump `PERSONA_COUNT`/`MAX_NPCS` +
-  a spawn offset in `npc.asm`. Then `make && python3
+  a spawn offset in `npc.asm`. Art is **mandatory** (no fallbacks): a 112×112
+  source in `img/portrait/source/` run through the portrait pipeline (see the
+  dialogue section) + a `PERSONA_ART` entry, and 3 world-sprite tiles
+  (down/up/side) appended to `PersonaTiles` in `gfx.asm` — order must match
+  the persona id (tile = `TILE_PSURV_BASE` + persona*3 + dir; ids grow past
+  209 toward the 255 ceiling). Then `make && python3
   test/model/dialogue_bounds.py` — it enforces the authoring rules
   (single-word nouns, every line fits 3×18, |dot| ≤ 127, palette range,
   label length) **including winnability**: some tone's delta must be ≥ +7 so

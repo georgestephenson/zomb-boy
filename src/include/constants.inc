@@ -147,27 +147,36 @@ DEF EO_MET        EQU 15           ; nonzero once you've talked to them —
 
 DEF OAM_NPC0       EQU 10          ; NPCs use OAM slots 10..10+MAX_NPCS-1
 
-; Survivor OBJ tiles (static: no walk cycle) + the menu cursor
-DEF TILE_SURV_DOWN EQU 27          ; after the bubble (26)
-DEF TILE_SURV_UP   EQU 28
-DEF TILE_SURV_SIDE EQU 29          ; right profile; X-flip for left
-DEF TILE_CURSOR    EQU 30
+; The menu cursor (survivor world sprites are per-persona now: TILE_PSURV_BASE,
+; defined below with the font ids since they load after the font glyphs)
+DEF TILE_CURSOR    EQU 27          ; after the bubble (26)
 
 ; Portrait frame BG tiles (extend the Tiles table after the cursor; gfx.asm).
 ; Only used on the talk screen, around the 56x56 photo.
-DEF TILE_FRAME_TL  EQU 31          ; corners
-DEF TILE_FRAME_TR  EQU 32
-DEF TILE_FRAME_BL  EQU 33
-DEF TILE_FRAME_BR  EQU 34
-DEF TILE_FRAME_T   EQU 35          ; edges
-DEF TILE_FRAME_B   EQU 36
-DEF TILE_FRAME_L   EQU 37
-DEF TILE_FRAME_R   EQU 38
+DEF TILE_FRAME_TL  EQU 28          ; corners
+DEF TILE_FRAME_TR  EQU 29
+DEF TILE_FRAME_BL  EQU 30
+DEF TILE_FRAME_BR  EQU 31
+DEF TILE_FRAME_T   EQU 32          ; edges
+DEF TILE_FRAME_B   EQU 33
+DEF TILE_FRAME_L   EQU 34
+DEF TILE_FRAME_R   EQU 35
 
 ; Affinity meter bar cells (also in the Tiles table): a gauge segment with grey
 ; top/bottom rails and the left N of 8 columns filled with ink. TILE_BAR_BASE+n
 ; = n columns filled (n = 0..8), so an 8-cell bar shows affinity to the pixel.
-DEF TILE_BAR_BASE  EQU 39           ; ids 39..47 (fill 0..8 columns)
+DEF TILE_BAR_BASE  EQU 36           ; ids 36..44 (fill 0..8 columns)
+
+; UI panel frame (also in the Tiles table): a light rounded window border for the
+; status card and dialogue box, so they read as framed panels not solid blocks.
+DEF TILE_PANEL_TL  EQU 45           ; corners
+DEF TILE_PANEL_TR  EQU 46
+DEF TILE_PANEL_BL  EQU 47
+DEF TILE_PANEL_BR  EQU 48
+DEF TILE_PANEL_T   EQU 49           ; edges
+DEF TILE_PANEL_B   EQU 50
+DEF TILE_PANEL_L   EQU 51
+DEF TILE_PANEL_R   EQU 52
 
 ; Personas: index into dialogue_data.asm's PersonaTable
 DEF PERSONA_POLICE   EQU 0
@@ -302,6 +311,11 @@ DEF TILE_HUD_FOOD   EQU FONT_BASE + 50   ;  runtime, not from strings)
 DEF TILE_HUD_ENERGY EQU FONT_BASE + 51
 DEF FONT_GLYPHS     EQU 52
 DEF TILE_DIGIT0     EQU FONT_BASE + 27   ; '0' (digits are contiguous 0-9)
+
+; Per-persona survivor world sprites (gfx.asm PersonaTiles, loaded right after
+; the font): 3 tiles per persona — down, up, side (X-flip for left). Ids
+; 180..209; OBJs can reach them (the OAM tile byte spans all of $8000-$8FFF).
+DEF TILE_PSURV_BASE EQU FONT_BASE + FONT_GLYPHS
 
 ; Dialogue string control codes (must stay below FONT_BASE; no glyph maps here)
 DEF CTRL_END       EQU 0

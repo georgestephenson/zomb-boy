@@ -38,15 +38,21 @@ def test_player_sprite_present_and_centered(game):
 def test_npc_sprites_use_survivor_tiles_and_palettes(game):
     """Regression: NPCTileAttr once clobbered DrawNPCs' OAM pointer, so
     visible NPCs kept tile 0 (grass) / palette 0 — near-invisible ghosts.
-    Every on-screen NPC must use a survivor tile and an OBJ palette 3..7."""
+    Every on-screen NPC must use its persona's own world sprite (3 tiles per
+    persona from TILE_PSURV_BASE = 180: down/up/side; NPC in OAM slot
+    OAM_NPC0+i spawned with persona i) and an OBJ palette 3..7."""
+    PSURV_BASE = 180
     seen = 0
     for slot in range(10, 20):  # OAM_NPC0 .. +MAX_NPCS
         s = game.sprite(slot)
         if s["y"] == 0:
             continue  # off-screen / culled
         seen += 1
-        assert s["tile"] in (27, 28, 29), \
-            f"NPC slot {slot} has non-survivor tile {s['tile']}: {s}"
+        persona = slot - 10
+        expect = range(PSURV_BASE + persona * 3, PSURV_BASE + persona * 3 + 3)
+        assert s["tile"] in expect, \
+            f"NPC slot {slot} (persona {persona}) has tile {s['tile']}, " \
+            f"expected one of {list(expect)}: {s}"
         assert 3 <= (s["attr"] & 0x07) <= 7, \
             f"NPC slot {slot} has bad OBJ palette: {s}"
     assert seen >= 2, "expected several NPCs visible near the start"

@@ -232,10 +232,12 @@ DrawNPCs::
     jr c, .loop
     ret
 
-; NPCTileAttr: B = tile id, C = OAM attribute for wEnt. The OBJ palette comes
-; from the persona record (PO_PAL, 3..7) — with more personas than free
-; hardware palettes, tints are shared by design. Preserves HL: DrawNPCs holds
-; its shadow-OAM write pointer there (regression: the record lookup once
+; NPCTileAttr: B = tile id, C = OAM attribute for wEnt. Each persona has its
+; own 3-tile world sprite (gfx.asm PersonaTiles): tile = TILE_PSURV_BASE +
+; persona*3 + dir (0 down / 1 up / 2 side). The OBJ palette comes from the
+; persona record (PO_PAL, 3..7) — with more personas than free hardware
+; palettes, tints are shared by design. Preserves HL: DrawNPCs holds its
+; shadow-OAM write pointer there (regression: the record lookup once
 ; clobbered it and NPCs drew as ghost grass tiles).
 NPCTileAttr::
     push hl
@@ -245,6 +247,12 @@ NPCTileAttr::
     add hl, de
     ld c, [hl]
     pop hl
+    ld a, [wEnt + EO_PERSONA]
+    ld b, a
+    add a, a
+    add a, b                   ; persona * 3
+    add a, TILE_PSURV_BASE
+    ld b, a                    ; B = this persona's "down" tile
     ld a, [wEnt + EO_FACING]
     cp EFACE_UP
     jr z, .up
@@ -252,10 +260,9 @@ NPCTileAttr::
     jr z, .left
     cp EFACE_RIGHT
     jr z, .right
-    ld b, TILE_SURV_DOWN
-    ret
+    ret                        ; down
 .up:
-    ld b, TILE_SURV_UP
+    inc b
     ret
 .left:
     ld a, c
@@ -263,5 +270,6 @@ NPCTileAttr::
     ld c, a
     ; fall through
 .right:
-    ld b, TILE_SURV_SIDE
+    inc b
+    inc b
     ret

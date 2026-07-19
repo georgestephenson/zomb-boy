@@ -256,36 +256,7 @@ Tiles::
     dw `00000000
     dw `00011000
     dw `00011000
-; Survivor NPC (static, no walk cycle). Colour 1 = outline/eyes, 2 = face,
-; 3 = hair+outfit — tinted per persona via OBJ palettes 3..7.
-; --- 27: survivor down (hair framing the face) ---
-    dw `00333300
-    dw `03333330
-    dw `03222230
-    dw `03212130
-    dw `01222210
-    dw `13333331
-    dw `01333310
-    dw `00133100
-; --- 28: survivor up (back of head) ---
-    dw `00333300
-    dw `03333330
-    dw `03333330
-    dw `03333330
-    dw `01333310
-    dw `13333331
-    dw `01333310
-    dw `00133100
-; --- 29: survivor side (right profile; flip X for left) ---
-    dw `00333300
-    dw `03333330
-    dw `03332220
-    dw `03332120
-    dw `03332220
-    dw `13333331
-    dw `01333310
-    dw `00133100
-; --- 30: menu cursor (right-pointing triangle; OBJ pal 2 amber) ---
+; --- 27: menu cursor (right-pointing triangle; OBJ pal 2 amber) ---
     dw `00000000
     dw `00200000
     dw `00220000
@@ -297,7 +268,7 @@ Tiles::
 ; Portrait frame (BG tiles, drawn with the talk-screen UI palette PAL_BG_UI:
 ; colour 3 = ink, 1 = light grey bevel, 0 = paper). A bold 2px ink border with a
 ; 1px grey step and a paper "mat" facing the photo (talk.asm DrawPortraitFrame).
-; --- 31: frame top-left corner ---
+; --- 28: frame top-left corner ---
     dw `33333333
     dw `33333333
     dw `33111111
@@ -306,7 +277,7 @@ Tiles::
     dw `33100000
     dw `33100000
     dw `33100000
-; --- 32: frame top-right corner ---
+; --- 29: frame top-right corner ---
     dw `33333333
     dw `33333333
     dw `11111133
@@ -315,7 +286,7 @@ Tiles::
     dw `00000133
     dw `00000133
     dw `00000133
-; --- 33: frame bottom-left corner ---
+; --- 30: frame bottom-left corner ---
     dw `33100000
     dw `33100000
     dw `33100000
@@ -324,7 +295,7 @@ Tiles::
     dw `33111111
     dw `33333333
     dw `33333333
-; --- 34: frame bottom-right corner ---
+; --- 31: frame bottom-right corner ---
     dw `00000133
     dw `00000133
     dw `00000133
@@ -333,7 +304,7 @@ Tiles::
     dw `11111133
     dw `33333333
     dw `33333333
-; --- 35: frame top edge ---
+; --- 32: frame top edge ---
     dw `33333333
     dw `33333333
     dw `11111111
@@ -342,7 +313,7 @@ Tiles::
     dw `00000000
     dw `00000000
     dw `00000000
-; --- 36: frame bottom edge ---
+; --- 33: frame bottom edge ---
     dw `00000000
     dw `00000000
     dw `00000000
@@ -351,7 +322,7 @@ Tiles::
     dw `11111111
     dw `33333333
     dw `33333333
-; --- 37: frame left edge ---
+; --- 34: frame left edge ---
     dw `33100000
     dw `33100000
     dw `33100000
@@ -360,7 +331,7 @@ Tiles::
     dw `33100000
     dw `33100000
     dw `33100000
-; --- 38: frame right edge ---
+; --- 35: frame right edge ---
     dw `00000133
     dw `00000133
     dw `00000133
@@ -371,7 +342,7 @@ Tiles::
     dw `00000133
 ; Affinity meter gauge cells (BG, palette PAL_BG_UI): light-grey top/bottom rails
 ; with the left N of 8 columns filled ink. 39..47 = N = 0..8 (TILE_BAR_BASE + N).
-; --- 39: bar 0/8 (empty) ---
+; --- 36: bar 0/8 (empty) ---
     dw `11111111
     dw `00000000
     dw `00000000
@@ -380,7 +351,7 @@ Tiles::
     dw `00000000
     dw `00000000
     dw `11111111
-; --- 40: bar 1/8 ---
+; --- 37: bar 1/8 ---
     dw `11111111
     dw `30000000
     dw `30000000
@@ -389,7 +360,7 @@ Tiles::
     dw `30000000
     dw `30000000
     dw `11111111
-; --- 41: bar 2/8 ---
+; --- 38: bar 2/8 ---
     dw `11111111
     dw `33000000
     dw `33000000
@@ -398,7 +369,7 @@ Tiles::
     dw `33000000
     dw `33000000
     dw `11111111
-; --- 42: bar 3/8 ---
+; --- 39: bar 3/8 ---
     dw `11111111
     dw `33300000
     dw `33300000
@@ -407,7 +378,7 @@ Tiles::
     dw `33300000
     dw `33300000
     dw `11111111
-; --- 43: bar 4/8 ---
+; --- 40: bar 4/8 ---
     dw `11111111
     dw `33330000
     dw `33330000
@@ -416,7 +387,7 @@ Tiles::
     dw `33330000
     dw `33330000
     dw `11111111
-; --- 44: bar 5/8 ---
+; --- 41: bar 5/8 ---
     dw `11111111
     dw `33333000
     dw `33333000
@@ -425,7 +396,7 @@ Tiles::
     dw `33333000
     dw `33333000
     dw `11111111
-; --- 45: bar 6/8 ---
+; --- 42: bar 6/8 ---
     dw `11111111
     dw `33333300
     dw `33333300
@@ -434,7 +405,7 @@ Tiles::
     dw `33333300
     dw `33333300
     dw `11111111
-; --- 46: bar 7/8 ---
+; --- 43: bar 7/8 ---
     dw `11111111
     dw `33333330
     dw `33333330
@@ -443,7 +414,7 @@ Tiles::
     dw `33333330
     dw `33333330
     dw `11111111
-; --- 47: bar 8/8 (full) ---
+; --- 44: bar 8/8 (full) ---
     dw `11111111
     dw `33333333
     dw `33333333
@@ -452,7 +423,363 @@ Tiles::
     dw `33333333
     dw `33333333
     dw `11111111
+; UI panel frame (BG, palette PAL_BG_UI): a light rounded window border — a 1px
+; ink keyline just inside a rounded corner, a 1px grey bevel, then paper toward
+; the content. Lighter than the bold portrait matte, so the photo still leads.
+; Used for the status card and the dialogue box (talk.asm). Corners then edges.
+; --- 45: panel top-left ---
+    dw `03333333
+    dw `31111111
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+; --- 46: panel top-right ---
+    dw `33333330
+    dw `11111113
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+; --- 47: panel bottom-left ---
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31111111
+    dw `03333333
+; --- 48: panel bottom-right ---
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `11111113
+    dw `33333330
+; --- 49: panel top edge ---
+    dw `33333333
+    dw `11111111
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+; --- 50: panel bottom edge ---
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `00000000
+    dw `11111111
+    dw `33333333
+; --- 51: panel left edge ---
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+    dw `31000000
+; --- 52: panel right edge ---
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
+    dw `00000013
 TilesEnd::
+
+; Per-persona survivor world sprites (OBJ), 3 tiles each: down, up, side
+; (right profile; X-flip for left) — tile = TILE_PSURV_BASE + persona*3 + dir.
+; LoadTiles copies them right after the font glyphs ($8B40; ids 180..209 are
+; reachable by OBJs, whose tile byte spans all of $8000-$8FFF). Colour 1 =
+; outline/eyes/dark accents, 2 = face/light accents, 3 = hair/outfit, tinted
+; via the persona record's PO_PAL — distinct headgear silhouettes keep the
+; personas tellable even with shared tints (and on DMG's single grey ramp).
+PersonaTiles::
+; --- 180: policeman down (peaked cap) ---
+    dw `00333300
+    dw `03333330
+    dw `01111110
+    dw `03212130
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 181: policeman up (peaked cap) ---
+    dw `00333300
+    dw `03333330
+    dw `01111110
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 182: policeman side (peaked cap) ---
+    dw `00333300
+    dw `03333330
+    dw `01111111
+    dw `03332120
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 183: scientist down (spiked hair + glasses) ---
+    dw `03033030
+    dw `03333330
+    dw `03222230
+    dw `01111110
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 184: scientist up (spiked hair + glasses) ---
+    dw `03033030
+    dw `03333330
+    dw `03333330
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 185: scientist side (spiked hair + glasses) ---
+    dw `03033030
+    dw `03333330
+    dw `03332220
+    dw `03331110
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 186: cheerleader down (ponytail) ---
+    dw `00033000
+    dw `00333300
+    dw `03333330
+    dw `03212130
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 187: cheerleader up (ponytail) ---
+    dw `00033000
+    dw `00333300
+    dw `03333330
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 188: cheerleader side (ponytail) ---
+    dw `00330000
+    dw `03333300
+    dw `03332220
+    dw `03332120
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 189: maid down (frill headband) ---
+    dw `00333300
+    dw `02222220
+    dw `03222230
+    dw `03212130
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 190: maid up (frill headband) ---
+    dw `00333300
+    dw `02222220
+    dw `03333330
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 191: maid side (frill headband) ---
+    dw `00333300
+    dw `02222220
+    dw `03332220
+    dw `03332120
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 192: businessman down (dark fedora) ---
+    dw `00111100
+    dw `01111110
+    dw `11111111
+    dw `03212130
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 193: businessman up (dark fedora) ---
+    dw `00111100
+    dw `01111110
+    dw `11111111
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 194: businessman side (dark fedora) ---
+    dw `00111100
+    dw `01111110
+    dw `11111111
+    dw `03332120
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 195: prepper down (hood) ---
+    dw `00333300
+    dw `03333330
+    dw `03322330
+    dw `03212130
+    dw `03333330
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 196: prepper up (hood) ---
+    dw `00333300
+    dw `03333330
+    dw `03333330
+    dw `03333330
+    dw `03333330
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 197: prepper side (hood) ---
+    dw `00333300
+    dw `03333330
+    dw `03332230
+    dw `03332130
+    dw `03333330
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 198: medic down (cross cap) ---
+    dw `00212200
+    dw `02111220
+    dw `02222220
+    dw `03212130
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 199: medic up (cross cap) ---
+    dw `00222200
+    dw `02222220
+    dw `03333330
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 200: medic side (cross cap) ---
+    dw `00222200
+    dw `02122220
+    dw `02222220
+    dw `03332120
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 201: raider down (mohawk) ---
+    dw `00033000
+    dw `00033000
+    dw `02233220
+    dw `02121220
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 202: raider up (mohawk) ---
+    dw `00033000
+    dw `00033000
+    dw `02233220
+    dw `02233220
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 203: raider side (mohawk) ---
+    dw `00333300
+    dw `00333300
+    dw `02222220
+    dw `02222120
+    dw `02222220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 204: preacher down (wide brim) ---
+    dw `00033000
+    dw `33333333
+    dw `03212130
+    dw `01222210
+    dw `01111110
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 205: preacher up (wide brim) ---
+    dw `00033000
+    dw `33333333
+    dw `03333330
+    dw `03333330
+    dw `01111110
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 206: preacher side (wide brim) ---
+    dw `00033000
+    dw `33333333
+    dw `03332120
+    dw `03332220
+    dw `01111110
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 207: farmer down (straw hat) ---
+    dw `00222200
+    dw `02222220
+    dw `22222222
+    dw `03212130
+    dw `01222210
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 208: farmer up (straw hat) ---
+    dw `00222200
+    dw `02222220
+    dw `22222222
+    dw `03333330
+    dw `01333310
+    dw `13333331
+    dw `01333310
+    dw `00133100
+; --- 209: farmer side (straw hat) ---
+    dw `00222200
+    dw `02222220
+    dw `22222222
+    dw `03332120
+    dw `03332220
+    dw `13333331
+    dw `01333310
+    dw `00133100
+PersonaTilesEnd::
 
 ; -----------------------------------------------------------------------------
 ; Font + UI glyphs, 1bpp (one byte per row; LoadFont expands to 2bpp colour 0/3
