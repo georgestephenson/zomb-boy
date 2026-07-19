@@ -141,7 +141,7 @@
     <p style="text-align:center; margin-bottom:16px;">
       <a class="btn" href="zombboy.gbc" download="zombboy.gbc">
         ⬇ DOWNLOAD ROM
-        <span class="rom">zombboy.gbc · 64 KB</span>
+        <span class="rom" id="rom-size">zombboy.gbc · 128 KB</span>
       </a>
     </p>
     <p>
@@ -195,6 +195,20 @@
         if (blocked[e.key]) e.preventDefault();
       }, { passive: false });
     })();
+
+    // Keep the download button honest: ask the server for the ROM's real size
+    // (it's the exact file this page plays), so the label can't drift when the
+    // cartridge grows. The static text above is the fallback if this fails
+    // (file:// preview, missing header) or the response is content-encoded
+    // (then content-length would be the compressed size — not what we'd say).
+    fetch("zombboy.gbc", { method: "HEAD" }).then(function (r) {
+      if (!r.ok || r.headers.get("content-encoding")) return;
+      var bytes = +r.headers.get("content-length");
+      if (bytes > 0) {
+        document.getElementById("rom-size").textContent =
+          "zombboy.gbc · " + Math.round(bytes / 1024) + " KB";
+      }
+    }).catch(function () {});
 
     window.EJS_player = "#game";
     window.EJS_core = "gb";
