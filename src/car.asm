@@ -26,12 +26,14 @@ SECTION "Car Code", ROM0
 
 ; -----------------------------------------------------------------------------
 ; InitCar: place the one car near the player start (CAR_SPAWN_DX/DY, nudged
-; right to a passable tile — the InitZombies/InitNPCs scheme), on foot, tank
-; full. Call after InitPlayer/InitMap and the other spawns.
+; right to a clear 2x2 block — the InitZombies/InitNPCs scheme, widened for the
+; car's footprint), on foot, tank full. Call after InitPlayer/InitMap and the
+; other spawns. wCarWX/WY is the top-left tile of the 2x2 footprint.
 ; -----------------------------------------------------------------------------
 InitCar::
     xor a, a
     ld [wInCar], a
+    ld [wCarEject], a
     ; wGenX = playerWX + CAR_SPAWN_DX
     ld a, [wPlayerWX]
     ld [wGenX], a
@@ -48,18 +50,12 @@ InitCar::
     ld a, CAR_SPAWN_DY
     ld hl, wGenY
     call AddSByteAt16
-    ; nudge right to a passable tile (water is solid, so the car never parks in
-    ; it — same bounded search as the other spawners)
+    ; nudge right until the whole 2x2 footprint is passable (water is solid, so
+    ; the car never parks in it — same bounded search as the other spawners).
+    ; The candidate anchor is stashed in wCarWX/WY (also the final destination),
+    ; since Is2x2Clear clobbers wGen and GenTileType clobbers every other scratch.
     ld b, 8
-.passable:
-    call GenTileType
-    call IsSolid
-    jr z, .placeOk
-    ld hl, wGenX
-    call Inc16Ptr
-    dec b
-    jr nz, .passable
-.placeOk:
+.place:
     ld a, [wGenX]
     ld [wCarWX], a
     ld a, [wGenX+1]
@@ -68,10 +64,72 @@ InitCar::
     ld [wCarWY], a
     ld a, [wGenY+1]
     ld [wCarWY+1], a
+    call Is2x2Clear
+    jr z, .placeOk
+    ; restore the anchor, step one tile right, retry
+    ld a, [wCarWX]
+    ld [wGenX], a
+    ld a, [wCarWX+1]
+    ld [wGenX+1], a
+    ld a, [wCarWY]
+    ld [wGenY], a
+    ld a, [wCarWY+1]
+    ld [wGenY+1], a
+    ld hl, wGenX
+    call Inc16Ptr
+    dec b
+    jr nz, .place
+.placeOk:
     ld a, EFACE_DOWN
     ld [wCarFacing], a
     ld a, FUEL_START
     ld [wFuel], a
+    ret
+
+; -----------------------------------------------------------------------------
+; Is2x2Clear: Z if the 2x2 block whose top-left is (wGenX, wGenY) is all
+; passable terrain (no solid tile — water counts as solid), NZ otherwise.
+; Walks the four tiles by stepping wGen; on return wGen is back at the top-left.
+; -----------------------------------------------------------------------------
+Is2x2Clear::
+    call GenTileType
+    call IsSolid
+    jr nz, .no0                 ; (0,0) solid — wGen already at anchor
+    ld hl, wGenX
+    call Inc16Ptr               ; -> (1,0)
+    call GenTileType
+    call IsSolid
+    jr nz, .no1
+    ld hl, wGenY
+    call Inc16Ptr               ; -> (1,1)
+    call GenTileType
+    call IsSolid
+    jr nz, .no2
+    ld hl, wGenX
+    call Dec16Ptr               ; -> (0,1)
+    call GenTileType
+    call IsSolid
+    jr nz, .no3
+    ld hl, wGenY
+    call Dec16Ptr               ; -> (0,0): all clear
+    xor a, a                    ; Z
+    ret
+.no3:                           ; wGen at (0,1) -> restore Y
+    ld hl, wGenY
+    call Dec16Ptr
+    jr .no
+.no2:                           ; wGen at (1,1) -> restore X and Y
+    ld hl, wGenX
+    call Dec16Ptr
+    ld hl, wGenY
+    call Dec16Ptr
+    jr .no
+.no1:                           ; wGen at (1,0) -> restore X
+    ld hl, wGenX
+    call Dec16Ptr
+.no0:
+.no:
+    or a, 1                     ; NZ
     ret
 
 ; -----------------------------------------------------------------------------
@@ -162,10 +220,12 @@ ExitCar:
     ; boxed in: no eject armed; the player stays on the parked car tile
     ret
 
-; TryEjectDir: A = EFACE_* candidate. If player+step(dir) is passable terrain and
-; free of a zombie/NPC, arm the deferred player step-out that way (wCarEject =
-; dir+1) and return Z; else NZ. (Water is solid here, so the car never ejects you
-; into the drink even though you *can* swim on foot.)
+; TryEjectDir: A = EFACE_* candidate. If player+step(dir) lands on a passable,
+; unoccupied tile that is OUTSIDE the parked 2x2 footprint, arm the deferred
+; player step-out that way (wCarEject = dir+1) and return Z; else NZ. Because the
+; player sits at the footprint's top-left, a single step right or down still
+; lands on the car (CheckCarAt rejects it) — so you climb out to the left/up/
+; a clear perimeter tile. (Water is solid here, so you never eject into it.)
 TryEjectDir:
     push af
     ld a, [wPlayerWX]
@@ -188,6 +248,9 @@ TryEjectDir:
     call CheckNPCAt
     and a
     jr nz, .no
+    call CheckCarAt            ; still on the parked 2x2 (right/down of anchor)?
+    and a
+    jr nz, .no
     pop af                     ; A = the accepted direction
     inc a                      ; store dir+1 (0 = "no eject")
     ld [wCarEject], a
@@ -199,36 +262,150 @@ TryEjectDir:
     ret
 
 ; -----------------------------------------------------------------------------
-; CheckCarAt: A = 1 if the PARKED car occupies (wGenX, wGenY), else 0. Returns 0
-; while driving — the car rides with the player then, and GenEqualsPlayer already
-; keeps zombies off the player tile. Scans only the car vars (never wEnt), so the
-; player and zombie movement code can both call it safely.
+; CheckCarAt: A = 1 if (wGenX, wGenY) is inside the car's 2x2 footprint, else 0.
+; The footprint's top-left anchor is wCarWX/WY when parked, or the player's tile
+; while driving (the car rides at the player), so zombies avoid all four tiles in
+; either case and the on-foot player can't walk onto the parked car. Scans only
+; the car/player vars (never wEnt), so player and zombie code both call it safely.
+; The driving footprint is the car's OWN body, so the driver's movement checks
+; the leading edge via CheckDriveEdge instead of this (it never blocks itself).
 ; -----------------------------------------------------------------------------
 CheckCarAt::
     ld a, [wInCar]
     and a
+    jr nz, .driving
+    ; parked: anchor = wCarWX/WY
+    ld hl, wGenX
+    ld de, wCarWX
+    call InSpan2
     jr nz, .free
-    ld a, [wGenX]
-    ld hl, wCarWX
-    cp [hl]
+    ld hl, wGenY
+    ld de, wCarWY
+    call InSpan2
     jr nz, .free
-    ld a, [wGenX+1]
-    ld hl, wCarWX+1
-    cp [hl]
+    jr .hit
+.driving:
+    ; driving: anchor = the player's tile
+    ld hl, wGenX
+    ld de, wPlayerWX
+    call InSpan2
     jr nz, .free
-    ld a, [wGenY]
-    ld hl, wCarWY
-    cp [hl]
+    ld hl, wGenY
+    ld de, wPlayerWY
+    call InSpan2
     jr nz, .free
-    ld a, [wGenY+1]
-    ld hl, wCarWY+1
-    cp [hl]
-    jr nz, .free
+.hit:
     ld a, 1
     ret
 .free:
     xor a, a
     ret
+
+; -----------------------------------------------------------------------------
+; InSpan2: HL -> a 16-bit LE value, DE -> a 16-bit LE anchor. Returns Z if the
+; value is in {anchor, anchor+1} (one axis of the 2x2 footprint), NZ otherwise.
+; Clobbers A, BC; advances HL and DE.
+; -----------------------------------------------------------------------------
+InSpan2:
+    ld a, [de]
+    ld c, a
+    inc de
+    ld a, [de]
+    ld b, a                     ; BC = anchor
+    ld a, [hl+]
+    sub c                       ; A = value_lo - anchor_lo
+    ld c, a                     ; C = diff low
+    ld a, [hl]
+    sbc b                       ; A = diff high (with borrow)
+    or a
+    jr nz, .no                  ; high difference nonzero -> out of span
+    ld a, c
+    cp 2                        ; low difference in {0,1} ?
+    jr nc, .no
+    xor a, a                    ; Z = in span
+    ret
+.no:
+    or a, 1                     ; NZ = out of span
+    ret
+
+; -----------------------------------------------------------------------------
+; GenPlayerStep: wGen = the player's tile stepped one in wStepDir. The driving
+; car's footprint anchor is the player tile, so this is also the car's new
+; top-left after the step commits.
+; -----------------------------------------------------------------------------
+GenPlayerStep::
+    ld a, [wPlayerWX]
+    ld [wGenX], a
+    ld a, [wPlayerWX+1]
+    ld [wGenX+1], a
+    ld a, [wPlayerWY]
+    ld [wGenY], a
+    ld a, [wPlayerWY+1]
+    ld [wGenY+1], a
+    ld a, [wStepDir]
+    jp StepGen                  ; tail call
+
+; -----------------------------------------------------------------------------
+; CheckDriveEdge: the car is a 2x2 anchored at the player's top-left tile. When
+; driving one tile in wStepDir, the two tiles the footprint newly covers (its
+; leading edge) must be clear. Returns Z if both are passable terrain (water is
+; solid — a car can't float) and free of a zombie/NPC; NZ if either blocks. It
+; never consults CheckCarAt (the car can't block its own body). Clobbers wGen.
+;
+; With the player at the top-left, the leading edge for each direction is:
+;   RIGHT (px+2,py),(px+2,py+1)   LEFT (px-1,py),(px-1,py+1)
+;   DOWN  (px,py+2),(px+1,py+2)   UP   (px,py-1),(px+1,py-1)
+; so right/down step twice from the player (past the far side of the footprint)
+; and the second tile offsets one along the perpendicular axis.
+; -----------------------------------------------------------------------------
+CheckDriveEdge::
+    ; wGen = player + one step in wStepDir
+    ld a, [wPlayerWX]
+    ld [wGenX], a
+    ld a, [wPlayerWX+1]
+    ld [wGenX+1], a
+    ld a, [wPlayerWY]
+    ld [wGenY], a
+    ld a, [wPlayerWY+1]
+    ld [wGenY+1], a
+    ld a, [wStepDir]
+    call StepGen
+    ; right/down need a second step to clear the far side of the 2x2
+    ld a, [wStepDir]
+    cp EFACE_RIGHT
+    jr z, .second
+    cp EFACE_DOWN
+    jr z, .second
+    jr .tile1
+.second:
+    ld a, [wStepDir]
+    call StepGen
+.tile1:
+    call .checkGen
+    ret nz
+    ; tile2 = tile1 offset one along the perpendicular axis
+    ld a, [wStepDir]
+    cp EFACE_LEFT
+    jr z, .perpY
+    cp EFACE_RIGHT
+    jr z, .perpY
+    ld hl, wGenX                ; vertical travel -> perpendicular is X
+    jr .perpInc
+.perpY:
+    ld hl, wGenY               ; horizontal travel -> perpendicular is Y
+.perpInc:
+    call Inc16Ptr
+    ; fall through to check tile2
+.checkGen:
+    call GenTileType
+    call IsSolid
+    ret nz                      ; solid/water -> blocked
+    call CheckZombieAt
+    and a
+    ret nz                      ; a zombie stands there -> blocked
+    call CheckNPCAt
+    and a
+    ret                         ; Z = clear, NZ = an NPC blocks
 
 ; =============================================================================
 ; Rendering — the car is a 16x16 (2x2) sprite in slots OAM_CAR..OAM_CAR+3.
@@ -271,36 +448,37 @@ DrawCar::
     ld [wShadowOAM + (OAM_CAR + 3) * 4], a
     ret
 
-; DrawCar2x2: A = facing; wScrX/wScrY = the 8x8 anchor OAM position. Paint the
-; four quadrant tiles into OAM_CAR..OAM_CAR+3, centred on the anchor (each
-; quadrant offset +/-4 px). down/up are left-right symmetric (right column =
-; X-flip of the stored left tile); side stores all four and X-flips the whole
-; 16x16 for left. Quadrant order is TL, TR, BL, BR.
+; DrawCar2x2: A = facing; wScrX/wScrY = the OAM position of the footprint's
+; top-left tile. Paint the four quadrant tiles into OAM_CAR..OAM_CAR+3 aligned to
+; the 2x2 world tiles (TL at the anchor, the others +8 px right/down), so the
+; sprite sits exactly on the tiles it collides with. down/up are left-right
+; symmetric (right column = X-flip of the stored left tile); side stores all four
+; and X-flips the whole 16x16 for left. Quadrant order is TL, TR, BL, BR.
 DrawCar2x2:
     call CarTATable               ; DE -> 4x(tile, attr) for this facing
     ld hl, wShadowOAM + OAM_CAR * 4
     ld b, 0                       ; quad index 0..3 (bit0 = right, bit1 = bottom)
 .quad:
-    ; --- Y = wScrY + (bottom ? +4 : -4) ---
+    ; --- Y = wScrY + (bottom ? 8 : 0) ---
     ld a, b
     and 2
-    jr z, .yUp
-    ld c, 4
+    jr z, .yTop
+    ld c, 8
     jr .yAdd
-.yUp:
-    ld c, -4
+.yTop:
+    ld c, 0
 .yAdd:
     ld a, [wScrY]
     add a, c
     ld [hl+], a                   ; OAM Y
-    ; --- X = wScrX + (right ? +4 : -4) ---
+    ; --- X = wScrX + (right ? 8 : 0) ---
     ld a, b
     and 1
     jr z, .xLeft
-    ld c, 4
+    ld c, 8
     jr .xAdd
 .xLeft:
-    ld c, -4
+    ld c, 0
 .xAdd:
     ld a, [wScrX]
     add a, c
