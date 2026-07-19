@@ -94,6 +94,12 @@ wCarWX::            ds 2               ; parked car world tile X (16-bit LE)
 wCarWY::            ds 2               ; ... and Y
 wCarFacing::        ds 1               ; EFACE_* the parked car faces
 wInCar::            ds 1               ; 1 while the player is driving
+wCarBoard::         ds 1               ; 0 = none; else (EFACE_*+1) = walk one tile
+                                       ; ONTO the car that way, then start driving
+                                       ; (consumed by UpdatePlayer next idle frame)
+wBoarding::         ds 1               ; 1 while the walk-onto-the-car step animates;
+                                       ; when it finishes, wInCar flips on (the door
+                                       ; shuts) — so the car never jumps on boarding
 wCarEject::         ds 1               ; 0 = none; else (EFACE_*+1) = get out of the
                                        ; car and step the player one tile that way
                                        ; (consumed by UpdatePlayer next idle frame)

@@ -53,3 +53,17 @@ PlaySplash::
     ld a, $C0                       ; NR44: trigger (bit7) + length-enable (bit6)
     ldh [rNR44], a
     ret
+
+; Play a short low "clunk" on the noise channel (ch4) for boarding/leaving the
+; car — a stylised door thud, lower and with a touch more body than the splash.
+; Same channel-borrowing trick as PlaySplash (the music re-owns ch4 next tick).
+PlayCarDoor::
+    ld a, %00100000                 ; NR41: length timer -> a bit more body than a splash
+    ldh [rNR41], a
+    ld a, $F3                       ; NR42: full volume, slower decay (a short ring)
+    ldh [rNR42], a
+    ld a, $59                       ; NR43: low, buzzy divisor/shift -> a door "thunk"
+    ldh [rNR43], a
+    ld a, $C0                       ; NR44: trigger (bit7) + length-enable (bit6)
+    ldh [rNR44], a
+    ret

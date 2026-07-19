@@ -34,6 +34,8 @@ InitCar::
     xor a, a
     ld [wInCar], a
     ld [wCarEject], a
+    ld [wCarBoard], a
+    ld [wBoarding], a
     ; wGenX = playerWX + CAR_SPAWN_DX
     ld a, [wPlayerWX]
     ld [wGenX], a
@@ -133,11 +135,15 @@ Is2x2Clear::
     ret
 
 ; -----------------------------------------------------------------------------
-; CheckCarToggle: overworld only. On an A press, board the car (if on foot and
-; facing it) or get out (if driving). Consumes the A press on either action so
-; CheckTalkStart doesn't also fire the same frame. Boarding leaves the player's
-; logical tile untouched — the car simply becomes the driven sprite — so nothing
-; scrolls or needs re-streaming.
+; CheckCarToggle: overworld only. On an A press, start boarding the car (if on
+; foot and facing it) or get out (if driving). Consumes the A press on either
+; action so CheckTalkStart doesn't also fire the same frame.
+;
+; Boarding does NOT flip wInCar here — it *arms* a walk-onto-the-car step
+; (wCarBoard). The player then walks one tile into the car, and wInCar flips only
+; when that step finishes (UpdatePlayer, which also thuds the door and swaps the
+; HUD). So the car never jumps to the player: it stays put, you walk into it, and
+; it only moves once you drive it.
 ; -----------------------------------------------------------------------------
 CheckCarToggle::
     ld a, [wNewKeys]
@@ -146,7 +152,10 @@ CheckCarToggle::
     ld a, [wInCar]
     and a
     jr nz, .exit
-    ; --- on foot: board only if the tile we face holds the parked car ---
+    ld a, [wBoarding]
+    and a
+    ret nz                     ; already walking into the car -> ignore
+    ; --- on foot: board only if the tile we face holds the car ---
     ld a, [wPlayerWX]
     ld [wGenX], a
     ld a, [wPlayerWX+1]
@@ -160,47 +169,91 @@ CheckCarToggle::
     call CheckCarAt
     and a
     ret z                      ; not facing the car -> leave A for the talk check
-    ld a, 1
-    ld [wInCar], a
-    xor a, a
-    ld [wSwimming], a          ; you can't be swimming from the driver's seat
-    ld [wSplashTimer], a
-    ld [wCarEject], a          ; drop any stale get-out step
+    ld a, [wFacing]
+    inc a                      ; arm the walk-in step (dir+1); UpdatePlayer runs it
+    ld [wCarBoard], a
     jr .consumeA
 .exit:
-    call ExitCar               ; park where you stopped + eject the player
-    ; fall through
-.consumeA:
-    call ComposeHUD            ; swap the energy/fuel readout in immediately
+    call ExitCar               ; car stays put; eject the player onto open ground
+    call PlayCarDoor           ; door thud on the way out
+    call ComposeHUD            ; the energy readout returns immediately
     ld a, 1
     ld [wHUDDirty], a
+.consumeA:
     ld a, [wNewKeys]
     res 4, a                   ; clear PAD_A (bit 4) so CheckTalkStart sees no press
     ld [wNewKeys], a
     ret
 
 ; -----------------------------------------------------------------------------
-; ExitCar: leave the car. It stays parked exactly where you stopped
-; (wCarWX/WY = the player's current tile) and the PLAYER steps out onto an
-; adjacent passable, unoccupied tile (facing direction first, then a fixed
-; sweep). The step is *armed* via wCarEject and walked next idle frame by
-; UpdatePlayer, so it rides the normal walk + streaming path (no view seam). If
-; hemmed in on all sides, the player stays on the car tile (re-board to leave).
+; StartBoardStep: A = EFACE_* facing (the armed wCarBoard direction, minus 1).
+; Walk the player one tile ONTO the car in that direction — a normal on-foot walk
+; step (wInCar stays 0, so the camera follows smoothly and the world streams),
+; except it is *allowed* to step onto the car (that's the point). wBoarding is set
+; so the walk's completion (player.asm) flips wInCar on. If the faced tile isn't
+; actually the car, or is blocked, it aborts back to idle. Called from
+; UpdatePlayer's idle path.
+; -----------------------------------------------------------------------------
+StartBoardStep::
+    ld [wStepDir], a
+    ld [wFacing], a
+    call GenPlayerStep         ; wGen = player + step = the tile we walk onto
+    call CheckCarAt
+    and a
+    jr z, .abort               ; not the car anymore (player turned/moved) -> bail
+    call GenTileType
+    call IsSolid
+    jr nz, .abort              ; the car parks on passable ground; guard anyway
+    call CheckZombieAt
+    and a
+    jr nz, .abort
+    call CheckNPCAt
+    and a
+    jr nz, .abort
+    ; commit the on-foot step onto the car tile
+    ld a, [wGenX]
+    ld [wPlayerWX], a
+    ld a, [wGenX+1]
+    ld [wPlayerWX+1], a
+    ld a, [wGenY]
+    ld [wPlayerWY], a
+    ld a, [wGenY+1]
+    ld [wPlayerWY+1], a
+    ld a, 1
+    ld [wBoarding], a          ; finish -> flip wInCar on (see player.asm .walking)
+    ; kick the incoming-edge stream and the walk animation (as a foot step)
+    ld a, [wStepDir]
+    call DirToMoveDir
+    ld [wMoveDir], a
+    ld a, PSTATE_WALK
+    ld [wPlayerState], a
+    xor a, a
+    ld [wStepOffset], a
+    ld a, [wWalkFrame]
+    xor a, 1
+    ld [wWalkFrame], a
+    ret
+.abort:
+    ld a, PSTATE_IDLE
+    ld [wPlayerState], a
+    xor a, a
+    ld [wWalkFrame], a
+    ret
+
+; -----------------------------------------------------------------------------
+; ExitCar: leave the car. The car stays exactly where it is (wCarWX/WY, already
+; the 2x2 anchor — the car is a real world object, not attached to the player)
+; and the PLAYER steps out of the footprint onto an adjacent passable, unoccupied
+; tile (facing direction first, then a fixed sweep). The step is *armed* via
+; wCarEject and walked next idle frame by UpdatePlayer, so it rides the normal
+; walk + streaming path (no view seam). If hemmed in on all sides, the player
+; stays on the car (re-board to leave).
 ; -----------------------------------------------------------------------------
 ExitCar:
     xor a, a
     ld [wInCar], a
-    ; the car keeps the tile the player just vacated
-    ld a, [wPlayerWX]
-    ld [wCarWX], a
-    ld a, [wPlayerWX+1]
-    ld [wCarWX+1], a
-    ld a, [wPlayerWY]
-    ld [wCarWY], a
-    ld a, [wPlayerWY+1]
-    ld [wCarWY+1], a
     ld a, [wFacing]
-    ld [wCarFacing], a
+    ld [wCarFacing], a         ; the parked car keeps the heading you left on
     ; pick an ejection direction for the player: face dir first, then a sweep
     ld a, [wFacing]
     call TryEjectDir
@@ -221,11 +274,11 @@ ExitCar:
     ret
 
 ; TryEjectDir: A = EFACE_* candidate. If player+step(dir) lands on a passable,
-; unoccupied tile that is OUTSIDE the parked 2x2 footprint, arm the deferred
-; player step-out that way (wCarEject = dir+1) and return Z; else NZ. Because the
-; player sits at the footprint's top-left, a single step right or down still
-; lands on the car (CheckCarAt rejects it) — so you climb out to the left/up/
-; a clear perimeter tile. (Water is solid here, so you never eject into it.)
+; unoccupied tile that is OUTSIDE the car's 2x2 footprint, arm the deferred player
+; step-out that way (wCarEject = dir+1) and return Z; else NZ. The player sits on
+; one of the car's tiles (their boarding seat), so a step that stays on the car is
+; rejected (CheckCarAt) and you climb out toward open ground. (Water is solid
+; here, so you never eject into it.)
 TryEjectDir:
     push af
     ld a, [wPlayerWX]
@@ -263,18 +316,15 @@ TryEjectDir:
 
 ; -----------------------------------------------------------------------------
 ; CheckCarAt: A = 1 if (wGenX, wGenY) is inside the car's 2x2 footprint, else 0.
-; The footprint's top-left anchor is wCarWX/WY when parked, or the player's tile
-; while driving (the car rides at the player), so zombies avoid all four tiles in
-; either case and the on-foot player can't walk onto the parked car. Scans only
-; the car/player vars (never wEnt), so player and zombie code both call it safely.
-; The driving footprint is the car's OWN body, so the driver's movement checks
-; the leading edge via CheckDriveEdge instead of this (it never blocks itself).
+; The footprint's top-left anchor is always wCarWX/WY — the car is a real world
+; object that stays put when parked and moves as a unit while driven (both its
+; anchor and the player advance together each drive step). So zombies and the
+; on-foot player treat all four tiles as solid in every state. Scans only the car
+; vars (never wEnt), so player and zombie code both call it safely. The driver is
+; the exception (a car can't block its own body): driving movement checks the
+; leading edge via CheckDriveEdge instead of this.
 ; -----------------------------------------------------------------------------
 CheckCarAt::
-    ld a, [wInCar]
-    and a
-    jr nz, .driving
-    ; parked: anchor = wCarWX/WY
     ld hl, wGenX
     ld de, wCarWX
     call InSpan2
@@ -283,18 +333,6 @@ CheckCarAt::
     ld de, wCarWY
     call InSpan2
     jr nz, .free
-    jr .hit
-.driving:
-    ; driving: anchor = the player's tile
-    ld hl, wGenX
-    ld de, wPlayerWX
-    call InSpan2
-    jr nz, .free
-    ld hl, wGenY
-    ld de, wPlayerWY
-    call InSpan2
-    jr nz, .free
-.hit:
     ld a, 1
     ret
 .free:
@@ -346,27 +384,27 @@ GenPlayerStep::
     jp StepGen                  ; tail call
 
 ; -----------------------------------------------------------------------------
-; CheckDriveEdge: the car is a 2x2 anchored at the player's top-left tile. When
+; CheckDriveEdge: the car is a 2x2 anchored at wCarWX/WY (its top-left). When
 ; driving one tile in wStepDir, the two tiles the footprint newly covers (its
 ; leading edge) must be clear. Returns Z if both are passable terrain (water is
 ; solid — a car can't float) and free of a zombie/NPC; NZ if either blocks. It
 ; never consults CheckCarAt (the car can't block its own body). Clobbers wGen.
 ;
-; With the player at the top-left, the leading edge for each direction is:
-;   RIGHT (px+2,py),(px+2,py+1)   LEFT (px-1,py),(px-1,py+1)
-;   DOWN  (px,py+2),(px+1,py+2)   UP   (px,py-1),(px+1,py-1)
-; so right/down step twice from the player (past the far side of the footprint)
+; With the anchor (cx,cy) at the top-left, the leading edge for each direction is:
+;   RIGHT (cx+2,cy),(cx+2,cy+1)   LEFT (cx-1,cy),(cx-1,cy+1)
+;   DOWN  (cx,cy+2),(cx+1,cy+2)   UP   (cx,cy-1),(cx+1,cy-1)
+; so right/down step twice from the anchor (past the far side of the footprint)
 ; and the second tile offsets one along the perpendicular axis.
 ; -----------------------------------------------------------------------------
 CheckDriveEdge::
-    ; wGen = player + one step in wStepDir
-    ld a, [wPlayerWX]
+    ; wGen = car anchor + one step in wStepDir
+    ld a, [wCarWX]
     ld [wGenX], a
-    ld a, [wPlayerWX+1]
+    ld a, [wCarWX+1]
     ld [wGenX+1], a
-    ld a, [wPlayerWY]
+    ld a, [wCarWY]
     ld [wGenY], a
-    ld a, [wPlayerWY+1]
+    ld a, [wCarWY+1]
     ld [wGenY+1], a
     ld a, [wStepDir]
     call StepGen
@@ -410,7 +448,8 @@ CheckDriveEdge::
 ; =============================================================================
 ; Rendering — the car is a 16x16 (2x2) sprite in slots OAM_CAR..OAM_CAR+3.
 ; =============================================================================
-; DrawCar: draw the one car. Driving -> it takes the player's fixed screen cell
+; DrawCar: draw the one car. Driving -> the car is camera-locked around the
+; player's fixed cell, offset by the boarding seat so it sits on its own tiles
 ; (the on-foot player slot 0 is hidden in DrawEntities); parked and on-screen ->
 ; at its world position (culled like the other sprites via EntScreenPos); parked
 ; and off-screen -> hide all four slots. One call handles every case.
@@ -434,9 +473,31 @@ DrawCar::
     ld a, [wCarFacing]
     jr DrawCar2x2
 .driving:
+    ; the driver sits at wPlayerWX/WY, a tile inside the footprint; the car's
+    ; top-left is that many tiles up/left of the player cell (seat = player - car,
+    ; each axis 0 or 1). Camera-locked (no lag) like the player it replaces.
+    ; seatX*8 = (wPlayerWX - wCarWX) << 3
+    ld a, [wCarWX]
+    ld b, a
+    ld a, [wPlayerWX]
+    sub b                         ; A = seatX (0 or 1)
+    add a, a
+    add a, a
+    add a, a                      ; * 8
+    ld b, a
     ld a, SPR_X
+    sub b
     ld [wScrX], a
+    ld a, [wCarWY]
+    ld b, a
+    ld a, [wPlayerWY]
+    sub b                         ; A = seatY (0 or 1)
+    add a, a
+    add a, a
+    add a, a
+    ld b, a
     ld a, SPR_Y
+    sub b
     ld [wScrY], a
     ld a, [wFacing]
     jr DrawCar2x2
