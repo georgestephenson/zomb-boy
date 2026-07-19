@@ -77,9 +77,11 @@ AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o
 ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
 # rgbfix: -c = GBC-compatible ($80, runs on DMG too — the ROM detects the console
 # at boot and falls back to grayscale), -v = fix header, -p 0xFF = pad (also sets
-# the ROM-size byte), -m 0x19 = MBC5: the ROM is 64 KB — ROMX bank 1 is the
-# default-mapped bank (song + dialogue data), bank 2 the portraits. Title <= 11.
-FIXFLAGS        := -c -v -p 0xFF -m 0x19 -t ZOMBBOY
+# the ROM-size byte), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 64 KB — ROMX bank 1
+# is the default-mapped bank (song + dialogue data), bank 2 the portraits — and
+# the cart carries 8 KB of battery-backed RAM (-r 0x02) for the menu's SAVE
+# option (see menu.asm DoSave / the SaveData SRAM section). Title <= 11.
+FIXFLAGS        := -c -v -p 0xFF -m 0x1B -r 0x02 -t ZOMBBOY
 
 # Emulator used by `make run`. Defaults to the vendored, pinned mGBA (auto-
 # fetched on first `make run`). Override to use your own, e.g.

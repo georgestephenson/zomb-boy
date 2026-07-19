@@ -64,6 +64,8 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `dialogue_data.asm` | Personas, word banks, templates (ROMX; charmap strings) |
 | `hud.asm` | Window-layer status bar (HP/food/energy/clock) + the survival tick |
 | `battle.asm` | Placeholder battle transition (flash) |
+| `menu.asm` | START pause menu (MODE_MENU): party/equip/bag/status/save/options/exit |
+| `items.asm` | Item database (type + name tables) + inventory helpers (party/bag init) |
 | `rng.asm` | 16-bit LFSR (`Rand`) — dynamic behaviour, NOT worldgen |
 | `video.asm` | VBlank sync, OAM DMA, palettes, font loader, scroll; VBlank IRQ vector |
 | `input.asm` | Joypad read with edge detection |
@@ -83,7 +85,11 @@ overworld: UpdateSound → ReadInput → UpdateSurvival → UpdatePlayer → Upd
            WaitVBlank → OAM DMA → SetScroll → PushHUD → BlitStream
 talk mode: UpdateSound → ReadInput → UpdateTalk (fills wTalkQ)
            WaitVBlank → OAM DMA → DrainTalkQ
+menu mode: UpdateSound → ReadInput → UpdateMenu (input + panel nav, LCD-off
+           rebuilds) → WaitVBlank → OAM DMA   (game paused; no clock/world)
 ```
+START in the overworld calls `EnterMenu`; `UpdateSound` is gated on `wOptMusic`
+(the OPTIONS music toggle).
 `GenStrip` builds the incoming edge into a WRAM buffer (heavy, outside VBlank);
 `BlitStream` pushes it to VRAM (tight, inside VBlank) in the **same frame** the
 scroll updates — so there's no seam or one-frame latency.
@@ -189,6 +195,43 @@ scroll updates — so there's no seam or one-frame latency.
   glyph bumped `FONT_GLYPHS` 52→53, so `TILE_PSURV_BASE` is now 181 (persona
   world tiles 181..210; the car's **8** tiles `TILE_CAR_BASE` 211..218 — 2 each
   for down/up + 4 for side — are appended to `PersonaTiles`).
+
+### Start menu (menu.asm / items.asm)
+- **Pokemon-style pause menu on MODE_MENU.** START in the overworld opens it
+  (`EnterMenu`); it lives on **SCRN1** exactly like the talk screen (window HUD
+  off, BG9C00, SCX/SCY=0), so the world map on SCRN0 is untouched and `ExitMenu`
+  is a cheap LCDC flip + `SetScroll` + `DrawHUDRow` (which restores the row-0 HUD
+  the menu overwrote). The game is **paused**: the menu is its own main-loop
+  branch, so `UpdateSurvival` never runs and the clock/meters freeze.
+- **Panels are rebuilt whole with the LCD off** (`RebuildMenu`: WaitVBlank → LCD
+  off → `BuildCurrent` → sprites → DMA → LCD on), same discipline as
+  `BuildTalkScreen`. Only the cursor OBJ (slot 0) and the status avatar (slot 1)
+  move between rebuilds. Every panel is a full-screen `TILE_PANEL_*` frame +
+  header drawn by `BuildBase`/`MClear`; content uses the existing font/panel/bar
+  tiles, so **no new gfx**. `RowAddr`/`MPutsDE`/`PutNumDE` are the drawing
+  primitives; keep list content clear of the col-19 right border (item names are
+  padded to `ITEM_NAME_MAX` = 8 for exactly this).
+- **Root list** (`RootLabels`, `wRootCursor`): PARTY EQUIP BAG STATUS SAVE
+  OPTIONS EXIT. Submenus use `wMenuCursor` (equip slots / options) or the generic
+  scrolling list `wListN/Cur/Top` + `MenuListMove` (BAG, equip picker). B backs
+  out; EXIT does `di : jp Start` (a soft-reset to the title — `Start` is exported
+  for this).
+- **Inventory model (items.asm):** two parallel tables index a plain item id —
+  `ItemType` (ITYPE_*) and `ItemNames`. The bag is `BAG_MAX`(20) `{id,count}`
+  stacks, **kept compacted** (`AddItem`/`RemoveOneItem`→`CompactBag`) so lists are
+  gap-free and BAG's `wListN` is just the leading non-empty run. Party is
+  `wPartyEquip` = `MAX_PARTY`×`EQUIP_SLOTS` item ids (2 weapons + armour + charm);
+  only member 0 (the player) exists so far, its stats are the global meters.
+  Equipping references a bag item (doesn't consume it). The equip picker filters
+  the bag by the slot's `EquipSlotType`.
+- **STATUS** shows the player OBJ as an avatar plus HP/food/energy, the clock,
+  and position **relative to the spawn tile** (`wSpawnWX/WY`, recorded in
+  `InitPlayer`; magnitude capped at 255 — signed via a leading space/'-' since
+  the font has no '+').
+- **SAVE** writes a battery-backed block to cart RAM (see the ROM banking
+  invariant below) with a magic + 8-bit checksum; **there is no load-on-boot yet**
+  (the title still captures a fresh seed) — that's LATER. OPTIONS is a music
+  on/off toggle (gates `UpdateSound` + unroutes NR51) with the rest TBC.
 
 ### Dialogue (npc/talk/dialogue*, docs/design/05)
 - The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on
@@ -346,12 +389,15 @@ scroll updates — so there's no seam or one-frame latency.
 
 ## Conventions & invariants (don't break these)
 
-- **The cart is 64 KB MBC5 (`-m 0x19` in `FIXFLAGS`); ROMX bank 1 is the
-  default-mapped bank.** Bank 1 holds song + dialogue data (both read every
-  frame); boot maps it explicitly (don't trust MBC power-on state). Portraits
-  are `BANK[2]`, mapped **only** inside `ShowPortrait` (talk.asm), which
-  restores bank 1 before returning. New banked data must do the same:
-  switch, read, restore bank 1 — nothing else may assume another bank.
+- **The cart is 64 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
+  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds song +
+  dialogue data (both read every frame); boot maps it explicitly (don't trust
+  MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
+  `ShowPortrait` (talk.asm), which restores bank 1 before returning. New banked
+  data must do the same: switch, read, restore bank 1 — nothing else may assume
+  another bank. **Cart RAM (`SECTION ... , SRAM`, the menu's SAVE block) is
+  disabled by default; `DoSave` brackets every access with the `rRAMG` enable /
+  disable writes** (and `rRAMB`=0) — never leave it enabled.
 - **RGBDS syntax, v4 `hardware.inc` names.** `ldh [rLCDC], a`, `ld [hl+], a`,
   `LCDCF_*`, `_VRAM`, `_SCRN0`, `BCPSF_AUTOINC`, etc.
 - **Exports:** anything used across files is defined with `::`. File-local labels

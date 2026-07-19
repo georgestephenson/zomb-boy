@@ -398,4 +398,71 @@ DEF CAR_SPAWN_DX   EQU 0           ; spawn offset from the player start (tiles)
 DEF CAR_SPAWN_DY   EQU 3
 DEF FUEL_START     EQU METER_MAX   ; a full tank at spawn (0..METER_MAX, saturating)
 
+; --- Start menu (menu.asm, Pokemon-style pause menu) ------------------------
+; START in the overworld opens a full-screen menu on SCRN1 (like the talk
+; screen). The game is paused: the menu is its own main-loop branch, so the
+; survival clock/meters (which only tick in the overworld branch) freeze while
+; it's up. B / EXIT closes it; each option opens a sub-screen (B backs out).
+DEF MODE_MENU      EQU 3
+
+; Sub-screen ids (wMenuScreen). MSCR_ROOT is the option list; the rest are the
+; individual panels. Order of the root list is fixed (see RootLabels).
+DEF MSCR_ROOT      EQU 0
+DEF MSCR_PARTY     EQU 1
+DEF MSCR_EQUIP     EQU 2
+DEF MSCR_PICK      EQU 3           ; equip item picker (from EQUIP)
+DEF MSCR_BAG       EQU 4
+DEF MSCR_STATUS    EQU 5
+DEF MSCR_OPTIONS   EQU 6
+DEF MSCR_SAVE      EQU 7
+DEF ROOT_COUNT     EQU 7           ; PARTY EQUIP BAG STATUS SAVE OPTIONS EXIT
+
+; Menu layout on SCRN1: a full-screen panel; a header on row 1; content from
+; MENU_BODY_ROW down. The cursor OBJ sits one column left of a list item.
+DEF MENU_HDR_ROW   EQU 1
+DEF MENU_BODY_ROW  EQU 3           ; first list/content row
+DEF MENU_LIST_COL  EQU 3           ; list items start here (col 2 = cursor cell)
+DEF MENU_LIST_ROWS EQU 12          ; visible rows in a scrolling list (rows 3..14)
+
+; --- Party ------------------------------------------------------------------
+DEF MAX_PARTY      EQU 4           ; up to four members; slot 0 is the player
+DEF EQUIP_SLOTS    EQU 4           ; per member: weapon, weapon, armour, charm
+DEF ESLOT_WEAPON1  EQU 0
+DEF ESLOT_WEAPON2  EQU 1
+DEF ESLOT_ARMOR    EQU 2
+DEF ESLOT_ACCESSORY EQU 3
+
+; --- Items / inventory ------------------------------------------------------
+; Item type (category). Equip slots accept specific categories; the bag holds
+; everything. Ids index the parallel ItemType/ItemName tables (items.asm).
+DEF ITYPE_NONE     EQU 0
+DEF ITYPE_WEAPON   EQU 1
+DEF ITYPE_ARMOR    EQU 2
+DEF ITYPE_ACCESSORY EQU 3
+DEF ITYPE_CONSUMABLE EQU 4
+DEF ITYPE_KEY      EQU 5
+
+DEF ITEM_NONE      EQU 0           ; empty slot / "nothing equipped"
+DEF ITEM_BAT       EQU 1
+DEF ITEM_PISTOL    EQU 2
+DEF ITEM_KNIFE     EQU 3
+DEF ITEM_VEST      EQU 4
+DEF ITEM_HELMET    EQU 5
+DEF ITEM_AMULET    EQU 6
+DEF ITEM_WATCH     EQU 7
+DEF ITEM_GRENADE   EQU 8
+DEF ITEM_MEDKIT    EQU 9
+DEF ITEM_KEYCARD   EQU 10
+DEF ITEM_COUNT     EQU 11
+DEF ITEM_NAME_MAX  EQU 8           ; item names are padded to this; keeps lists
+                                   ; aligned and clear of the panel's right border
+
+; Inventory: a bag of up to BAG_MAX stacks, each {item id, count}. 0 = empty.
+DEF BAG_MAX        EQU 20
+DEF BAG_STACK_MAX  EQU 99          ; per-stack count cap (saturating)
+
+; Menu cursor OBJ (reuses the talk cursor tile + amber OBJ palette 2)
+DEF OAM_MENU_CURSOR EQU 0          ; menu clears OAM, so slot 0 is free
+DEF OAM_MENU_AVATAR EQU 1          ; the player avatar on the status screen
+
 ENDC
