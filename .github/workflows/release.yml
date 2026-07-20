@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Cache pinned toolchain + test venv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .tools
           key: tools-${{ runner.os }}-${{ hashFiles('Makefile', 'tools/fetch-*.sh', 'tools/setup-testenv.sh') }}

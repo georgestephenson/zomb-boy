@@ -26,7 +26,7 @@ jobs:
       # platform-specific, so key the cache on the version pins + fetch scripts.
       # A miss just means the fetch scripts re-download (they verify checksums).
       - name: Cache pinned toolchain + test venv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .tools
           key: tools-${{ runner.os }}-${{ hashFiles('Makefile', 'tools/fetch-*.sh', 'tools/setup-testenv.sh') }}
