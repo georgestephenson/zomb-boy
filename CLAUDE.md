@@ -44,6 +44,25 @@ the `Makefile` (`RGBDS_VERSION`, `HWINC_REF`, `EMU_VERSION`).
   logic via host reference models, but *interactive* behavior (scrolling feel,
   animation, collision) needs a human running `make run`. Say so; don't claim
   interactive behavior is "verified."
+- **Sandboxed/hosted sessions (e.g. Claude's web environment) block GitHub
+  *release-asset* downloads at the egress policy (HTTP 403).** What that breaks
+  and what still works, verified in-environment:
+  * ❌ `github.com/.../releases/download/...` and `codeload.github.com` tarballs
+    → 403. This is the RGBDS binary, the mGBA AppImage, and the hUGETracker
+    bundle. `curl` hides the body on a failed CONNECT; the reason is at
+    `curl -sS "$HTTPS_PROXY/__agentproxy/status"`. **Never** retry or route
+    around a 403 — it's an org policy denial.
+  * ✅ `git clone` (smart-HTTP), `raw.githubusercontent.com` (so `hardware.inc`
+    fetches fine), and `pypi.org` (so `pip install pyboy` → `make test` works).
+  * **RGBDS**: `tools/fetch-rgbds.sh` auto-falls back to a `git clone` + source
+    build of the pinned tag when the binary download 403s (or force it with
+    `RGBDS_FROM_SOURCE=1`). The source build needs `build-essential`, `bison`,
+    `libpng-dev`, `pkg-config` — present in the hosted image. So `make` and
+    `make test` just work here unattended; only the *first* build eats ~30s
+    compiling the toolchain.
+  * **Emulator**: `make run` (mGBA) can't fetch its AppImage here and isn't
+    usable headless anyway — that's fine, headless tests use PyBoy via pip.
+    Interactive checks still need a human on a normal machine.
 
 ## Architecture
 
