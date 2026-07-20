@@ -18,6 +18,7 @@ import pytest
 from harness import Game
 
 DN_MORNING, DN_DAY, DN_DUSK, DN_NIGHT = 0, 1, 2, 3
+MODE_OVERWORLD = 0
 
 
 @pytest.fixture
@@ -37,6 +38,23 @@ def read_tint(g):
         v = lo | (hi << 8)
         out.append((v & 0x1F, (v >> 5) & 0x1F, (v >> 10) & 0x1F))
     return out
+
+
+def read_live_pal(g, n=32):
+    """The 32 bytes actually in BG palette RAM (palettes 0..3), read via BCPS/BCPD.
+    This is what the hardware shows — as opposed to wTintPal, the WRAM buffer.
+    PyBoy doesn't auto-increment the index on reads, so set it per byte."""
+    out = []
+    for i in range(n):
+        g.pyboy.memory[0xFF68] = i          # rBCPS: palette-RAM index (no autoinc)
+        out.append(g.pyboy.memory[0xFF69])  # rBCPD
+    return out
+
+
+def go_night(g):
+    """Enter night at the very start so the main loop's own ticks apply the tint
+    (a poke + a separate tick(N) would shift the zombie-detection frame phase)."""
+    g.pyboy.memory[g.addr("wClockH")] = 23
 
 
 def brightness(pal):
@@ -111,3 +129,77 @@ def test_no_retint_within_a_bucket(game):
     game.tick(3)
     assert game.r8("wTintPending") == 0, "same-bucket hour change must not re-tint"
     assert game.r8("wDayBucket") == DN_DAY
+
+
+# --- the tint must survive the modes that leave the overworld ----------------
+# The tint lives in BG palette RAM 0..3. Menu and talk never touch those, so it
+# persists; the battle flash reloads the NEUTRAL palettes (LoadPalettes), so it
+# must invalidate the applied bucket to force a re-tint on return. These drive
+# each mode end-to-end and assert BG palette RAM still holds the night tint after.
+
+import test_zombies as tz
+import test_talk as tt
+
+
+def test_tint_survives_battle(game):
+    """A zombie catching you runs the placeholder battle flash, which restores
+    neutral palettes. On return the world must be re-tinted, not left daytime."""
+    g = game
+    go_night(g)                                # loop ticks below apply it
+    g.pyboy.memory[g.addr("wSwimming")] = 0
+    tz._clear_pool(g, "wZombies", tz.MAX_ZOMBIES)
+    tz._clear_pool(g, "wNPCs", tz.MAX_NPCS)
+    for nm in ("wPlayerWX", "wSeenWX"):
+        tz._w16(g, g.addr(nm), 0)
+    for nm in ("wPlayerWY", "wSeenWY"):
+        tz._w16(g, g.addr(nm), 0xFFFF)         # a clear charge lane (y = -1)
+    g.pyboy.memory[g.addr("wZombSpawnTimer")] = 200
+    for _ in range(6):                         # re-pin until detection (frame-phase)
+        tz._plant_zombie_facing_player(g, dist=3)
+        g.tick(1)
+        if g.r8("wGameMode") == tz.MODE_ALERT:
+            break
+    assert g.r8("wGameMode") == tz.MODE_ALERT, "zombie should spot the player"
+    night = read_live_pal(g)                    # night tint, live, pre-battle
+    assert g.r8("wDayBucket") == DN_NIGHT
+    for _ in range(300):                        # "!" beat -> charge -> battle -> overworld
+        g.tick(1)
+        if g.r8("wGameMode") == MODE_OVERWORLD:
+            break
+    g.tick(3)                                   # let the overworld re-tint
+    assert read_live_pal(g) == night, "battle left the world daytime (tint not re-applied)"
+
+
+def test_tint_survives_menu(game):
+    """The START pause menu lives on SCRN1 and never rewrites palettes 0..3, so
+    the tint persists across open/close with no re-apply."""
+    g = game
+    go_night(g)
+    g.tick(2)
+    night = read_live_pal(g)
+    assert g.r8("wDayBucket") == DN_NIGHT
+    g.hold("start"); g.tick(3); g.release("start"); g.tick(4)   # open
+    assert g.r8("wGameMode") == 3, "START should open the menu (MODE_MENU)"
+    assert read_live_pal(g) == night, "menu open changed the tint"
+    g.hold("start"); g.tick(3); g.release("start"); g.tick(4)   # close
+    assert g.r8("wGameMode") == 0
+    assert read_live_pal(g) == night, "menu close changed the tint"
+
+
+def test_tint_survives_talk(game):
+    """The dialogue screen lives on SCRN1 and only touches the portrait palettes
+    (5..7), so the terrain tint persists across a conversation."""
+    g = game
+    go_night(g)
+    tt.goto_npc0(g)                            # walk to the survivor (still night)
+    night = read_live_pal(g)
+    assert g.r8("wDayBucket") == DN_NIGHT
+    tt.start_talk(g)
+    assert g.r8("wGameMode") == 2, "A next to a survivor should open talk"
+    assert read_live_pal(g) == night, "talk open changed the tint"
+    for _ in range(8):                         # back out to the overworld
+        tt.press(g, "b")
+        if g.r8("wGameMode") == 0:
+            break
+    assert g.r8("wGameMode") == 0
+    assert read_live_pal(g) == night, "talk close changed the tint"

@@ -21,6 +21,13 @@ BattleTransition::
     dec c
     jr nz, .loop
     call WaitHold
+    ; LoadPalettes above restored the NEUTRAL (daytime) BG palettes. If a
+    ; day/night tint was in effect, invalidate the applied bucket so the overworld
+    ; loop's UpdateDayNight re-shades on the next frame — otherwise the world stays
+    ; daytime after combat until the clock next crosses a bucket boundary. Just a
+    ; WRAM write (no bank needed); harmless on DMG, where UpdateDayNight no-ops.
+    ld a, DN_INVALID
+    ld [wDayBucket], a
     ret
 
 ; Overwrite BG palette 0 with white to flash the scene.
