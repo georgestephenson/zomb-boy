@@ -406,16 +406,20 @@ DEF NOTICE_FRAMES  EQU 90          ; ~1.5s at 60 fps
 DEF TINT_THRESH    EQU 17
 
 ; --- World animation (anim.asm) ---------------------------------------------
-; Shared-tile-art swaps that make the world feel alive. All timers are in frames;
-; the sway/rustle patterns are indexed by (timer >> 2), so their STEP is fixed at
-; 4 frames per sub-frame. Keep the two *_PAT_LEN in sync with the pattern tables
-; in anim.asm (a *_DUR of D gives ceil(D/4) usable indices: 0..(D-1)>>2).
+; Shared-tile-art swaps that make the world feel alive. The sway/rustle patterns
+; hold each sub-frame for (1 << *_LOG) frames — the index is timer >> *_LOG — and
+; *_DUR is sized so the whole pattern plays exactly once: DUR = PAT_LEN << LOG.
+; *_LOG is the single speed knob: raise it to make a motion slower (LOG 4 = 16
+; frames per sub-frame, a slow, gentle sway; LOG 3 = 8 = twice as fast). Keep each
+; *_PAT_LEN in sync with the pattern tables in anim.asm.
 DEF WATER_ANIM_FRAMES EQU 22       ; frames between water shimmer sub-frames
 DEF BREEZE_PERIOD     EQU 210      ; frames between ambient tree-sway gusts
-DEF TREE_SWAY_DUR     EQU 24       ; a triggered/ambient sway runs this long
-DEF TREE_PAT_LEN      EQU 6        ; TreeSwayPattern length (= ceil(24/4))
-DEF BRUSH_RUSTLE_DUR  EQU 20       ; brush rustles this long after you step in
-DEF BRUSH_PAT_LEN     EQU 5        ; BrushRustlePattern length (= ceil(20/4))
+DEF TREE_SWAY_LOG     EQU 4        ; canopy holds each sway frame 1<<4 = 16 frames
+DEF TREE_PAT_LEN      EQU 6        ; TreeSwayPattern length
+DEF TREE_SWAY_DUR     EQU TREE_PAT_LEN << TREE_SWAY_LOG   ; 96 — one full sway
+DEF BRUSH_RUSTLE_LOG  EQU 4        ; brush holds each rustle frame 16 frames too
+DEF BRUSH_PAT_LEN     EQU 5        ; BrushRustlePattern length
+DEF BRUSH_RUSTLE_DUR  EQU BRUSH_PAT_LEN << BRUSH_RUSTLE_LOG   ; 80
 DEF DOOR_LINGER       EQU 16       ; frames a door stays open after you step off
 
 DEF PAL_BG_UI      EQU 4           ; BG palette for the whole talk screen
