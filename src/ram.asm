@@ -142,6 +142,9 @@ wCarEject::         ds 1               ; 0 = none; else (EFACE_*+1) = get out of
                                        ; (consumed by UpdatePlayer next idle frame)
 wFuel::             ds 1               ; 0..METER_MAX, saturating (drives the HUD
                                        ; fuel readout; replaces energy while driving)
+wCarRumble::        ds 1               ; free-running frame counter for the driving
+                                       ; engine-rumble sprite wobble (DrawCar); purely
+                                       ; cosmetic, advanced only while wInCar
 ; InitCar road-spawn search scratch (boot only). wCarRngSave brackets the search
 ; so consuming Rand while probing doesn't perturb the dynamic-spawn stream.
 wCarRngSave::       ds 2               ; saved wRngState across the spawn search

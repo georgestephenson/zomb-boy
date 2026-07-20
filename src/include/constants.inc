@@ -522,6 +522,14 @@ DEF RATION_FOOD    EQU 50           ; large (ration pack, from a crate/pot)
 DEF OAM_LOOT       EQU 25           ; loot OBJ slots 25..25+MAX_LOOT-1 (after the car)
 
 DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP_SPEED)
+; Engine rumble: while driving, the 2x2 car sprite occasionally jitters one pixel
+; up/down for a couple of frames — a purely cosmetic OAM-Y wobble (no world/tile
+; change, no Rand). A short shudder plays for the first RUMBLE_ON frames of each
+; RUMBLE_PERIOD-frame window, then holds still; both counts are frame-locked (a
+; free-running frame counter, wCarRumble), so determinism is untouched.
+; RUMBLE_PERIOD must be a power of 2 (masked, not divided).
+DEF RUMBLE_PERIOD  EQU 64          ; frames per rumble cycle (~1s at 60fps)
+DEF RUMBLE_ON      EQU 6           ; frames of shudder at the start of each cycle
 DEF CAR_SPAWN_DX   EQU 0           ; FALLBACK spawn offset from the player start (tiles)
 DEF CAR_SPAWN_DY   EQU 3
 DEF FUEL_START     EQU METER_MAX   ; a full tank at spawn (0..METER_MAX, saturating)

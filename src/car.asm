@@ -573,7 +573,8 @@ CheckDriveEdge::
 ; =============================================================================
 ; DrawCar: draw the one car. Driving -> the car is camera-locked around the
 ; player's fixed cell, offset by the boarding seat so it sits on its own tiles
-; (the on-foot player slot 0 is hidden in DrawEntities); parked and on-screen ->
+; (the on-foot player slot 0 is hidden in DrawEntities), plus an occasional
+; one-pixel engine-rumble wobble on Y (CarRumbleY); parked and on-screen ->
 ; at its world position (culled like the other sprites via EntScreenPos); parked
 ; and off-screen -> hide all four slots. One call handles every case.
 DrawCar::
@@ -621,6 +622,9 @@ DrawCar::
     ld b, a
     ld a, SPR_Y
     sub b
+    ld c, a                       ; C = camera-locked base Y
+    call CarRumbleY               ; A = engine wobble (-1/0/+1), advances wCarRumble
+    add a, c
     ld [wScrY], a
     ld a, [wFacing]
     jr DrawCar2x2
@@ -630,6 +634,34 @@ DrawCar::
     ld [wShadowOAM + (OAM_CAR + 1) * 4], a
     ld [wShadowOAM + (OAM_CAR + 2) * 4], a
     ld [wShadowOAM + (OAM_CAR + 3) * 4], a
+    ret
+
+; -----------------------------------------------------------------------------
+; CarRumbleY: advance the engine-rumble counter (wCarRumble) and return, in A, a
+; signed OAM-Y offset for the driving car sprite: -1/+1 (a one-pixel wobble) for
+; the first RUMBLE_ON frames of each RUMBLE_PERIOD-frame window, then 0. It is a
+; plain frame counter (never touches Rand) and only DrawCar's driving path calls
+; it, so the wobble runs solely while driving and perturbs nothing else. The
+; alternating sign comes from the counter's low bit, so the burst reads as a fast
+; up/down shudder rather than a one-way nudge.
+; -----------------------------------------------------------------------------
+CarRumbleY:
+    ld a, [wCarRumble]
+    inc a
+    ld [wCarRumble], a
+    and RUMBLE_PERIOD - 1         ; phase within the cycle (PERIOD is a power of 2)
+    cp RUMBLE_ON
+    jr nc, .still                 ; past the shudder window -> hold steady
+    ld a, [wCarRumble]
+    and 1                         ; alternate each frame across the burst
+    jr z, .up
+    ld a, 1                       ; +1 = one pixel down
+    ret
+.up:
+    ld a, -1                      ; -1 = one pixel up
+    ret
+.still:
+    xor a, a
     ret
 
 ; DrawCar2x2: A = facing; wScrX/wScrY = the OAM position of the footprint's
