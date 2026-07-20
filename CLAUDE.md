@@ -332,8 +332,16 @@ scroll updates — so there's no seam or one-frame latency.
   `CheckLOS` early-returns "unseen" so zombies can't detect you in the water.
 
 ### Driving (car.asm / player.asm / hud.asm)
-- One car spawns near the start (`InitCar`, offset `CAR_SPAWN_DX/DY`, nudged right
-  until the whole footprint is clear via `Is2x2Clear`). It's a **single world
+- One car spawns **on/beside a road, away from the start, never inside a house**
+  (`InitCar`): it tries up to `CAR_SPAWN_TRIES` random anchors (from the dynamic
+  `Rand`, but **saved/restored** around the search so the spawn stream stays
+  byte-identical) in a ring `CAR_MIN_DIST..+CAR_DIST_MASK` tiles out, accepting
+  the first whose 2×2 footprint is clear, touches a `TILE_ROAD`, and has no house
+  floor/door (`PickCarAnchor`/`CarSpotOK`). If none turns up (e.g. a forest spawn
+  with no nearby road) it **falls back** to the classic near-player nudge-right
+  placement (`PlaceCarNearPlayer`, offset `CAR_SPAWN_DX/DY`, clear via
+  `Is2x2Clear`). Roads are **2 tiles wide** (see world.asm) so the 2×2 car has a
+  real corridor to drive. It's a **single world
   object** (`wCarWX/WY`, `wCarFacing`), not an entity-pool member, but it
   **physically occupies a 2×2 tile footprint** whose **top-left** is `wCarWX/WY`.
 - **Collision is on all four tiles.** `CheckCarAt` returns true for any tile of
@@ -594,7 +602,10 @@ scroll updates — so there's no seam or one-frame latency.
   features from shared noise fields (`WaterField`, `TreeQuad`, `ScatterHash`), so
   water clusters in marsh, straight roads+houses in city, trees in forest,
   cactus in desert, cracked roads+rubble in ruins, fenced wheat fields in farm,
-  headstones+a church in graveyard, etc. **City streets (`RoadHere`):** vertical
+  headstones+a church in graveyard, etc. **City streets (`RoadHere`):** avenues
+  and cross-streets are **2 tiles wide** (lanes `jit` and `jit+1`; `jit` is 0..7
+  so the second lane stays inside the 16-band) so the 2×2 car can drive them.
+  Vertical
   **avenues** are full-length straight lines (one per 16-wide band, column
   jittered 0..7 by the band index alone) — the connected backbone. Horizontal
   **cross-streets JOG**: a street's row is jittered per avenue-*interval*, so it

@@ -522,9 +522,16 @@ DEF RATION_FOOD    EQU 50           ; large (ration pack, from a crate/pot)
 DEF OAM_LOOT       EQU 25           ; loot OBJ slots 25..25+MAX_LOOT-1 (after the car)
 
 DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP_SPEED)
-DEF CAR_SPAWN_DX   EQU 0           ; spawn offset from the player start (tiles)
+DEF CAR_SPAWN_DX   EQU 0           ; FALLBACK spawn offset from the player start (tiles)
 DEF CAR_SPAWN_DY   EQU 3
 DEF FUEL_START     EQU METER_MAX   ; a full tank at spawn (0..METER_MAX, saturating)
+; Car spawn search (InitCar): the car looks for a clear 2x2 spot ON/next to a
+; road, away from the start and not inside a house, before falling back to the
+; near-player CAR_SPAWN_DX/DY placement. The primary axis lands CAR_MIN_DIST..
+; CAR_MIN_DIST+CAR_DIST_MASK tiles out ("not near the start point").
+DEF CAR_MIN_DIST    EQU 6          ; nearest a road-spawn can land (Chebyshev)
+DEF CAR_DIST_MASK   EQU 15         ; primary-axis spread (magnitude 6..21)
+DEF CAR_SPAWN_TRIES EQU 48         ; random anchors tried before the fallback
 
 ; --- Start menu (menu.asm, Pokemon-style pause menu) ------------------------
 ; START in the overworld opens a full-screen menu on SCRN1 (like the talk

@@ -567,6 +567,9 @@ TreeQuad:
 ; -----------------------------------------------------------------------------
 ; RoadHere: Z set if (wGenX, wGenY) is a road cell.
 ;
+; Avenues and cross-streets are 2 TILES WIDE (lanes jit and jit+1) so the 2x2
+; car can drive them; jit is 0..7 so the second lane stays inside the 16-band and
+; never bleeds into the neighbour. Spurs stay 1-wide (narrow dead-end alleys).
 ; Avenues are full-length straight VERTICAL lines — one per 16-wide band, its
 ; column jittered 0..7 by the band index alone — the connected backbone. Cross-
 ; streets are HORIZONTAL but JOG: a street's row is jittered per avenue-INTERVAL
@@ -596,8 +599,16 @@ RoadHere:
     ld a, [wGenX]
     and $0F                     ; xlow
     cp c
-    ret z                       ; on the avenue -> road (Z set)
-    jr nc, .eligible            ; xlow > jit_k -> kL = k, spur-eligible
+    ret z                       ; xlow == jit_k -> avenue lane 0 -> road (Z set)
+    jr c, .leftInterval         ; xlow < jit_k -> interval kL = k-1, no spur
+    ; xlow > jit_k: the avenue is 2 tiles wide (so the 2x2 car can drive it), so
+    ; lane 1 is the next column jit_k+1 (jit_k <= 7, so it stays inside the band).
+    inc c
+    cp c
+    ret z                       ; xlow == jit_k+1 -> avenue lane 1 -> road (Z set)
+    dec c                       ; C back to jit_k (the spur measures d from it)
+    jr .eligible
+.leftInterval:
     ; xlow < jit_k -> interval kL = k-1 (16-bit decrement of wHX), no spur
     ld a, [wHX]
     sub 1
@@ -660,6 +671,8 @@ RoadHere:
     ret
 .street:
     ; --- cross-street row jitter jit_s = hash(kL, y>>4, 22) & 7 ---
+    ; the cross-street is 2 tiles tall (rows jit_s and jit_s+1) so the 2x2 car can
+    ; drive it too — the same widening as the avenue (jit_s <= 7, stays in band).
     ld b, 22
     call Hash8
     and 7                       ; jit_s
@@ -667,7 +680,10 @@ RoadHere:
     ld a, [wGenY]
     and $0F                     ; ylow
     cp c
-    ret                         ; Z iff on the (jogging) cross-street
+    ret z                       ; ylow == jit_s -> cross-street lane 0
+    inc c
+    cp c
+    ret                         ; Z iff ylow == jit_s+1 -> cross-street lane 1
 ; wHY = wGenY >> 4, shifted alone so wHX is left untouched.
 .loadWHYshifted:
     ld a, [wGenY]
