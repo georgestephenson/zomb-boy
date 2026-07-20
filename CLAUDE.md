@@ -607,6 +607,11 @@ scroll updates — so there's no seam or one-frame latency.
   explicitly (don't trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
   `ShowPortrait` (talk.asm); the song data floats in its own bank, mapped
   **only** inside `InitSound`/`UpdateSound` (audio.asm) via `BANK(song_demo)`.
+  The **graphics data** (`gfx.asm` `GfxData`: tiles/font/palettes) is `BANK[3]`
+  too (shared with the boot-only title image), read **only** by
+  `LoadTiles`/`LoadFont`/`LoadPalettes` (video.asm), each of which maps
+  `BANK(Tiles)` and restores bank 1 — this is what keeps ROM0 (the fixed 16 KB
+  code bank) from overflowing, so keep boot-loaded data out of ROM0.
   Both restore bank 1 before returning. New banked data must do the same:
   switch, read, restore bank 1 — nothing else may assume another bank. **Cart RAM (`SECTION ... , SRAM`, the menu's SAVE block) is
   disabled by default; `DoSave` brackets every access with the `rRAMG` enable /

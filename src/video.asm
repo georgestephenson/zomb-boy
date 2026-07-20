@@ -80,7 +80,15 @@ InitAudio::
 ; Copy tile graphics into VRAM: the main Tiles table to $8000, then the
 ; per-persona survivor sprites after the font (TILE_PSURV_BASE). LCD should
 ; be off.
+;
+; The graphics DATA lives in a banked ROMX section (GfxData) to keep ROM0 from
+; overflowing; it's only read here at boot / title-return, so we map its bank
+; around the copy and restore bank 1 (the default-mapped "home" bank — song +
+; dialogue data — that the rest of the frame assumes). BANK(...) resolves at link
+; time, so this tracks wherever the linker places GfxData.
 LoadTiles::
+    ld a, BANK(Tiles)
+    ld [rROMB0], a
     ld hl, Tiles
     ld de, _VRAM
     ld bc, TilesEnd - Tiles
@@ -103,12 +111,16 @@ LoadTiles::
     ld a, b
     or a, c
     jr nz, .copyPersona
+    ld a, 1                     ; restore the home bank
+    ld [rROMB0], a
     ret
 
 ; Expand the 1bpp font/UI glyphs to 2bpp at $8800 (tile FONT_BASE). Writing the
 ; row byte to both bitplanes maps set pixels to colour 3 (ink) on colour 0
 ; (paper) — see BG palette PAL_BG_UI. LCD must be off.
 LoadFont::
+    ld a, BANK(Font1bpp)        ; GfxData bank (restored to bank 1 below)
+    ld [rROMB0], a
     ld hl, Font1bpp
     ld de, _VRAM + FONT_BASE * 16
     ld bc, Font1bppEnd - Font1bpp
@@ -122,10 +134,14 @@ LoadFont::
     ld a, b
     or a, c
     jr nz, .copy
+    ld a, 1                     ; restore the home bank
+    ld [rROMB0], a
     ret
 
 ; Load CGB BG palettes (BGPalette..End) and OBJ palette 0 (OBJPalette..End).
 LoadPalettes::
+    ld a, BANK(BGPalette)       ; GfxData bank (restored to bank 1 below)
+    ld [rROMB0], a
     ld a, BCPSF_AUTOINC
     ldh [rBCPS], a
     ld hl, BGPalette
@@ -152,6 +168,8 @@ LoadPalettes::
     ld a, %10011100                 ; OBJ: outline dark, face light, body mid
     ldh [rOBP0], a                  ; player
     ldh [rOBP1], a                  ; zombie
+    ld a, 1                         ; restore the home bank (GfxData was mapped in)
+    ld [rROMB0], a
     ret
 
 ; Install the OAM DMA trampoline into HRAM (DMA must be kicked from HRAM).
