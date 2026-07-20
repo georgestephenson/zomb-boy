@@ -572,18 +572,28 @@ scroll updates — so there's no seam or one-frame latency.
   tundra (each `BIOME_*`; the threshold cascade must stay in lockstep with
   `worldgen_model.py:biome()`). Each biome has its own `Gen*` routine assembling
   features from shared noise fields (`WaterField`, `TreeQuad`, `ScatterHash`), so
-  water clusters in marsh, straight roads+houses in city (`RoadHere` is now a
-  clean 16-grid), trees in forest, cactus in desert, cracked roads+rubble in
-  ruins, fenced wheat fields in farm, headstones+a church in graveyard, etc.
+  water clusters in marsh, straight roads+houses in city, trees in forest,
+  cactus in desert, cracked roads+rubble in ruins, fenced wheat fields in farm,
+  headstones+a church in graveyard, etc. **City streets (`RoadHere`) are one
+  straight avenue per 16-wide band, but each avenue's column is jittered 0..7 by
+  the band index *alone* (not by position along it)** — so every avenue stays a
+  full-length straight line (the network is therefore always connected: straight
+  lines cross every perpendicular line) while the *spacing* between avenues
+  varies 9..23 tiles, reading as irregular blocks rather than a rigid lattice.
+  **A city building yields to any avenue that runs through it** (`GenTileType`
+  checks `RoadHere` before letting a house stand) so streets stay whole; a
+  graveyard church always stands (no roads there). Ruins reuse the same avenues
+  and crack them.
   The **band order is deliberate**: forest sits just below the marsh band so the
   classic seed ($A5, field value 195) keeps its forest spawn (the reproducible
   test world), and marsh keeps the wet top end so its water still dominates the
   world's water (the model's clustering check). New biomes add **no water** (dry
   ground or, for tundra, solid ICE via the water field) so marsh stays dominant.
   Trees are **2×2** (a `TreeQuad` anchor + per-cell quadrant tile); houses are one
-  optional building per 16×16 chunk (`HouseTile`: wall perimeter + floor + door,
-  inset off the road grid), gated on city **or graveyard** (a church). Domain-
-  warped 2-octave water gives organic ponds.
+  optional building per 16×16 chunk (`HouseTile`: wall perimeter + floor + door),
+  gated on city **or graveyard** (a church), and are cut by any street that
+  crosses them (roads win — see above). Domain-warped 2-octave water gives
+  organic ponds.
 - **New-biome BG terrain tiles live at ids 57..63** (sand, cactus, snow, ice,
   grave, wheat, fence) — appended to the `Tiles` table (gfx.asm) after the splash
   sprite so `LoadTiles` streams them into the free VRAM gap between the UI tiles

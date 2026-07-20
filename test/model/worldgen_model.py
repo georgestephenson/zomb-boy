@@ -139,9 +139,15 @@ def tree_tile(x: int, y: int, thresh: int):
 
 
 def road_here(x: int, y: int) -> bool:
-    """Mirror of RoadHere: a clean, regular 16-tile street grid (the city reads
-    as laid-out blocks; the ruins biome reuses the same grid and cracks it)."""
-    return (x & 0x0F) == 0 or (y & 0x0F) == 0
+    """Mirror of RoadHere: one straight avenue per 16-wide band, its column
+    jittered 0..7 by the band index alone (not by y) so avenues stay full-length
+    straight lines (network always connected) while their spacing varies 9..23.
+    The ruins biome reuses this grid and cracks it."""
+    if (x & 0x0F) == (hash8((x >> 4) & U16, 0, 21) & 7):
+        return True
+    if (y & 0x0F) == (hash8(0, (y >> 4) & U16, 22) & 7):
+        return True
+    return False
 
 
 def house_tile(x: int, y: int):
@@ -329,9 +335,13 @@ def gen_tile_type(x: int, y: int) -> int:
     #    chunk's biome is city (a house) or graveyard (a church). Test the (cheap)
     #    footprint first so the costlier chunk-biome lookup only runs inside one.
     ht = house_tile(x, y)
-    if ht is not None and biome((x & ~15) & U16, (y & ~15) & U16) in (
-            BIOME_CITY, BIOME_GRAVEYARD):
-        return ht
+    if ht is not None:
+        cb = biome((x & ~15) & U16, (y & ~15) & U16)
+        # A graveyard church always stands (no roads there). A city building
+        # yields to any avenue the jittered street grid runs through it, so the
+        # road network stays connected.
+        if cb == BIOME_GRAVEYARD or (cb == BIOME_CITY and not road_here(x, y)):
+            return ht
 
     # 2) terrain biome sampled at the 2x2 block anchor (imperceptibly coarser
     #    than per-cell at 64-tile biome scale, but keeps trees whole)

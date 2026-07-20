@@ -53,13 +53,17 @@ GenTileType::
     ld a, [wGenY+1]
     ld [wBiY+1], a
     call CalcBiome              ; chunk-anchor biome (wGen & $FFF0)
+    cp BIOME_GRAVEYARD          ; graveyards get a lone church (same wall/door art);
+    jr z, .houseStands          ;   no roads there, so it always stands
     cp BIOME_CITY
-    jr z, .houseStands
-    cp BIOME_GRAVEYARD          ; graveyards get a lone church (same wall/door art)
-    jr z, .houseStands
-    jr .terrain
+    jr nz, .terrain
+    ; A city building yields to any avenue the (jittered) street grid runs through
+    ; it, so streets stay whole and the network stays connected (E is preserved
+    ; across RoadHere via Hash8). Otherwise the building stands.
+    call RoadHere
+    jr z, .terrain              ; on a street -> let GenCity draw the road
 .houseStands:
-    ld a, e                     ; chunk is city/graveyard -> the building stands
+    ld a, e                     ; the building stands
     ret
 .terrain:
     ; --- terrain biome at the block anchor (wGen & $FFFE): 2x2 trees stay whole ---
@@ -553,18 +557,48 @@ TreeQuad:
     ret
 
 ; -----------------------------------------------------------------------------
-; RoadHere: Z set if (wGenX, wGenY) is a road cell — a clean, regular 16-tile
-; grid (a city should read as laid-out blocks, not organic sprawl). The ruins
-; biome reuses this grid and then breaks it up, so the two read as intact vs
-; cracked versions of the same street plan. Mirror: worldgen_model.py:road_here.
+; RoadHere: Z set if (wGenX, wGenY) is a road cell. One straight avenue per
+; 16-wide band, but its column WITHIN the band is jittered 0..7 by the band
+; index alone (NOT by y) — so every avenue stays a full-length straight column
+; (guaranteeing the whole network is connected: straight lines always cross all
+; perpendicular lines) while the SPACING between avenues varies 9..23 tiles, so
+; the city reads as irregular blocks rather than a rigid lattice. Horizontal
+; streets work the same on y. The ruins biome reuses this and breaks it up.
+; Mirror: worldgen_model.py:road_here.
 ; -----------------------------------------------------------------------------
 RoadHere:
+    call LoadHfromGen
+    xor a, a
+    ld [wHY], a
+    ld [wHY+1], a               ; key the jitter on the avenue index only
+    call ShiftH
+    call ShiftH
+    call ShiftH
+    call ShiftH                 ; wHX = wGenX >> 4 (band index), wHY = 0
+    ld b, 21
+    call Hash8
+    and 7                       ; jitter 0..7 within the band
+    ld c, a
     ld a, [wGenX]
-    and $0F
-    ret z                       ; vertical avenue every 16 tiles (Z set)
+    and $0F                     ; column within the band
+    cp c
+    ret z                       ; on this band's vertical avenue (Z set)
+    call LoadHfromGen
+    xor a, a
+    ld [wHX], a
+    ld [wHX+1], a
+    call ShiftH
+    call ShiftH
+    call ShiftH
+    call ShiftH                 ; wHX = 0, wHY = wGenY >> 4
+    ld b, 22
+    call Hash8
+    and 7
+    ld c, a
     ld a, [wGenY]
     and $0F
-    ret                         ; Z iff on a horizontal street
+    cp c
+    ret                         ; Z iff on this band's horizontal street
 
 ; -----------------------------------------------------------------------------
 ; HouseTile: one optional building per 16x16 chunk. A = wall/floor/door tile if
