@@ -29,6 +29,8 @@ make play SCRIPT='walk right 60; state; entities; shot'
 make shot       # boot headless + screenshot to build/play/
 make clean      # remove build/ ; make distclean also removes .tools/
 python3 test/model/worldgen_model.py   # reference-model check for the generator
+python3 tools/export-tiles.py          # src/gfx.asm tile art -> img/tiles.png (edit in a pixel editor)
+python3 tools/import-tiles.py          # img/tiles.png -> src/gfx.asm (round-trips losslessly)
 ```
 
 The toolchain is a **pinned, repo-local dev dependency** (`.tools/`, gitignored),
@@ -744,7 +746,29 @@ scroll updates — so there's no seam or one-frame latency.
 - **A new BG tile type:** add its `TILE_*` id in `constants.inc`, its 8×8 art in
   `gfx.asm` (at the matching tile index), a `PassTable` entry (solid?) and an
   `AttrTable` entry (palette) in `world.asm`, and a branch in `GenTileType`.
-  Update the reference model + rerun it.
+  Update the reference model + rerun it. **Keep the tile PNG tools whole:**
+  `tools/export-tiles.py` / `import-tiles.py` (shared `tools/tilepng.py`)
+  round-trip **every** 8×8 tile in `gfx.asm` — the 2bpp backtick-`dw` blocks
+  (`Tiles`, `PersonaTiles`), the 1bpp `Font1bpp` glyphs, **and** the CGB
+  palettes (`BGPalette`/`OBJPalette`) — to/from `img/tiles.png` losslessly.
+  Tiles are rendered in **colour** through the palette they're shown with (OBJ
+  index 0 → PNG transparency), and multi-tile objects render as their real 2D
+  shape (`GROUPS` in `tilepng.py`: the tree/car-side as 2×2, the UI frames as
+  3×3, etc.). The round-trip is idempotent both ways (export→import a no-op on
+  `gfx.asm`; import→export a no-op on the PNG). Editing the PNG: repaint a pixel
+  with a colour already in its palette → the 2bpp index updates; recolour a whole
+  palette slot to a **brand-new** colour (uniformly across every tile sharing it)
+  → the palette entry updates. Import validates consistency (stray colours,
+  non-uniform swaps on shared palettes, collapsing two palette colours, non-1bpp
+  colours in a glyph all abort, leaving `gfx.asm` untouched). They must **cover
+  all the tiles**: when you add art *inside* an existing block, extend both
+  `TILE_PALETTES` (the tool must know each tile's palette to colour it) **and**
+  `GROUPS` (which must consume exactly the block's tiles, in order) in
+  `tilepng.py` — keep the palette keys in step with `AttrTable` (BG tiles), the
+  draw code's OBJ palettes, and `PO_PAL` (personas). A **new** art block needs a
+  `TILE_BLOCKS` + `TILE_PALETTES` + `GROUPS` entry (a new palette block, a
+  `PALETTE_BLOCKS` entry). After any change, re-run `export-tiles.py` and confirm
+  `export → import` leaves `gfx.asm` unchanged (`git diff src/gfx.asm` empty).
 - **A new module:** create `src/<name>.asm` (the Makefile globs `src/**/*.asm`),
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
