@@ -16,3 +16,7 @@ img/portrait/source/
 img/portrait/backup/
 img/zombie/source/
 img/source/
+
+# Generated tile atlas — derivative of src/gfx.asm; regenerate with
+# `python3 tools/export-tiles.py`. Not committed (keeps the repo small).
+img/tiles.png
