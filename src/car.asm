@@ -94,23 +94,19 @@ InitCar::
 ; Walks the four tiles by stepping wGen; on return wGen is back at the top-left.
 ; -----------------------------------------------------------------------------
 Is2x2Clear::
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .no0                 ; (0,0) solid — wGen already at anchor
     ld hl, wGenX
     call Inc16Ptr               ; -> (1,0)
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .no1
     ld hl, wGenY
     call Inc16Ptr               ; -> (1,1)
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .no2
     ld hl, wGenX
     call Dec16Ptr               ; -> (0,1)
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .no3
     ld hl, wGenY
     call Dec16Ptr               ; -> (0,0): all clear
@@ -201,8 +197,7 @@ StartBoardStep::
     call CheckCarAt
     and a
     jr z, .abort               ; not the car anymore (player turned/moved) -> bail
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .abort              ; the car parks on passable ground; guard anyway
     call CheckZombieAt
     and a
@@ -292,8 +287,7 @@ TryEjectDir:
     pop af
     push af
     call StepGen               ; wGen = tile one step in that direction
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .no                 ; wall/tree/water -> not an exit tile
     call CheckZombieAt
     and a
@@ -435,8 +429,7 @@ CheckDriveEdge::
     call Inc16Ptr
     ; fall through to check tile2
 .checkGen:
-    call GenTileType
-    call IsSolid
+    call GenSolid
     ret nz                      ; solid/water -> blocked
     call CheckZombieAt
     and a

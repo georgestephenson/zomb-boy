@@ -20,7 +20,13 @@ INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
 INCLUDE "include/charmap.inc"       ; toast strings assemble to font tile ids
 
-SECTION "Loot Code", ROM0
+; Lives in ROMX BANK[1] (the always-mapped default bank, like anim.asm and the
+; alert code) because the fixed ROM0 bank is nearly full. Every entry point runs
+; only with bank 1 mapped: boot init (after Start maps bank 1), the overworld
+; logic/draw phases, and UpdateAlert (itself BANK[1]). Everything it calls is
+; exported ROM0 (entity pool helpers, CalcBiome, Rand, AddItem, ShowNotice* —
+; which copy their string argument immediately, while our bank is mapped).
+SECTION "Loot Code", ROMX, BANK[1]
 
 ; Starting loot offsets from the player spawn: FOOD ONLY (non-solid), so nothing
 ; blocks the boot walk paths the movement/collision tests drive through. A slot
@@ -86,8 +92,7 @@ InitLoot::
     ld hl, wGenY
     call AddSByteAt16
     ; only place on passable ground; else skip this slot (no far nudge)
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .next
     call ClearEnt
     ld a, 1
@@ -217,7 +222,7 @@ CheckLoot::
     and a, a
     ret nz                         ; no scavenging from the driver's seat
     ; --- auto-collect food on the player's own tile ---
-    call GenFromPlayerLoot
+    call GenFromPlayer
     call LootIndexAt
     and a, a
     jr z, .press
@@ -233,7 +238,7 @@ CheckLoot::
     and PAD_A
     ret z
     ; --- A pressed: the tile the player faces ---
-    call GenFromPlayerLoot
+    call GenFromPlayer
     ld a, [wFacing]
     call StepGen
     call LootIndexAt
@@ -243,19 +248,6 @@ CheckLoot::
     call CollectLoot
     ld hl, wNewKeys
     res 4, [hl]                    ; consume A (PAD_A = bit 4) — not a talk press
-    ret
-
-; GenFromPlayerLoot: wGenX/wGenY <- the player's world tile (local copy; the
-; entity module's GenFromPlayer is file-local there).
-GenFromPlayerLoot:
-    ld a, [wPlayerWX]
-    ld [wGenX], a
-    ld a, [wPlayerWX+1]
-    ld [wGenX+1], a
-    ld a, [wPlayerWY]
-    ld [wGenY], a
-    ld a, [wPlayerWY+1]
-    ld [wGenY+1], a
     ret
 
 ; CollectLoot: A = loot index. Apply its effect, free the slot, blip + HUD.

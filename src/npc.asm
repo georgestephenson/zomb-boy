@@ -72,8 +72,7 @@ InitNPCs::
     ; denser with solids than the old scatter was)
     ld b, 8
 .passable:
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr z, .placeOk
     ld hl, wGenX
     call Inc16Ptr

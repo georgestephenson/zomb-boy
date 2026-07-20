@@ -28,7 +28,7 @@ ItemType::
     db ITYPE_KEY        ; 10 KEYCARD
 
 ; Name pointers (indexed by ITEM_*). Names are space-padded to ITEM_NAME_MAX
-; (10) chars so bag/equip columns align, then 0-terminated.
+; (8) chars so bag/equip columns align, then 0-terminated.
 ItemNames::
     dw NmNone, NmBat, NmPistol, NmKnife, NmVest, NmHelmet
     dw NmAmulet, NmWatch, NmGrenade, NmMedkit, NmKeycard

@@ -29,6 +29,11 @@ gitignored `.tools/`.
 make          # build the ROM (build/zombboy.gbc)
 make run      # build + play it (auto-downloads the mGBA emulator on first run)
 make test     # run the test suite (see Testing below)
+make stats    # per-bank ROM/RAM utilization report (from the linker map)
+make play SCRIPT='walk right 60; state; shot'
+              # play the game headless from a script: inputs, screenshots,
+              # memory/state dumps (tools/play.py --help for the commands)
+make shot     # boot headless and screenshot to build/play/
 make clean    # remove build output
 ```
 
@@ -136,7 +141,16 @@ Current coverage:
 - **Headless integration tests** ([`test/integration/`](test/integration/))
   boot the ROM in PyBoy and assert on memory, OAM and the tilemap: movement,
   collision, streaming, zombies, sprite hygiene, the full dialogue flow, and
-  poison-boot checks that nothing depends on zeroed power-on RAM.
+  poison-boot checks that nothing depends on zeroed power-on RAM. They run in
+  parallel (pytest-xdist), so the whole suite finishes in seconds.
+- **Accuracy smoke** (`make smoke`): SameBoy — the accuracy-reference
+  emulator — boots the ROM in CGB *and true DMG mode* (which PyBoy can't
+  emulate for a CGB-flagged cart), catching deadlocks/blank screens and
+  screenshotting the end state. CI runs it on every push.
+- **Ad-hoc inspection**: `make play` drives the ROM headless from a command
+  script (inputs, screenshots, decoded state, an ASCII world map) and
+  `make stats` reports per-bank ROM usage — CI posts the bank report on every
+  run and uploads boot/world/menu screenshots as artifacts.
 
 ## Roadmap
 
@@ -150,14 +164,51 @@ Built in vertical slices (see [doc 02 §6](docs/design/02-world-and-exploration.
       timing; SELECT+START replays the classic seed)
 - [x] v0.4 — survivors: 10 personas, grammar dialogue, 8-tone random menus,
       affinity, 3-round outcomes
-- [ ] Gift items + real survivor combat (wire the outcome placeholders up)
-- [ ] Houses + rivers (multi-tile / connected structures)
-- [ ] Turn-based combat (2 weapons + 2 skills)
-- [ ] Save system (battery SRAM diffs)
-- [ ] Food/sleep survival pressure
+Versioned plan to 1.0. Minor versions are cut by the maintainer (see
+CLAUDE.md's versioning rule); the buckets below are the intent, not a promise
+of ordering within a version.
+
+**v0.6 — combat core**
+- [ ] Turn-based combat (2 weapons + 2 skills), replacing the placeholder flash
+- [ ] Gift items + real survivor combat (wire the talk outcome placeholders up)
+- [ ] Wire the six stats + levels/XP into combat (END → real max HP)
+
+**v0.7 — a save you can trust (era-authentic save discipline)**
+- [ ] Load-on-boot (title: CONTINUE / NEW GAME)
+- [ ] Dual-copy save with independent checksums + corruption fallback
+      (the Pokémon Gen II pattern: bad primary → restore from backup)
+- [ ] "SAVING... DON'T TURN OFF THE POWER" notice during the SRAM write
+- [ ] Boot-time button-combo save wipe (out-of-band, like Up+SELECT+B)
+
+**v0.8 — world depth**
+- [ ] Houses you can enter + rivers (multi-tile / connected structures)
+- [ ] Food/sleep survival pressure (starvation damage, exhaustion)
+- [ ] Day/night: clock-driven palettes + spawn tables (frame-counted clock —
+      the accepted MBC5 stand-in for MBC3's RTC)
+
+**v0.9 — console polish**
+- [ ] Hardware ID from the boot A/B registers ($01 DMG / $FF MGB / $11 CGB,
+      B bit 0 = GBA) + brightened palette set on GBA's darker LCD
+- [ ] Deliberate DMG art pass (hand-tuned 4-shade BGP/OBP per element,
+      human-verified on mGBA/hardware — not just "colors collapsed")
+- [ ] Super Game Boy support: $0146=$03 flag + custom border + one PAL packet
+- [ ] Audio identity: per-biome songs + zombie/battle SFX (hUGETracker)
+- [ ] Real-hardware verification pass on a flash cart (EverDrive GB X7 /
+      EZ-Flash Jr) on DMG + CGB, with SameBoy in the emulator rotation
+
+**v1.0 — release**
+- [ ] itch.io channel push from CI (butler) once fully playable/finished
+- [ ] Homebrew Hub submission (+ GB Compo entry if the calendar lines up)
+- [ ] Attract mode / title demo loop, manual, box-style cover art
+- [ ] Decide: link cable (trade/versus over rSB/rSC) — in or out of 1.0
+
+Deliberately unscheduled: physical cartridge run (Incube8 / Ferrante Crafts
+take MBC5+battery exactly like our header), rumble (MBC5 $1C-$1E), MBC3 RTC.
 
 ## License / attribution
 
 Toolchain: [RGBDS](https://github.com/gbdev/rgbds) and
-[hardware.inc](https://github.com/gbdev/hardware.inc); emulator:
-[mGBA](https://mgba.io/). All pinned and fetched by `make tools` / `make run`.
+[hardware.inc](https://github.com/gbdev/hardware.inc); emulators:
+[mGBA](https://mgba.io/) (interactive) and
+[SameBoy](https://sameboy.github.io/) (headless accuracy smoke). All pinned
+and fetched by `make tools` / `make run` / `make sameboy`.

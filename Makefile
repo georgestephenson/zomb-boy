@@ -11,6 +11,12 @@
 #   make hugetracker Install the pinned hUGETracker music tracker (~4.6 MB)
 #   make run        Build, then play the ROM (auto-installs the emulator)
 #   make test       Build + run the memory-safety / logic test ROMs
+#   make smoke      Boot-smoke the ROM in SameBoy, CGB + true DMG mode
+#   make sameboy    Just install the pinned SameBoy tester (source build)
+#   make stats      Per-bank ROM/RAM utilization report (from the .map file)
+#   make play       Drive the ROM headless with a command script + screenshots
+#                   e.g. make play SCRIPT='walk right 60; state; shot'
+#   make shot       Boot headless and save a screenshot to build/play/
 #   make clean      Remove build output (keeps the downloaded toolchain)
 #   make distclean  Remove build output AND all downloaded tools
 # =============================================================================
@@ -28,6 +34,11 @@ HWINC_REF       := v4.12.0
 # Mesen2, whose settings-parsing std::regex crashes (std::bad_cast) on very new
 # libstdc++ builds like Ubuntu 26.04's.
 EMU_VERSION     := 0.10.5
+# LIJI32/SameBoy release tag. The accuracy-reference emulator; we build its
+# headless Tester as a second-emulator smoke gate (`make smoke`) — it can run
+# our CGB-flagged ROM in true DMG mode, which PyBoy cannot. Always a source
+# build (SameBoy ships no Linux binaries); needs git/make/cc + our RGBDS.
+SAMEBOY_VERSION := 1.0.3
 # SuperDisk/hUGETracker release tag. The GUI music tracker you compose in; it
 # exports songs in "RGBDS .asm" format that our vendored hUGEDriver plays. A dev
 # tool only (the ROM builds without it), so it's a pinned, checksum-verified
@@ -47,6 +58,8 @@ EMU_DIR         := $(TOOLS_DIR)/emulator
 EMU_BIN         := $(EMU_DIR)/squashfs-root/AppRun
 HUGETRACKER_DIR := $(TOOLS_DIR)/hugetracker
 HUGETRACKER_BIN := $(HUGETRACKER_DIR)/.version   # sentinel: fetch stamps this
+SAMEBOY_DIR     := $(TOOLS_DIR)/sameboy
+SAMEBOY_TESTER  := $(SAMEBOY_DIR)/sameboy_tester
 
 # --- Project layout ---------------------------------------------------------
 SRC_DIR         := src
@@ -77,11 +90,17 @@ AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o
 ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
 # rgbfix: -c = GBC-compatible ($80, runs on DMG too — the ROM detects the console
 # at boot and falls back to grayscale), -v = fix header, -p 0xFF = pad (also sets
-# the ROM-size byte), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 64 KB — ROMX bank 1
+# the ROM-size byte; $FF is the era-authentic filler, matching unprogrammed mask
+# ROM), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 64 KB — ROMX bank 1
 # is the default-mapped bank (song + dialogue data), bank 2 the portraits — and
 # the cart carries 8 KB of battery-backed RAM (-r 0x02) for the menu's SAVE
 # option (see menu.asm DoSave / the SaveData SRAM section). Title <= 11.
-FIXFLAGS        := -c -v -p 0xFF -m 0x1B -r 0x02 -t ZOMBBOY
+# Licensed-era header conventions (cosmetic, but what a real post-1994 cart
+# carried): -l 0x33 = old-licensee $33 (the "see new licensee" escape every
+# SGB-era cart used — also a precondition if we ever add SGB support),
+# -k ZB = our two-char new-licensee code, -j = non-Japan destination,
+# -n 0 = mask ROM version (bump on re-release).
+FIXFLAGS        := -c -v -p 0xFF -m 0x1B -r 0x02 -t ZOMBBOY -l 0x33 -k ZB -j -n 0
 
 # Emulator used by `make run`. Defaults to the vendored, pinned mGBA (auto-
 # fetched on first `make run`). Override to use your own, e.g.
@@ -91,7 +110,7 @@ EMULATOR        ?= $(EMU_BIN)
 # =============================================================================
 # Targets
 # =============================================================================
-.PHONY: all tools emulator hugetracker run test clean distclean
+.PHONY: all tools emulator hugetracker sameboy run test smoke stats play shot clean distclean
 
 all: $(ROM)
 
@@ -117,6 +136,11 @@ $(EMU_BIN):
 
 $(HUGETRACKER_BIN):
 	./tools/fetch-hugetracker.sh $(HUGETRACKER_VERSION) $(HUGETRACKER_DIR)
+
+sameboy: $(SAMEBOY_TESTER)
+
+$(SAMEBOY_TESTER): | $(RGBASM)
+	./tools/fetch-sameboy.sh $(SAMEBOY_VERSION) $(SAMEBOY_DIR) $(RGBDS_DIR)
 
 # --- Build ------------------------------------------------------------------
 # Every object depends on the toolchain + includes being present (order-only),
@@ -163,6 +187,36 @@ run: $(ROM)
 # Tests need the built ROM (they run it headless in PyBoy), not the GUI emulator.
 test: $(ROM)
 	./tools/run-tests.sh
+
+# Second-emulator smoke gate: boot the ROM in SameBoy (the accuracy-reference
+# core) in BOTH CGB and true DMG mode — deadlock/blank-screen detection plus
+# end-state screenshots into build/smoke/. `make test` also runs this when the
+# tester is already installed; this target additionally auto-builds it.
+smoke: $(ROM) $(SAMEBOY_TESTER)
+	./tools/smoke-sameboy.sh $(ROM) $(SAMEBOY_DIR) build/smoke
+
+# --- Inspection (works headless; no GUI or display needed) -------------------
+# Per-bank utilization from the linker map — "how full is ROM0 and what's
+# eating it". Plain python3, no venv.
+stats: $(ROM)
+	python3 tools/romstats.py --map $(basename $(ROM)).map
+
+# Scripted headless play: boot the ROM in PyBoy (same harness as the tests),
+# run a command script (inputs, screenshots, memory/state dumps, ASCII map).
+# Anyone without a display — CI, agents — can *play and look at* the game:
+#   make play SCRIPT='walk right 60; state; entities; shot'
+# See tools/play.py --help for the command list. Screenshots -> build/play/.
+VENV_OK := $(TOOLS_DIR)/venv/.ok
+$(VENV_OK):
+	./tools/setup-testenv.sh $(TOOLS_DIR)/venv
+
+SCRIPT ?= state; shot
+play: $(ROM) $(VENV_OK)
+	$(TOOLS_DIR)/venv/bin/python tools/play.py '$(SCRIPT)'
+
+# One-shot "what does it look like right now": boot + screenshot.
+shot: $(ROM) $(VENV_OK)
+	$(TOOLS_DIR)/venv/bin/python tools/play.py 'shot'
 
 # --- Cleanup ----------------------------------------------------------------
 clean:

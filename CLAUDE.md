@@ -17,7 +17,16 @@ don't gold-plate ahead of a working core loop. Anything not yet needed is marked
 ```sh
 make            # build build/zombboy.gbc (auto-fetches pinned toolchain)
 make run        # build + launch in the vendored mGBA (auto-fetched first time)
-make test       # runs tools/run-tests.sh (model + on-target ROMs)
+make test       # runs tools/run-tests.sh (model + on-target ROMs; also runs
+                # the SameBoy smoke when the tester is installed)
+make smoke      # SameBoy accuracy smoke: boots the ROM in CGB AND true DMG
+                # mode (the DMG path PyBoy can't run); auto-builds the tester
+make sameboy    # just install the pinned SameBoy tester (source build)
+make stats      # per-bank ROM/RAM utilization from the .map (ROM0 is tight!)
+make play SCRIPT='walk right 60; state; entities; shot'
+                # scripted headless play: inputs, screenshots, memory/state
+                # dumps, ASCII world map — see tools/play.py --help
+make shot       # boot headless + screenshot to build/play/
 make clean      # remove build/ ; make distclean also removes .tools/
 python3 test/model/worldgen_model.py   # reference-model check for the generator
 ```
@@ -39,11 +48,14 @@ the `Makefile` (`RGBDS_VERSION`, `HWINC_REF`, `EMU_VERSION`).
 - **`hardware.inc` is pinned to v4.12.0 on purpose.** v5.0 renamed every constant
   (`LCDCF_ON` → `LCDC_ON`, dropped `_VRAM`/`SCRN_Y`/`BCPSF_AUTOINC`, ...). Our
   source uses the classic v4 names that match Pan Docs and every tutorial.
-- **No headless input testing available.** The mGBA AppImage ships only the Qt
-  GUI (`mgba-qt`) — no Lua/CLI. So we can boot-smoke-test and validate *pure*
-  logic via host reference models, but *interactive* behavior (scrolling feel,
-  animation, collision) needs a human running `make run`. Say so; don't claim
-  interactive behavior is "verified."
+- **Headless input testing goes through PyBoy, not mGBA.** The mGBA AppImage
+  ships only the Qt GUI (`mgba-qt`) — no Lua/CLI. But `make play` (tools/play.py,
+  same PyBoy harness as the tests) can *drive* the game headless: scripted
+  inputs, screenshots, decoded state/entity dumps, an ASCII world map. Use it to
+  verify behavior and eyeball frames. What it still can't verify is *feel*
+  (scrolling smoothness, animation timing on real hardware) and DMG-mode
+  rendering — those need a human running `make run`. Say so; don't claim felt
+  behavior is "verified."
 - **Sandboxed/hosted sessions (e.g. Claude's web environment) block GitHub
   *release-asset* downloads at the egress policy (HTTP 403).** What that breaks
   and what still works, verified in-environment:
@@ -63,6 +75,9 @@ the `Makefile` (`RGBDS_VERSION`, `HWINC_REF`, `EMU_VERSION`).
   * **Emulator**: `make run` (mGBA) can't fetch its AppImage here and isn't
     usable headless anyway — that's fine, headless tests use PyBoy via pip.
     Interactive checks still need a human on a normal machine.
+  * **SameBoy** (`make smoke`/`make sameboy`) is always a source build (no
+    Linux release binaries exist), so it works here unattended too — git clone
+    + cc + our pinned RGBDS for its boot ROMs, ~a minute on first build.
 
 ## Architecture
 
@@ -188,7 +203,11 @@ scroll updates — so there's no seam or one-frame latency.
   touches `Rand` when it actually spawns" discipline, so it's inert near spawn.
 - **Kinds are biome-flavoured** (`PickLootKind`, from the ring tile's `CalcBiome`,
   via the dynamic RNG not the terrain hash): forest → apples, city → beans,
-  everywhere → the odd container (crate/pot common, chest ~1/8). `InitLoot` seeds
+  everywhere → the odd container (crate/pot common, chest ~1/8). **The module
+  lives in ROMX `BANK[1]`** (moved when ROM0 filled up): every entry point —
+  boot init, the overworld logic/draw phases, and `UpdateAlert` (itself
+  BANK[1]) — runs with bank 1 mapped, and everything it calls is exported
+  ROM0. `InitLoot` seeds
   a handful of **food only** near the spawn (containers are solid and would block
   the movement tests' walk paths); a seed slot on a solid tile is skipped, never
   nudged (a far nudge could trip a cull-then-respawn mid-test).
@@ -615,8 +634,9 @@ scroll updates — so there's no seam or one-frame latency.
 - **The cart is 128 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
   `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds the
   dialogue data + code (read throughout talk mode) and — now that ROM0 is full —
-  the `anim.asm` living-world code (`BANK[1]`, run from the always-mapped bank so
-  it needs no switching, exactly like `dialogue.asm`); boot maps bank 1
+  the `anim.asm` living-world code and the whole of `loot.asm` (`BANK[1]`, run
+  from the always-mapped bank so they need no switching, exactly like
+  `dialogue.asm`); boot maps bank 1
   explicitly (don't trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
   `ShowPortrait` (talk.asm); the song data floats in its own bank, mapped
   **only** inside `InitSound`/`UpdateSound` (audio.asm) via `BANK(song_demo)`.
@@ -672,6 +692,10 @@ scroll updates — so there's no seam or one-frame latency.
 - **The generator and its reference model must stay in lockstep.** If you change
   `GenTileType`/`Hash8` in `world.asm`, update `test/model/worldgen_model.py` to
   match byte-for-byte and re-run it.
+- **Use the shared helpers, don't re-inline them:** `GenSolid` (world.asm) for
+  the generate-then-passability test on wGenX/wGenY, `GenFromPlayer::`
+  (entity.asm) to seed wGen from the player's tile. Both are exported ROM0, so
+  they're callable from any bank.
 
 ## Adding things
 
@@ -723,3 +747,10 @@ scroll updates — so there's no seam or one-frame latency.
 - Commit messages: **do not** add Claude as an author/co-author (user's global
   rule). Branch off before committing on a default branch; only commit/push when
   asked.
+- **Versioning: minor bumps are the user's call.** Never bump the minor version
+  (v0.5 → v0.6) or tag a new minor release without asking first — the roadmap
+  buckets in README.md say what each minor means, and the user decides when a
+  version is "done". Patch/hotfix bumps (v0.5.0 → v0.5.1) are fine without
+  asking. When cutting any release tag, bump the cart header's mask-ROM version
+  byte to match (`rgbfix -n` in the Makefile's `FIXFLAGS`) — a real cartridge
+  revision did the same.
