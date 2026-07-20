@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 # =============================================================================
-# import-tiles.py — read img/tiles.png back and rewrite the tile art in
-# src/gfx.asm in place.
+# import-tiles.py — read img/tiles.png back and rewrite the tile art (and any
+# swapped palette colours) in src/gfx.asm in place.
 #
-# Only the 8 backtick digits of each tile row are replaced; every comment,
-# label, palette and byte of spacing in gfx.asm is preserved. Each pixel is
-# snapped to the nearest of the four canonical greys export-tiles.py wrote, so
-# the round-trip is lossless: export then import is a no-op on gfx.asm, and
-# import then export is a no-op on the PNG.
+# Only the pixel digits/bytes of each tile and the palette expressions that
+# actually changed are rewritten; every comment, label and byte of spacing is
+# preserved. Pixels painted with an existing palette colour update the 2bpp
+# indices; a colour painted in a BRAND-NEW colour (uniformly over one palette
+# slot) updates that BGPalette/OBJPalette entry instead. The round-trip is
+# lossless: export then import is a no-op on gfx.asm, import then export a no-op
+# on the PNG.
 #
-# The atlas must have exactly as many tiles as gfx.asm expects; if you added
-# tiles, run export-tiles.py first (or after editing the PNG geometry, check
-# TILE_BLOCKS in tools/tilepng.py). See CLAUDE.md for the maintenance rule.
+# Validation aborts (leaving gfx.asm untouched) on an inconsistent edit — a stray
+# colour, a slot recoloured non-uniformly across tiles that share it, collapsing
+# two palette colours into one, or a non-1bpp colour in a font glyph. See
+# tools/tilepng.py for the exact rules and CLAUDE.md for the maintenance rule.
 #
 #   python3 tools/import-tiles.py
 # =============================================================================
@@ -23,10 +26,16 @@ import tilepng  # noqa: E402
 
 
 def main():
-    counts = tilepng.import_()
+    counts, changed = tilepng.import_()
     names = [b[0] for b in tilepng.TILE_BLOCKS]
     for n, c in zip(names, counts):
         print(f"  {n:<14} {c:3d} tiles")
+    if changed:
+        print(f"palette colours updated ({len(changed)}):")
+        for (kind, num), slot in changed:
+            print(f"  {kind}{num} slot {slot}")
+    else:
+        print("no palette colours changed")
     print(f"updated {os.path.relpath(tilepng.GFX, tilepng.ROOT)} from "
           f"{os.path.relpath(tilepng.ATLAS, tilepng.ROOT)} ({sum(counts)} tiles)")
 
