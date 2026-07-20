@@ -201,6 +201,28 @@ wHUDDirty::         ds 1               ; nonzero: wHUDText needs a VRAM push
 wNoticeTimer::      ds 1               ; >0: a pickup toast owns the row (frames left)
 wHUDText::          ds HUD_COLS        ; the composed row (font tile ids)
 
+; Day/night palette tint (daynight.asm). wDayBucket is the currently-applied
+; DN_* bucket (DN_INVALID forces a re-tint). ComputeTint fills wTintPal (the 4
+; terrain palettes, tinted) in the logic phase; PushDayNight streams it to
+; palette RAM in VBlank when wTintPending is set. The rest are per-call scratch.
+SECTION "DayNight State", WRAM0
+wDayBucket::        ds 1               ; applied DN_* bucket (DN_INVALID = none yet)
+wTintPending::      ds 1               ; nonzero: wTintPal needs a VBlank push
+wNeutralPal::       ds 32              ; boot copy of BGPalette 0..3 (LoadPalettes
+                                       ; caches it while the gfx bank is mapped, so
+                                       ; ComputeTint — in BANK[1] — needn't switch)
+wTintPal::          ds 32              ; BG palettes 0..3, tinted (4 pals x 4 x 2 B)
+wTintFR::           ds 1               ; per-call: R/G/B scale factors (0..8)
+wTintFG::           ds 1
+wTintFB::           ds 1
+wTintLo::           ds 1               ; per-colour scratch: source lo/hi bytes
+wTintHi::           ds 1
+wTintR::            ds 1               ; per-colour scratch: scaled channels
+wTintG::            ds 1
+wTintBb::           ds 1
+wTintOut0::         ds 1               ; per-colour scratch: repacked lo/hi bytes
+wTintOut1::         ds 1
+
 ; Talk mode (survivor dialogue screen) — see talk.asm / dialogue.asm.
 SECTION "Talk State", WRAM0
 wTalkNPC::          ds 1               ; index of the NPC we're talking to

@@ -100,6 +100,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `dialogue_data.asm` | Personas, word banks, templates (ROMX; charmap strings) |
 | `anim.asm` | Living-world tile-art animation: water shimmer, tree sway, brush rustle, house-door open/close (shared-tile-art swaps; no map/OAM changes) |
 | `hud.asm` | Window-layer status bar (HP/food/energy/clock) + the survival tick |
+| `daynight.asm` | Time-of-day palette tint: re-shades the four terrain BG palettes to the clock (CGB only), rewriting palette RAM in VBlank on a bucket change |
 | `battle.asm` | Placeholder battle transition (flash) |
 | `menu.asm` | START pause menu (MODE_MENU): party/equip/bag/status/save/options/exit |
 | `items.asm` | Item database (type + name tables) + inventory helpers (party/bag init) |
@@ -288,6 +289,35 @@ scroll updates — so there's no seam or one-frame latency.
   default-mapped bank and is mapped in every context these routines run, so ROM0
   callers reach it directly with no bank switching (see the banking invariant).
 
+### Day/night tint (daynight.asm, docs/design 07 §1.3/§5.1 — CGB only)
+- **The four terrain BG palettes (0..3) are re-shaded to the time of day** by
+  rewriting palette memory — the cheapest colour effect on the platform (no VRAM
+  tile writes, no OAM, no per-frame cost). Palette 4 (talk/HUD UI) and 5..7
+  (portraits) are untouched, so the status bar and dialogue stay readable at every
+  hour. Sprites (OBJ palettes) are not tinted, so actors stay vivid against the
+  shaded world.
+- **CGB only.** DMG has one 4-shade grey `BGP` and no per-palette colour, so a
+  day/night *tint* is inherently a colour-hardware feature; `UpdateDayNight`
+  early-returns on DMG (the path stays neutral, and `test_dmg` is unaffected).
+- **Four buckets share the dialogue clock's boundaries** (`DN_MORNING` 5..11,
+  `DN_DAY` 12..17, `DN_DUSK` 18..21, `DN_NIGHT` 22..4 — same as `CTX_*`) so the
+  world *looks* like what the NPCs say. **Morning and day are identity factors**,
+  so at `CLOCK_START_HOUR` (08:00) the tint reproduces `BGPalette` byte-for-byte —
+  boot state is unchanged and the whole existing suite is unperturbed. Dusk warms
+  and dims; night darkens and cools toward blue (`TintFactors`, `out = in*f >> 3`).
+- **Determinism:** the shade is a pure function of `wClockH`; it never touches
+  `Rand`, so spawn/loot/talk determinism holds.
+- **Split like the rest of the engine:** `UpdateDayNight` (logic phase) detects a
+  bucket change and runs `ComputeTint` (scale 16 colours into `wTintPal`);
+  `PushDayNight` (VBlank) streams the 32 bytes to palette RAM when `wTintPending`.
+  It reads from **`wNeutralPal`** — a WRAM copy of `BGPalette` 0..3 that
+  `LoadPalettes` caches at boot *while the gfx bank is mapped* — so the BANK[1]
+  compute code never switches banks (the ROM banking invariant: a banked routine
+  must not map another bank while executing its own code). Menu/talk leave palettes
+  0..3 alone, so the tint persists across those modes with no re-apply. Lives in
+  ROMX `BANK[1]`. `test/integration/test_daynight.py` verifies the logic; the
+  *look* is a human check on mGBA/hardware.
+
 ### HUD (hud.asm, docs/design/03 — v0: meters visible + draining, non-lethal)
 - The status bar is the **hardware window** over the **bottom 8 px**
   (WY=SCRN_Y-8, WX=7), sourced from **SCRN1 row 0** — free because the talk
@@ -310,7 +340,8 @@ scroll updates — so there's no seam or one-frame latency.
   (`CLOCK_MINUTE_FRAMES` frames/minute); time pauses in talk/alert.
 - Sprites render **on top of** the window, so `EntScreenPos` culls any sprite
   with OAM Y >= 145 (its 8-px box would reach the bar). The player never can
-  (fixed at screen row 9). Day/night palettes and starvation damage are LATER.
+  (fixed at screen row 9). Starvation damage is LATER; the day/night palette
+  tint now ships (see the Day/night section below).
 - **Pickup toasts** reuse the row **without pausing**: `ShowNotice` (a charmap'd
   string) / `ShowNoticeItem` (`GOT <name>` from an item id) overwrite `wHUDText`
   and arm `wNoticeTimer` (`NOTICE_FRAMES`). `ComposeHUD` yields while the timer is

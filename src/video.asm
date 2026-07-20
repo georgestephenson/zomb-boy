@@ -151,6 +151,19 @@ LoadPalettes::
     ldh [rBCPD], a
     dec b
     jr nz, .bg
+    ; Cache the four terrain palettes (0..3 = the first 32 bytes) into WRAM for
+    ; the day/night tint. daynight.asm's ComputeTint runs from BANK[1] and must
+    ; not map this graphics bank away mid-routine, so it reads this copy instead
+    ; (the bank is still mapped here, in ROM0 — see the ROM banking invariant).
+    ld hl, BGPalette
+    ld de, wNeutralPal
+    ld b, 32
+.cache:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .cache
     ld a, OCPSF_AUTOINC
     ldh [rOCPS], a
     ld hl, OBJPalette

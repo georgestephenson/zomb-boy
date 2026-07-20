@@ -452,6 +452,20 @@ DEF DOOR_LINGER       EQU 16       ; frames a door stays open after you step off
 DEF PAL_BG_UI      EQU 4           ; BG palette for the whole talk screen
                                    ; (0-3 belong to the biome terrain)
 
+; --- Day/night palette tint (daynight.asm) ----------------------------------
+; A time-of-day shade applied to the four TERRAIN BG palettes (0-3) by
+; rewriting palette memory in VBlank — CGB only (DMG has one grey BGP and can't
+; tint per palette). The buckets share the dialogue clock's boundaries so the
+; world LOOKS like what the NPCs say (constants CTX_NIGHT/MORNING/DUSK/DAY).
+; Morning and day reproduce the authored BGPalette exactly (identity factors),
+; so boot at CLOCK_START_HOUR (08:00 = morning) shows the neutral palette and
+; the whole existing test suite is unperturbed.
+DEF DN_MORNING     EQU 0           ; 05..11 — neutral bright (= BGPalette)
+DEF DN_DAY         EQU 1           ; 12..17 — neutral bright (= BGPalette)
+DEF DN_DUSK        EQU 2           ; 18..21 — warm + dimming
+DEF DN_NIGHT       EQU 3           ; 22..04 — dark + cool (blue)
+DEF DN_INVALID     EQU $FF         ; forces a re-tint on the next overworld frame
+
 ; --- Survivor portraits (talk.asm ShowPortrait + generated portrait_data.asm) -
 ; A 56x56 portrait is a 7x7 BG-tile block on the talk screen (49 tiles is far
 ; past the 40-OBJ limit, so it can only be background). Its tiles occupy a
