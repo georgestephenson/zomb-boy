@@ -321,8 +321,7 @@ ExitTalkScreen:
                                ; window HUD (tiles + attrs) inside this VBlank
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9800 | LCDCF_WINON | LCDCF_WIN9C00
     ldh [rLCDC], a
-    call SetScroll
-    ret
+    jp SetScroll                ; tail call
 
 ; =============================================================================
 ; Screen build (LCD off) + per-frame drawing

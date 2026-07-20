@@ -72,8 +72,7 @@ ExitMenu:
     call DrawHUDRow
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9800 | LCDCF_WINON | LCDCF_WIN9C00
     ldh [rLCDC], a
-    call SetScroll
-    ret
+    jp SetScroll                ; tail call
 
 MenuLCDOn:
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON | LCDCF_OBJ8 | LCDCF_BG8000 | LCDCF_BG9C00
@@ -641,8 +640,7 @@ BuildBag:
     ld d, h
     ld e, l
     ld hl, TxtEmpty
-    call MPutsDE
-    ret
+    jp MPutsDE                  ; tail call
 
 BuildPick:
     ld hl, HdrEquip
@@ -843,8 +841,7 @@ BuildOptions:
     ld d, h
     ld e, l
     ld hl, TxtOptHint
-    call MPutsDE
-    ret
+    jp MPutsDE                  ; tail call
 
 BuildSave:
     ld hl, HdrSave
@@ -860,8 +857,7 @@ BuildSave:
     ld d, h
     ld e, l
     ld hl, TxtSavePrompt
-    call MPutsDE
-    ret
+    jp MPutsDE                  ; tail call
 
 ; =============================================================================
 ; List construction helpers
@@ -1039,8 +1035,7 @@ BuildBase:
     ld d, h
     ld e, l
     pop hl
-    call MPutsDE
-    ret
+    jp MPutsDE                  ; tail call
 
 ; MClear: fill SCRN1 with paper, draw the outer panel frame, set PAL_BG_UI attrs
 ; over the whole map (CGB only). LCD must be off.
@@ -1136,8 +1131,7 @@ StatLine:
     ld d, h
     ld e, l
     pop hl
-    call MPutsDE
-    ret
+    jp MPutsDE                  ; tail call
 
 ; MPutsDE: copy a 0-terminated (charmap'd) string HL -> DE; DE ends past the last
 ; char (terminator not written). Clobbers A, advances HL/DE.

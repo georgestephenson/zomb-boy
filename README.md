@@ -29,6 +29,11 @@ gitignored `.tools/`.
 make          # build the ROM (build/zombboy.gbc)
 make run      # build + play it (auto-downloads the mGBA emulator on first run)
 make test     # run the test suite (see Testing below)
+make stats    # per-bank ROM/RAM utilization report (from the linker map)
+make play SCRIPT='walk right 60; state; shot'
+              # play the game headless from a script: inputs, screenshots,
+              # memory/state dumps (tools/play.py --help for the commands)
+make shot     # boot headless and screenshot to build/play/
 make clean    # remove build output
 ```
 
@@ -136,7 +141,12 @@ Current coverage:
 - **Headless integration tests** ([`test/integration/`](test/integration/))
   boot the ROM in PyBoy and assert on memory, OAM and the tilemap: movement,
   collision, streaming, zombies, sprite hygiene, the full dialogue flow, and
-  poison-boot checks that nothing depends on zeroed power-on RAM.
+  poison-boot checks that nothing depends on zeroed power-on RAM. They run in
+  parallel (pytest-xdist), so the whole suite finishes in seconds.
+- **Ad-hoc inspection**: `make play` drives the ROM headless from a command
+  script (inputs, screenshots, decoded state, an ASCII world map) and
+  `make stats` reports per-bank ROM usage — CI posts the bank report on every
+  run and uploads boot/world/menu screenshots as artifacts.
 
 ## Roadmap
 

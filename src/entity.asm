@@ -66,8 +66,7 @@ InitZombies::
     ; nudge to a passable tile (up to 4 tiles right)
     ld b, 4
 .passable:
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr z, .placeOk
     ld hl, wGenX
     call Inc16Ptr
@@ -150,8 +149,7 @@ UpdateZombies::
     ; EO_FACING already points straight at the player (that's how LOS resolved),
     ; so the charge just walks that direction until it reaches the player's tile.
     ld a, [wZombIdx]
-    call CopyEntityOut
-    ret
+    jp CopyEntityOut            ; tail call
 
 ; -----------------------------------------------------------------------------
 ; UpdateZombieAI: one tick of wandering for wEnt.
@@ -219,8 +217,7 @@ UpdateZombieAI:
     call GenFromEnt
     ld a, [wEnt + EO_DIR]
     call StepGen
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .blocked
     call GenEqualsPlayer        ; don't walk onto the player
     jr z, .blocked
@@ -316,8 +313,7 @@ CheckLOS:
 .occl:
     ld a, [wEnt + EO_FACING]
     call StepGen
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr nz, .no                  ; something solid blocks the line
     ld a, [wLosCount]
     dec a
@@ -997,8 +993,9 @@ FindFreeSlot::
     scf
     ret
 
-; GenFromPlayer: seed wGenX/wGenY with the player's world tile.
-GenFromPlayer:
+; GenFromPlayer: seed wGenX/wGenY with the player's world tile. Exported —
+; loot/car/npc interaction checks all start from the player's tile too.
+GenFromPlayer::
     ld a, [wPlayerWX]
     ld [wGenX], a
     ld a, [wPlayerWX+1]
@@ -1061,8 +1058,7 @@ PickRingTile::
     ld hl, wGenY
     call AddSByteAt16
 .validate:
-    call GenTileType
-    call IsSolid                ; water is solid too -> never spawn in the water
+    call GenSolid               ; water is solid too -> never spawn in the water
     jr nz, .fail
     call CheckZombieAt
     and a, a
@@ -1165,8 +1161,8 @@ UpdateAlert::
     call StepGen
     call GenEqualsPlayer        ; ahead IS the player -> we're adjacent: fight
     jr z, .battle
-    call GenTileType            ; else advance onto it if clear (the LOS line was
-    call IsSolid                ; terrain-clear, but an entity could be parked on it)
+    call GenSolid               ; else advance onto it if clear (the LOS line was
+                                ; terrain-clear, but an entity could be parked on it)
     jr nz, .save
     call CheckZombieAt
     and a, a
@@ -1190,8 +1186,7 @@ UpdateAlert::
     ld [wEnt + EO_FRAME], a
 .save:
     ld a, [wAlertZombie]
-    call CopyEntityOut
-    ret
+    jp CopyEntityOut            ; tail call
 .battle:
     xor a, a
     ld [wEnt + EO_ACTIVE], a    ; placeholder: zombie is "defeated" and removed

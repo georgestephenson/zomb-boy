@@ -486,6 +486,13 @@ IsSolid::
     and a, a
     ret
 
+; GenSolid: generate the tile at wGenX/wGenY and test it in one go — Z if
+; passable, NZ if solid (A = the tile type, from IsSolid's lookup path). The
+; (GenTileType -> IsSolid) pair every collision/spawn check used to inline.
+GenSolid::
+    call GenTileType
+    jp IsSolid                  ; tail call
+
 ; -----------------------------------------------------------------------------
 ; Hash8: permutation-table value-noise hash. Reads wHX/wHY (16-bit LE, already
 ; coord-transformed by the caller) and a salt in B; returns the hash in A.

@@ -43,8 +43,7 @@ InitPlayer::
     ld [wGenY], a
     ld a, [wPlayerWY+1]
     ld [wGenY+1], a
-    call GenTileType
-    call IsSolid
+    call GenSolid
     jr z, .found
     ld hl, wPlayerWX
     call Inc16Ptr
