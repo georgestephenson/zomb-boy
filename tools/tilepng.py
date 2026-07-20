@@ -112,13 +112,14 @@ _TILES_PAL = (
 )
 
 # personas: 3 tiles each (down/up/side) on their PO_PAL (dialogue_data.asm),
-# then the car's 8 quadrants and the 5 loot sprites.
+# then the car's 8 quadrants, the 5 loot sprites and the exhaust puff.
 _PERSONA_POPAL = [3, 4, 5, 6, 7, 6, 4, 6, 3, 7]  # police..farmer
 _PERSONA_PAL = (
     [("OBJ", p) for p in _PERSONA_POPAL for _ in range(3)]   # 30 persona tiles
     + [("OBJ", 0)] * 8                                       # car 2x2 quadrants
     + [("OBJ", 0), ("OBJ", 2), ("OBJ", 1),                  # apple, beans, crate
        ("OBJ", 1), ("OBJ", 2)]                              # pot, chest
+    + [("OBJ", 6)]                                          # exhaust puff (charcoal)
 )
 
 TILE_PALETTES = {
@@ -171,6 +172,7 @@ GROUPS = {
         + [_grid(1, 2)]       # car up:   top/bottom left halves
         + [_grid(2, 2)]       # car side: TL TR / BL BR (full 2x2)
         + [_tile()] * 5       # loot: apple, beans, crate, pot, chest
+        + [_tile()]           # exhaust puff
     ),
     "Font1bpp": [_tile()] * 53,   # glyphs flow COLS per row
 }

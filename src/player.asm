@@ -139,6 +139,14 @@ UpdatePlayer::
 
 ; --- IDLE ---
 .idle:
+    ; a stopped car forgets its heading, so the next drive step (even in the same
+    ; direction) counts as a fresh start and coughs out an exhaust puff.
+    ld a, [wInCar]
+    and a
+    jr z, .noStopSmoke
+    ld a, $FF
+    ld [wCarLastDir], a
+.noStopSmoke:
     ; walking into a car? take the armed step ONTO it (wCarBoard = EFACE_*+1, set
     ; by CheckCarToggle). StartBoardStep flips to driving when the step finishes.
     ld a, [wCarBoard]
@@ -387,6 +395,17 @@ TryStartStep:
     call ComposeHUD
     ld a, 1
     ld [wHUDDirty], a
+    ; exhaust puff when the car starts rolling or changes heading — but not on a
+    ; straight-ahead chain step (same direction as the last drive step).
+    ld a, [wStepDir]
+    ld b, a
+    ld a, [wCarLastDir]
+    cp b
+    jr z, .smokeDone
+    call TriggerCarSmoke
+.smokeDone:
+    ld a, b
+    ld [wCarLastDir], a
     jr .swimDone
 .footStep:
     ; --- world reactions to the tile just stepped onto ---

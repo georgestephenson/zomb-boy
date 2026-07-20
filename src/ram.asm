@@ -142,6 +142,15 @@ wCarEject::         ds 1               ; 0 = none; else (EFACE_*+1) = get out of
                                        ; (consumed by UpdatePlayer next idle frame)
 wFuel::             ds 1               ; 0..METER_MAX, saturating (drives the HUD
                                        ; fuel readout; replaces energy while driving)
+wCarRumble::        ds 1               ; free-running frame counter for the driving
+                                       ; engine-rumble sprite wobble (DrawCar); purely
+                                       ; cosmetic, advanced only while wInCar
+wSmokeTimer::       ds 1               ; frames left to draw the exhaust puff (0 = none)
+wCarLastDir::       ds 1               ; last EFACE_* the car drove ($FF = stopped); a
+                                       ; driving step puffs smoke when it differs (a
+                                       ; fresh start or a turn), not on a straight chain
+wCarScrX::          ds 1               ; the driving car's on-screen top-left, stashed by
+wCarScrY::          ds 1               ; DrawCar so DrawSmoke can anchor the puff behind it
 ; InitCar road-spawn search scratch (boot only). wCarRngSave brackets the search
 ; so consuming Rand while probing doesn't perturb the dynamic-spawn stream.
 wCarRngSave::       ds 2               ; saved wRngState across the spawn search
