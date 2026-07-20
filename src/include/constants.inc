@@ -142,9 +142,12 @@ DEF CHASE_MAX_FRAMES EQU 200       ; watchdog: force the battle if the charge st
 ; instant it appears. Distances are Chebyshev: max(|dx|, |dy|) in tiles.
 DEF ENT_SPAWN_DIST    EQU 12       ; ring radius of a fresh spawn (just off-screen)
 DEF ENT_CULL_DIST     EQU 15       ; despawn once this far from the player
-DEF ZOMB_SPAWN_PERIOD EQU 20       ; frames between zombie respawn attempts
-DEF NPC_SPAWN_PERIOD  EQU 90       ; survivors respawn less often (they're rarer)
-DEF NPC_SPAWN_TARGET  EQU 4        ; keep about this many survivors around you
+DEF ZOMB_SPAWN_PERIOD EQU 26       ; frames between zombie respawn attempts
+DEF ZOMB_SPAWN_TARGET EQU 6        ; keep about this many zombies around you (pool
+                                   ; cap stays MAX_ZOMBIES; this is the refill goal)
+DEF NPC_SPAWN_PERIOD  EQU 150      ; survivors respawn slowly — they're rare finds
+DEF NPC_SPAWN_TARGET  EQU 2        ; ... and only a couple linger around you (their
+                                   ; rewards are big, so they should be hard to find)
 
 ; --- Sprite tiles (continue after the player's 14..19) ----------------------
 DEF TILE_ZOMBIE_BASE EQU 20        ; down A/B=20/21, up=22/23, side=24/25
@@ -392,6 +395,11 @@ DEF CLOCK_START_HOUR EQU 8         ; the run starts in the morning
 ; free-running minute counter with (N-1).
 DEF FOOD_DRAIN_MINS   EQU 8        ; food 100 -> 0 in ~13 in-game hours
 DEF ENERGY_DRAIN_MINS EQU 16       ; energy drains at half that rate
+
+; HUD toast: on a pickup we briefly overwrite the status row with a short message
+; ("ATE APPLE", "GOT PISTOL") for this many frames, WITHOUT pausing the game, then
+; the meters return. ComposeHUD yields while a toast is up; TickNotice counts down.
+DEF NOTICE_FRAMES  EQU 90          ; ~1.5s at 60 fps
 
 ; Trait-tinted adjectives: |T1| above this shifts the adjective bank one mood
 ; step (grim personas speak bleaker, hopeful ones warmer, at equal affinity).

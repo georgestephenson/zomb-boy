@@ -6,7 +6,11 @@
 ; =============================================================================
 INCLUDE "include/constants.inc"
 
-SECTION "GfxData", ROM0
+; Graphics data lives in a banked ROMX section (not ROM0) so the fixed bank has
+; room for code. It shares bank 3 with the boot-only title image — both are read
+; only with the LCD off (LoadTiles/LoadFont/LoadPalettes and ShowTitle each map
+; this bank, then restore bank 1). BANK(Tiles) in the loaders tracks this pin.
+SECTION "GfxData", ROMX, BANK[3]
 
 Tiles::
 ; --- 0: grass (BG pal 0, passable) ---
