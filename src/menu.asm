@@ -97,11 +97,26 @@ UpdateMenu::
     jp z, UpdBag
     cp MSCR_OPTIONS
     jp z, UpdOptions
-    ; PARTY / STATUS / SAVE are view-only: A or B returns to the root list.
+    cp MSCR_STATUS
+    jp z, UpdStatus
+    ; PARTY / SAVE are view-only: A or B returns to the root list.
     ld a, [wNewKeys]
     and PAD_A | PAD_B
     ret z
     jp GotoRoot
+
+; STATUS: A/B returns to the root; LEFT/RIGHT flips between the two pages.
+UpdStatus:
+    ld a, [wNewKeys]
+    and PAD_A | PAD_B
+    jp nz, GotoRoot
+    ld a, [wNewKeys]
+    and PAD_LEFT | PAD_RIGHT
+    ret z
+    ld a, [wStatusPage]
+    xor 1                      ; two pages -> toggle
+    ld [wStatusPage], a
+    jp RebuildMenu
 
 ; =============================================================================
 ; Root list
@@ -324,6 +339,8 @@ GotoBag:
     ld [wMenuScreen], a
     jp RebuildMenu
 GotoStatus:
+    xor a, a
+    ld [wStatusPage], a        ; always open on the vitals page
     ld a, MSCR_STATUS
     ld [wMenuScreen], a
     jp RebuildMenu
@@ -382,6 +399,9 @@ DrawMenuSprites:
     ld a, [wMenuScreen]
     cp MSCR_STATUS
     ret nz
+    ld a, [wStatusPage]
+    and a, a
+    ret nz                     ; stats page: hide the avatar (keeps its column clear)
     ; player avatar (down sprite) on the status screen
     ld a, STATUS_AVATAR_Y
     ld [wShadowOAM + OAM_MENU_AVATAR * 4 + 0], a
@@ -482,6 +502,7 @@ BuildRoot:
 BuildParty:
     ld hl, HdrParty
     call BuildBase
+    call RecalcLevel           ; keep member 0's level current for display
     ld c, 0
 .loop:
     push bc
@@ -498,9 +519,18 @@ BuildParty:
     jr nc, .empty
     ld hl, NameZomb            ; only member 0 exists so far
     call MPutsDE
-    ld hl, LblHP
+    ld hl, LblLV               ; "  LV " + level
     call MPutsDE
-    ld a, [wHP]
+    pop bc                     ; recover the member index (c)
+    push bc
+    ld a, c
+    push de                    ; keep the value cell across the table index
+    ld e, a
+    ld d, 0
+    ld hl, wPartyLevel         ; member c's level (only 0 populated so far)
+    add hl, de
+    ld a, [hl]
+    pop de
     call PutNumDE
     jr .next
 .empty:
@@ -649,33 +679,66 @@ BuildPick:
     inc b
     jr .row
 
+; STATUS is two pages (LEFT/RIGHT flips wStatusPage): page 0 = vitals (level, XP,
+; the survival meters, clock, position), page 1 = the six stat points.
 BuildStatus:
     ld hl, HdrStatus
     call BuildBase
-    ld a, MENU_BODY_ROW
+    call RecalcLevel           ; XP may have changed (battles); refresh the level
+    ld a, MENU_BODY_ROW        ; the name plate heads both pages
     call RowAddr
     ld d, h
     ld e, l
     ld hl, NameZomb
     call MPutsDE
-    ; HP / FOOD / ENERGY meters
+    ld a, [wStatusPage]
+    and a, a
+    jp nz, BuildStatusStats
+    ; ---- page 0: level / experience ----
+    ld a, MENU_BODY_ROW + 1
+    ld hl, LblStatLevel
+    call StatLine
+    ld a, [wPartyLevel]
+    call PutNumDE
     ld a, MENU_BODY_ROW + 2
+    ld hl, LblStatEXP
+    call StatLine
+    ld a, [wPartyXP]
+    ld l, a
+    ld a, [wPartyXP+1]
+    ld h, a
+    call PutNum16DE
+    ld a, MENU_BODY_ROW + 3
+    ld hl, LblStatNext
+    call StatLine
+    push de                    ; XPToNext clobbers DE (the value cell)
+    call XPToNext              ; HL = XP remaining, carry set at MAX_LEVEL
+    pop de
+    jr c, .maxed
+    call PutNum16DE
+    jr .meters
+.maxed:
+    ld hl, TxtMax
+    call MPutsDE
+.meters:
+    ; HP / FOOD / ENERGY meters
+    ld a, MENU_BODY_ROW + 5
     ld hl, LblStatHP
     call StatLine
     ld a, [wHP]
     call PutNumDE
-    ld a, MENU_BODY_ROW + 3
+    ld a, MENU_BODY_ROW + 6
     ld hl, LblStatFood
     call StatLine
     ld a, [wFood]
     call PutNumDE
-    ld a, MENU_BODY_ROW + 4
+    ld a, MENU_BODY_ROW + 7
     ld hl, LblStatEnergy
     call StatLine
     ld a, [wEnergy]
     call PutNumDE
     ; time HH:MM
-    ld a, MENU_BODY_ROW + 5
+    ld a, MENU_BODY_ROW + 8
     ld hl, LblStatTime
     call StatLine
     ld a, [wClockH]
@@ -686,7 +749,7 @@ BuildStatus:
     ld a, [wClockM]
     call Put2DE
     ; position relative to the spawn tile (signed; magnitude capped at 255)
-    ld a, MENU_BODY_ROW + 7
+    ld a, MENU_BODY_ROW + 10
     ld hl, LblStatPX
     call StatLine
     ld a, [wPlayerWX]
@@ -699,7 +762,7 @@ BuildStatus:
     ld b, a
     call Sub16
     call PutSignedDE
-    ld a, MENU_BODY_ROW + 8
+    ld a, MENU_BODY_ROW + 11
     ld hl, LblStatPY
     call StatLine
     ld a, [wPlayerWY]
@@ -712,7 +775,53 @@ BuildStatus:
     ld b, a
     call Sub16
     call PutSignedDE
-    ret
+    jp StatusPageHint
+
+; ---- page 1: the six stat points (Strength .. Speed) ----
+BuildStatusStats:
+    ld a, MENU_BODY_ROW + 1
+    ld hl, LblStr
+    ld c, STAT_STR
+    call StatRow
+    ld a, MENU_BODY_ROW + 2
+    ld hl, LblDex
+    ld c, STAT_DEX
+    call StatRow
+    ld a, MENU_BODY_ROW + 3
+    ld hl, LblEnd
+    ld c, STAT_END
+    call StatRow
+    ld a, MENU_BODY_ROW + 4
+    ld hl, LblImm
+    ld c, STAT_IMM
+    call StatRow
+    ld a, MENU_BODY_ROW + 5
+    ld hl, LblAcc
+    ld c, STAT_ACC
+    call StatRow
+    ld a, MENU_BODY_ROW + 6
+    ld hl, LblSpd
+    ld c, STAT_SPD
+    call StatRow
+    ; fall through to the page hint
+
+; StatusPageHint: draw the "L-R PAGE n" footer with the 1-based page number.
+StatusPageHint:
+    ld a, MENU_BODY_ROW + 13
+    ld hl, LblPageHint
+    call StatLine
+    ld a, [wStatusPage]
+    inc a
+    jp PutNumDE
+
+; StatRow: A = BG row, HL = label, C = STAT_* -> draw the label then its value.
+StatRow:
+    call StatLine              ; DE = value cell (BC preserved)
+    push de
+    ld a, c
+    call GetStat               ; A = the stat value (clobbers DE)
+    pop de
+    jp PutNumDE
 
 BuildOptions:
     ld hl, HdrOptions
@@ -850,7 +959,7 @@ DoSave:
     ld [sMagic], a
     ld a, $42                  ; "B"
     ld [sMagic+1], a
-    ld a, 1
+    ld a, 2                    ; save v2: adds party level + XP
     ld [sVersion], a
     ldh a, [hWorldSeed]
     ld [sSeed], a
@@ -876,6 +985,14 @@ DoSave:
     ld hl, wPartyEquip
     ld de, sPartyEquip
     ld b, MAX_PARTY * EQUIP_SLOTS
+    call SaveCopy
+    ld hl, wPartyLevel
+    ld de, sPartyLevel
+    ld b, MAX_PARTY
+    call SaveCopy
+    ld hl, wPartyXP
+    ld de, sPartyXP
+    ld b, MAX_PARTY * 2
     call SaveCopy
     ld hl, wBag
     ld de, sBag
@@ -1074,6 +1191,44 @@ PutNumDE:
     inc de
     ret
 
+; PutNum16DE: HL = 0..65535 -> decimal at DE (no leading zeros, at least one
+; digit). Digits are divided out LSB-first onto the stack, then emitted MSB-first.
+; Clobbers A, B, HL; advances DE.
+PutNum16DE:
+    ld b, 0                    ; digit count
+.div:
+    call Div10HL               ; HL /= 10, A = remainder (0..9)
+    push af                    ; stash the digit
+    inc b
+    ld a, h
+    or a, l
+    jr nz, .div                ; more significant digits remain
+.emit:
+    pop af                     ; digits come back MSB-first (last pushed = highest)
+    add a, TILE_DIGIT0
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .emit
+    ret
+
+; Div10HL: HL = HL / 10, A = HL mod 10. Classic restoring bit division (16 bits,
+; remainder in A). Clobbers B.
+Div10HL:
+    xor a, a                   ; remainder
+    ld b, 16
+.bit:
+    add hl, hl                 ; shift the dividend up, MSB -> carry
+    rla                        ; carry -> remainder LSB
+    cp 10
+    jr c, .noSub
+    sub 10
+    inc l                      ; set this quotient bit (L bit0 is free post-shift)
+.noSub:
+    dec b
+    jr nz, .bit
+    ret
+
 ; Put2DE: A = 0..99 -> exactly two digits at DE (leading zero kept). Clobbers
 ; A, B, C; advances DE.
 Put2DE:
@@ -1173,7 +1328,7 @@ HdrSave:    db "SAVE", 0
 
 NameZomb:   db "ZOMB BOY", 0
 NameEmpty:  db "--------", 0
-LblHP:      db " HP ", 0
+LblLV:      db "  LV ", 0
 
 LblStatHP:     db "HP     ", 0
 LblStatFood:   db "FOOD   ", 0
@@ -1181,6 +1336,19 @@ LblStatEnergy: db "ENERGY ", 0
 LblStatTime:   db "TIME   ", 0
 LblStatPX:     db "DIST X ", 0
 LblStatPY:     db "DIST Y ", 0
+LblStatLevel:  db "LEVEL  ", 0
+LblStatEXP:    db "EXP    ", 0
+LblStatNext:   db "NEXT   ", 0
+TxtMax:        db "MAX", 0
+
+; Stat labels are padded to 10 chars so their values line up in one column.
+LblStr:     db "STRENGTH  ", 0
+LblDex:     db "DEXTERITY ", 0
+LblEnd:     db "ENDURANCE ", 0
+LblImm:     db "IMMUNITY  ", 0
+LblAcc:     db "ACCURACY  ", 0
+LblSpd:     db "SPEED     ", 0
+LblPageHint: db "L-R PAGE ", 0
 
 LblMusic:   db "MUSIC  ", 0
 TxtOn:      db "ON ", 0
