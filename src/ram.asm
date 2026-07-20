@@ -16,6 +16,13 @@ wPlayerWX::         ds 2               ; player world tile X (little-endian)
 wPlayerWY::         ds 2               ; player world tile Y
 wSpawnWX::          ds 2               ; the tile the player started on (InitPlayer);
 wSpawnWY::          ds 2               ; the status screen shows position relative to it
+; The tile the player has FULLY arrived on — lags the logical tile by one step
+; while mid-walk (the logical tile jumps at step start; this catches up only when
+; the step finishes). Zombie line-of-sight is tested against THIS so an encounter
+; only triggers once you've stepped onto the tile, Pokemon-style — not the instant
+; you begin the step (SyncSeen in player.asm updates it).
+wSeenWX::           ds 2
+wSeenWY::           ds 2
 wViewTX::           ds 2               ; world tile at screen's top-left column
 wViewTY::           ds 2               ; ... and row (= player - centre offset)
 
@@ -86,6 +93,8 @@ wRngState::         ds 2               ; 16-bit LFSR (must stay non-zero)
 wGameMode::         ds 1               ; MODE_*
 wZombIdx::          ds 1               ; loop index into wZombies
 wAlertZombie::      ds 1               ; index of the zombie that spotted you
+wChaseTimer::       ds 1               ; MODE_ALERT watchdog: frames left before the
+                                       ; charge is forced to end in a battle
 wLosCount::         ds 1               ; occlusion-walk counter (survives Gen calls)
 wScrX::             ds 1               ; scratch: on-screen sprite X
 wScrY::             ds 1               ; scratch: on-screen sprite Y

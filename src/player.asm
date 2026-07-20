@@ -60,6 +60,23 @@ InitPlayer::
     ld [wSpawnWY], a
     ld a, [wPlayerWY+1]
     ld [wSpawnWY+1], a
+    call SyncSeen               ; the detection tile starts on the spawn tile
+    ret
+
+; SyncSeen: the player has FULLY arrived on its logical tile — snap the detection
+; tile (wSeen) to it. Called on the spawn tile and at each step's completion, so
+; zombie line-of-sight only fires once a step finishes, never mid-slide.
+; wPlayerWX/WY and wSeenWX/WY are each 4 contiguous bytes (see ram.asm).
+SyncSeen::
+    ld hl, wPlayerWX
+    ld de, wSeenWX
+    ld c, 4
+.copy:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec c
+    jr nz, .copy
     ret
 
 ; View follows the player, centred (no clamp — the world is endless).
@@ -194,6 +211,7 @@ UpdatePlayer::
     ld [wPlayerState], a
     xor a, a
     ld [wStepOffset], a
+    call SyncSeen               ; arrived on the new tile: LOS may now fire here
     ; finished walking into the car? get in now — the door shuts and the HUD swaps
     ; energy for fuel. wInCar flips only here, so the car never jumped on boarding.
     ld a, [wBoarding]

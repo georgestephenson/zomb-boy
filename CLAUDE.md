@@ -116,6 +116,35 @@ START in the overworld calls `EnterMenu`; `UpdateSound` is gated on `wOptMusic`
 `BlitStream` pushes it to VRAM (tight, inside VBlank) in the **same frame** the
 scroll updates — so there's no seam or one-frame latency.
 
+### Zombie encounters (entity.asm `CheckLOS` → `UpdateAlert`, MODE_ALERT)
+- **Detection fires when a step *finishes*, not when it starts (Pokemon-style).**
+  The player's logical tile (`wPlayerWX/WY`) jumps at the *start* of a step so
+  collision/streaming see the destination immediately, but zombie line-of-sight is
+  tested against `wSeenWX/WY` — a second copy that catches up only when the step
+  **completes** (`SyncSeen` in player.asm, called on the spawn tile and at each
+  step's end). So mid-step `wSeen` still names the tile you're leaving, and you
+  only trigger an encounter once you've actually arrived on the line tile — not the
+  frame you've moved a pixel toward it. This is *which tile LOS compares*, not a
+  gate on the LOS call: `CheckLOS` still runs every overworld frame (its cheap
+  `SameCol`/`SameRow` early-out skips the occlusion walk unless you're aligned), so
+  it isn't a CPU win — mid-step the answer is just stable because `wSeen` is fixed.
+- **On detection the zombie charges; everyone else freezes.** `UpdateZombies`
+  switches to `MODE_ALERT` and records the spotter (`wAlertZombie`). In alert mode
+  the main loop runs **only** `UpdateAlert` — the player, the other zombies, the
+  survivors and the spawner all stop (their updaters live in the overworld branch).
+  `UpdateAlert` holds the "!" bubble for `ALERT_FRAMES`, then steps the zombie
+  straight at the player along its sight line (`EO_FACING`, which LOS already aimed
+  at them) at the normal shuffle cadence, animating the slide; when the tile ahead
+  is the player's it runs `BattleTransition` (the placeholder flash) and returns to
+  the overworld with the zombie removed. `wChaseTimer` (`CHASE_MAX_FRAMES`) is a
+  watchdog that forces the battle if the charge ever stalls (an entity parked on the
+  terrain-clear line), so alert mode can't soft-lock.
+- **`UpdateAlert` lives in a `ROMX BANK[1]` section** ("Alert Code"), not ROM0 —
+  the fixed bank is nearly full. It only runs from the overworld loop's alert
+  branch, where bank 1 is mapped (`UpdateSound` restores it every frame), and every
+  routine it calls is exported ROM0 or ROM0, reachable regardless of the mapped
+  ROMX bank. New alert/combat code should go here, not ROM0.
+
 ### Dynamic spawning (entity.asm `UpdateSpawns` / npc.asm `SpawnNPC`)
 - **Encounters are procedural, not fixed.** `InitZombies`/`InitNPCs` still seed a
   starting cluster near the spawn (deterministic — the boot state the older tests
