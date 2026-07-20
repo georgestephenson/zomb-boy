@@ -227,10 +227,15 @@ GenRuins:
 GenFarm:
     ld a, [wGenX]
     and 7
-    jr z, .fenceLine
+    jr nz, .rowCheck            ; x off the vertical fence lines
     ld a, [wGenY]
     and 7
-    jr z, .fenceLine
+    jr z, .post                ; both axes on a fence line -> solid corner post
+    jr .fenceLine              ; vertical fence line
+.rowCheck:
+    ld a, [wGenY]
+    and 7
+    jr z, .fenceLine           ; horizontal fence line
     call ScatterHash            ; field interior
     cp 128
     jr nc, .wheat
@@ -242,6 +247,9 @@ GenFarm:
     jr z, .gap                  ; 1-in-4 cells is a gate/gap -> fields stay crossable
     ld a, TILE_FENCE
     ret
+.post:
+    ld a, TILE_FENCE            ; corner posts are never gaps, so a spawn on a
+    ret                         ; fence-line gap always has a walkable field neighbour
 .gap:
     ld a, TILE_DIRT
     ret
