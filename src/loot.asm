@@ -437,10 +437,11 @@ DrawLoot::
 .loop:
     ld a, [wPoolIdx]
     ld de, wLoot
-    call CopyPoolIn
-    ld a, [wEnt + EO_ACTIVE]
-    and a, a
+    call EntAddr
+    ld a, [hl]                     ; EO_ACTIVE: check in the pool so a free
+    and a, a                       ; slot skips the 16-byte struct copy
     jr z, .next
+    call CopyEntHL
     call EntScreenPos              ; -> A = visible, wScrX/wScrY set
     and a, a
     jr z, .next

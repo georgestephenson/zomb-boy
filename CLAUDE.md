@@ -424,6 +424,12 @@ scroll updates — so there's no seam or one-frame latency.
   (`wGen & $FFF0`) so a whole building shares one biome. Trees are placed **before**
   water so a pond can't bite a quadrant out of a tree. If you add a multi-tile
   feature, anchor its decision the same way (and floor the biome sample to match).
+- **`CalcBiome` is memoized** (1-entry cache, `wBioCache*` in ram.asm): biome is
+  pure in (anchor, seed) and consecutive tiles share block/chunk anchors, so
+  ~half of all biome computations during streaming are cache hits. The cache is
+  valid because the seed can only change across a boot and `ClearRAM` zeroes
+  `wBioCacheOK`; if you ever make `hWorldSeed` changeable mid-run (e.g. load-on-
+  boot into a running game), clear `wBioCacheOK` at that point too.
 - **The generator is CPU-heavy** (~2 biome samples + several field hashes/tile).
   That's why boot (`InitMap`, 1024 tiles) and per-step `GenStrip` run under **CGB
   double-speed** (enabled in `Start`, *gated on running on CGB*). Double-speed also
