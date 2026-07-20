@@ -14,8 +14,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENV="$ROOT/.tools/venv"
 PY="$VENV/bin/python"
 
-# Bootstrap the pinned Python test env on first run.
-if [ ! -x "$PY" ]; then
+# Bootstrap the pinned Python test env on first run. The .ok sentinel is
+# written only after setup-testenv.sh verifies the imports, so a half-created
+# venv (interrupted or failed install) gets rebuilt instead of trusted.
+if [ ! -x "$PY" ] || [ ! -f "$VENV/.ok" ]; then
     "$ROOT/tools/setup-testenv.sh" "$VENV"
 fi
 
@@ -30,5 +32,8 @@ echo "== reference-model checks =="
 
 echo
 echo "== headless integration tests =="
+# Every test boots its own PyBoy instance (function-scoped fixtures, no shared
+# state), so they parallelize cleanly; -n auto cuts the wall time roughly by
+# the core count. PYTEST_JOBS=1 forces the old serial run for debugging.
 cd "$ROOT"
-"$PY" -m pytest test/integration/ -q
+"$PY" -m pytest test/integration/ -q -n "${PYTEST_JOBS:-auto}"

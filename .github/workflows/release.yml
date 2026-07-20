@@ -1,0 +1,44 @@
+name: Release
+
+# Tag-triggered release: push a `v*` tag (e.g. v0.3.0) and this builds the ROM,
+# runs the full test suite, and publishes a GitHub Release with the cart, the
+# debug symbols and the linker map attached. The ROM's mask-ROM version byte
+# comes from the Makefile (rgbfix -n) — bump it when cutting a release so the
+# cart header matches the tag, like a real cartridge revision.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the release + upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache pinned toolchain + test venv
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile', 'tools/fetch-*.sh', 'tools/setup-testenv.sh') }}
+
+      - name: Build ROM
+        run: make
+
+      - name: Run tests
+        run: make test
+
+      - name: Bank utilization report
+        run: python3 tools/romstats.py --markdown --top 5 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/zombboy.gbc
+            build/zombboy.sym
+            build/zombboy.map
+          generate_release_notes: true

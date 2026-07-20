@@ -34,13 +34,40 @@ jobs:
       - name: Build ROM
         run: make
 
+      # Per-bank utilization in the run's summary page, plus a hard floor on
+      # ROM0 (the fixed bank is chronically near-full — fail before a change
+      # silently eats the last of it).
+      - name: Bank utilization report
+        run: |
+          python3 tools/romstats.py --markdown --top 5 >> "$GITHUB_STEP_SUMMARY"
+          python3 tools/romstats.py --top 0 --min-rom0-free 128
+
       - name: Run tests
         run: make test
 
-      # Handy for downloading the built cart straight off a green run.
+      # A quick scripted play-through with screenshots: boot, a wander, and the
+      # pause menu, downloadable from every run — eyes on the game without an
+      # emulator. Reuses the venv `make test` just built.
+      - name: Screenshot smoke
+        run: |
+          make play SCRIPT='shot boot.png; walk down 36; walk right 60; state; shot world.png; press start; wait 10; shot menu.png'
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/play/*.png
+          if-no-files-found: error
+
+      # Handy for downloading the built cart straight off a green run. The
+      # .sym/.map ride along so any artifact ROM is debuggable (mGBA/Emulicious
+      # load the .sym next to the ROM; romstats reads the .map).
       - name: Upload ROM
         uses: actions/upload-artifact@v4
         with:
           name: zombboy.gbc
-          path: build/zombboy.gbc
+          path: |
+            build/zombboy.gbc
+            build/zombboy.sym
+            build/zombboy.map
           if-no-files-found: error

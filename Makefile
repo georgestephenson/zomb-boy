@@ -11,6 +11,10 @@
 #   make hugetracker Install the pinned hUGETracker music tracker (~4.6 MB)
 #   make run        Build, then play the ROM (auto-installs the emulator)
 #   make test       Build + run the memory-safety / logic test ROMs
+#   make stats      Per-bank ROM/RAM utilization report (from the .map file)
+#   make play       Drive the ROM headless with a command script + screenshots
+#                   e.g. make play SCRIPT='walk right 60; state; shot'
+#   make shot       Boot headless and save a screenshot to build/play/
 #   make clean      Remove build output (keeps the downloaded toolchain)
 #   make distclean  Remove build output AND all downloaded tools
 # =============================================================================
@@ -77,11 +81,17 @@ AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o
 ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
 # rgbfix: -c = GBC-compatible ($80, runs on DMG too — the ROM detects the console
 # at boot and falls back to grayscale), -v = fix header, -p 0xFF = pad (also sets
-# the ROM-size byte), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 64 KB — ROMX bank 1
+# the ROM-size byte; $FF is the era-authentic filler, matching unprogrammed mask
+# ROM), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 64 KB — ROMX bank 1
 # is the default-mapped bank (song + dialogue data), bank 2 the portraits — and
 # the cart carries 8 KB of battery-backed RAM (-r 0x02) for the menu's SAVE
 # option (see menu.asm DoSave / the SaveData SRAM section). Title <= 11.
-FIXFLAGS        := -c -v -p 0xFF -m 0x1B -r 0x02 -t ZOMBBOY
+# Licensed-era header conventions (cosmetic, but what a real post-1994 cart
+# carried): -l 0x33 = old-licensee $33 (the "see new licensee" escape every
+# SGB-era cart used — also a precondition if we ever add SGB support),
+# -k ZB = our two-char new-licensee code, -j = non-Japan destination,
+# -n 0 = mask ROM version (bump on re-release).
+FIXFLAGS        := -c -v -p 0xFF -m 0x1B -r 0x02 -t ZOMBBOY -l 0x33 -k ZB -j -n 0
 
 # Emulator used by `make run`. Defaults to the vendored, pinned mGBA (auto-
 # fetched on first `make run`). Override to use your own, e.g.
@@ -91,7 +101,7 @@ EMULATOR        ?= $(EMU_BIN)
 # =============================================================================
 # Targets
 # =============================================================================
-.PHONY: all tools emulator hugetracker run test clean distclean
+.PHONY: all tools emulator hugetracker run test stats play shot clean distclean
 
 all: $(ROM)
 
@@ -163,6 +173,29 @@ run: $(ROM)
 # Tests need the built ROM (they run it headless in PyBoy), not the GUI emulator.
 test: $(ROM)
 	./tools/run-tests.sh
+
+# --- Inspection (works headless; no GUI or display needed) -------------------
+# Per-bank utilization from the linker map — "how full is ROM0 and what's
+# eating it". Plain python3, no venv.
+stats: $(ROM)
+	python3 tools/romstats.py --map $(basename $(ROM)).map
+
+# Scripted headless play: boot the ROM in PyBoy (same harness as the tests),
+# run a command script (inputs, screenshots, memory/state dumps, ASCII map).
+# Anyone without a display — CI, agents — can *play and look at* the game:
+#   make play SCRIPT='walk right 60; state; entities; shot'
+# See tools/play.py --help for the command list. Screenshots -> build/play/.
+VENV_OK := $(TOOLS_DIR)/venv/.ok
+$(VENV_OK):
+	./tools/setup-testenv.sh $(TOOLS_DIR)/venv
+
+SCRIPT ?= state; shot
+play: $(ROM) $(VENV_OK)
+	$(TOOLS_DIR)/venv/bin/python tools/play.py '$(SCRIPT)'
+
+# One-shot "what does it look like right now": boot + screenshot.
+shot: $(ROM) $(VENV_OK)
+	$(TOOLS_DIR)/venv/bin/python tools/play.py 'shot'
 
 # --- Cleanup ----------------------------------------------------------------
 clean:

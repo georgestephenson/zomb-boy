@@ -1,0 +1,10 @@
+# Keep the GitHub Actions we depend on (checkout, cache, upload-artifact,
+# deploy-pages, gh-release) patched. The game toolchain itself (RGBDS, PyBoy,
+# mGBA, hUGETracker) is deliberately NOT here — those are exact pins in the
+# Makefile / setup-testenv.sh, bumped by hand when we choose to.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
