@@ -20,6 +20,8 @@ make run        # build + launch in the vendored mGBA (auto-fetched first time)
 make test       # runs tools/run-tests.sh (model + on-target ROMs)
 make clean      # remove build/ ; make distclean also removes .tools/
 python3 test/model/worldgen_model.py   # reference-model check for the generator
+python3 tools/export-tiles.py          # src/gfx.asm tile art -> img/tiles.png (edit in a pixel editor)
+python3 tools/import-tiles.py          # img/tiles.png -> src/gfx.asm (round-trips losslessly)
 ```
 
 The toolchain is a **pinned, repo-local dev dependency** (`.tools/`, gitignored),
@@ -678,7 +680,17 @@ scroll updates — so there's no seam or one-frame latency.
 - **A new BG tile type:** add its `TILE_*` id in `constants.inc`, its 8×8 art in
   `gfx.asm` (at the matching tile index), a `PassTable` entry (solid?) and an
   `AttrTable` entry (palette) in `world.asm`, and a branch in `GenTileType`.
-  Update the reference model + rerun it.
+  Update the reference model + rerun it. **Keep the tile PNG tools whole:**
+  `tools/export-tiles.py` / `import-tiles.py` (shared `tools/tilepng.py`)
+  round-trip every 8×8 backtick-`dw` tile in `gfx.asm` to/from `img/tiles.png`
+  losslessly (export→import is a no-op on `gfx.asm`; import→export a no-op on the
+  PNG). They must **cover all the tiles**: adding art *inside* an existing block
+  (`Tiles`/`PersonaTiles`) just works — re-run `export-tiles.py`; but if you add a
+  **new** backtick-art block (a fresh `Foo::`/`FooEnd::` label pair), append it to
+  `TILE_BLOCKS` in `tilepng.py`, then re-run export and confirm
+  `export → import` leaves `gfx.asm` unchanged (`git diff src/gfx.asm` empty).
+  The 1bpp `Font1bpp` glyphs and the CGB palettes are deliberately out of scope
+  (different formats, not tiles).
 - **A new module:** create `src/<name>.asm` (the Makefile globs `src/**/*.asm`),
   `INCLUDE` what it needs, export its public routines with `::`. Put any new RAM
   in `ram.asm`, not scattered.
