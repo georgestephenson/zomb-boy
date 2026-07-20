@@ -5,7 +5,8 @@ appear to zoom around when the player moves).
 """
 ENT_SIZE = 16
 EO_ACTIVE, EO_WXLO, EO_WYLO, EO_FACING, EO_DIR, EO_TIMER = 0, 1, 3, 5, 6, 8
-MAX_ZOMBIES, MAX_NPCS = 8, 10
+EO_SLIDE, EO_SLIDEDIR = 11, 12
+MAX_ZOMBIES, MAX_NPCS, MAX_LOOT = 8, 10, 8
 EFACE_LEFT = 2
 MODE_OVERWORLD, MODE_ALERT = 0, 1
 
@@ -199,5 +200,104 @@ def test_zombie_charges_the_player_then_battles():
                 resolved = True
                 break
         assert resolved, "charge never reached the player / resolved into a battle"
+    finally:
+        g.close()
+
+
+def _setup_clear_row(g):
+    """Relocate the player onto the classic-seed row y=-1 (clear for several tiles
+    each way, unlike the tree-filled spawn row), camera synced, pools emptied."""
+    _clear_pool(g, "wZombies", MAX_ZOMBIES)
+    _clear_pool(g, "wNPCs", MAX_NPCS)
+    _clear_pool(g, "wLoot", MAX_LOOT)
+    g.pyboy.memory[g.addr("wZombSpawnTimer")] = 250   # hold off respawns
+    g.pyboy.memory[g.addr("wSwimming")] = 0
+    for nm in ("wPlayerWX", "wSeenWX"):
+        _w16(g, g.addr(nm), 0)
+    for nm in ("wPlayerWY", "wSeenWY"):
+        _w16(g, g.addr(nm), 0xFFFF)                   # y = -1
+    g.tick(1)                                         # UpdateView syncs the camera
+
+
+def test_no_sprite_jump_when_spotting_mid_slide():
+    # BUG: a zombie that was mid-step when it spotted the player used to SNAP to
+    # its tile (.detected zeroed EO_SLIDE), jerking the sprite up to 8px. Now the
+    # residual slide keeps easing across the alert transition. Force a full slide
+    # toward the player at spot time and assert the sprite never jumps.
+    from harness import Game
+    g = Game()
+    try:
+        _setup_clear_row(g)
+        base = g.addr("wZombies")
+        _plant_zombie_facing_player(g, dist=3)        # (3,-1) facing left, frozen
+        g.pyboy.memory[base + EO_SLIDE] = 16          # mid-step...
+        g.pyboy.memory[base + EO_SLIDEDIR] = EFACE_LEFT  # ...sliding toward the player
+        prev = None
+        worst = 0
+        saw_alert = False
+        for _ in range(12):                           # stays within the "!" beat
+            g.tick(1)
+            if g.r8("wGameMode") == MODE_ALERT:
+                saw_alert = True
+            s = g.sprite(1)                           # zombie 0 -> OAM slot 1
+            if prev is not None and 8 <= s["x"] <= 160 and 16 <= s["y"] <= 152:
+                worst = max(worst, abs(s["x"] - prev[0]), abs(s["y"] - prev[1]))
+            prev = (s["x"], s["y"])
+        assert saw_alert, "zombie never spotted the player"
+        assert worst <= 3, f"zombie sprite jumped {worst}px when spotting mid-slide"
+    finally:
+        g.close()
+
+
+def test_no_walk_through_when_spotted_mid_step():
+    # BUG: detection keys off wSeen (the arrived tile) but the charge's adjacency
+    # test used wPlayer (the logical tile) — a step ahead mid-walk — so the zombie
+    # strode onto/through the player. Now detection settles the player onto wSeen,
+    # and the charge stops adjacent. Fake a step in flight (logical tile a step
+    # PAST the seen tile) and assert the zombie never occupies the seen tile.
+    from harness import Game
+    g = Game()
+    try:
+        _setup_clear_row(g)
+        # seen (where the zombie sees you) = (1,-1); logical a step further = (0,-1)
+        _w16(g, g.addr("wSeenWX"), 1)
+        _w16(g, g.addr("wPlayerWX"), 0)
+        _plant_zombie_facing_player(g, dist=3)        # reads wPlayerWX=0 -> (3,-1)
+        g.tick(2)
+        assert g.r8("wGameMode") == MODE_ALERT, "zombie should spot the seen tile"
+        assert g.r16("wPlayerWX") == g.r16("wSeenWX"), "player not settled onto wSeen"
+        seen = (g.r16("wSeenWX"), g.r16("wSeenWY"))
+        resolved = False
+        for _ in range(240):
+            g.tick(1)
+            z = (_ent16(g, 0, EO_WXLO), _ent16(g, 0, EO_WYLO))
+            assert z != seen, "zombie walked onto/through the player's tile"
+            if g.r8("wGameMode") == MODE_OVERWORLD:
+                resolved = True
+                break
+        assert resolved, "charge never resolved into a battle"
+    finally:
+        g.close()
+
+
+def test_walking_player_is_detected():
+    # BUG: with the player and zombie both moving, detection could blink out
+    # "depending on where the frames hit" because it compared the player's lagging
+    # visual tile to the zombie's leading logical tile. Both now use their on-screen
+    # tile, so a facing zombie reliably spots a player who walks into range.
+    from harness import Game
+    g = Game()
+    try:
+        _setup_clear_row(g)
+        _plant_zombie_facing_player(g, dist=6)        # (6,-1) facing left, frozen
+        g.hold("right")                               # walk into range (SIGHT_RANGE=5)
+        detected = False
+        for _ in range(80):
+            g.tick(1)
+            if g.r8("wGameMode") == MODE_ALERT:
+                detected = True
+                break
+        g.release("right")
+        assert detected, "a facing zombie failed to detect the walking player"
     finally:
         g.close()

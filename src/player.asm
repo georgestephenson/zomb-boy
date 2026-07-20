@@ -78,6 +78,31 @@ SyncSeen::
     jr nz, .copy
     ret
 
+; SettlePlayerToSeen: an encounter just triggered — snap the player cleanly onto
+; the tile the zombie actually saw them on (wSeen), cancelling any step in flight.
+; Detection tests LOS against wSeen (the arrived tile), which lags the logical
+; tile mid-step; if we left the player logically a tile ahead, the charging zombie
+; (which walks to wSeen) would target the wrong tile and stride through the player.
+; Snapping wPlayer back to wSeen also matches where the player visually sits (the
+; camera was lagged onto wSeen) and re-centres the view on that tile.
+SettlePlayerToSeen::
+    ld hl, wSeenWX
+    ld de, wPlayerWX
+    ld c, 4                     ; wSeenWX/WY -> wPlayerWX/WY (4 contiguous bytes)
+.copy:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec c
+    jr nz, .copy
+    xor a, a
+    ld [wPlayerState], a        ; PSTATE_IDLE (drop any in-flight step)
+    ld [wStepOffset], a
+    ld [wMoveDir], a            ; no pending incoming strip
+    ld [wCamLagX], a
+    ld [wCamLagY], a
+    jp UpdateView              ; re-centre the camera on the settled tile (tail call)
+
 ; View follows the player, centred (no clamp — the world is endless).
 UpdateView::
     ld a, [wPlayerWX]

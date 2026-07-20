@@ -132,28 +132,43 @@ START in the overworld calls `EnterMenu`; `UpdateSound` is gated on `wOptMusic`
 scroll updates — so there's no seam or one-frame latency.
 
 ### Zombie encounters (entity.asm `CheckLOS` → `UpdateAlert`, MODE_ALERT)
-- **Detection fires when a step *finishes*, not when it starts (Pokemon-style).**
-  The player's logical tile (`wPlayerWX/WY`) jumps at the *start* of a step so
-  collision/streaming see the destination immediately, but zombie line-of-sight is
-  tested against `wSeenWX/WY` — a second copy that catches up only when the step
-  **completes** (`SyncSeen` in player.asm, called on the spawn tile and at each
-  step's end). So mid-step `wSeen` still names the tile you're leaving, and you
-  only trigger an encounter once you've actually arrived on the line tile — not the
-  frame you've moved a pixel toward it. This is *which tile LOS compares*, not a
-  gate on the LOS call: `CheckLOS` still runs every overworld frame (its cheap
-  `SameCol`/`SameRow` early-out skips the occlusion walk unless you're aligned), so
-  it isn't a CPU win — mid-step the answer is just stable because `wSeen` is fixed.
-- **On detection the zombie charges; everyone else freezes.** `UpdateZombies`
-  switches to `MODE_ALERT` and records the spotter (`wAlertZombie`). In alert mode
-  the main loop runs **only** `UpdateAlert` — the player, the other zombies, the
-  survivors and the spawner all stop (their updaters live in the overworld branch).
-  `UpdateAlert` holds the "!" bubble for `ALERT_FRAMES`, then steps the zombie
-  straight at the player along its sight line (`EO_FACING`, which LOS already aimed
-  at them) at the normal shuffle cadence, animating the slide; when the tile ahead
-  is the player's it runs `BattleTransition` (the placeholder flash) and returns to
-  the overworld with the zombie removed. `wChaseTimer` (`CHASE_MAX_FRAMES`) is a
-  watchdog that forces the battle if the charge ever stalls (an entity parked on the
-  terrain-clear line), so alert mode can't soft-lock.
+- **LOS compares the two things' ON-SCREEN tiles, so detection matches what you
+  see.** Both the player and the zombie have a logical tile that jumps to the
+  destination at each step *start* (for collision/streaming) and a visual tile
+  that lags a step behind while the sprite slides there. Comparing the player's
+  lagging visual tile to the zombie's *leading* logical tile made the "!" blink in
+  a frame early/late as either one moved (a zombie that looked aligned had already
+  logically stepped past). So LOS uses:
+  * the player's **`wSeenWX/WY`** — its arrived tile, updated only when a step
+    **completes** (`SyncSeen` in player.asm, on the spawn tile and each step's
+    end). Mid-step `wSeen` still names the tile you're leaving, so the encounter
+    fires when you've actually *arrived* on the line tile (Pokemon-style), not the
+    frame you've moved a pixel toward it.
+  * the zombie's **`LosAnchor`** (entity.asm) — its visual tile: `EO_WX` stepped
+    one back along `EO_SLIDEDIR` while `EO_SLIDE` is non-zero (else `EO_WX`). It
+    leaves that tile in `wGenX/wGenY`, which the occlusion walk then reuses.
+  This is *which tiles LOS compares*, not a gate on the call: `CheckLOS` runs every
+  overworld frame (its cheap `SameCol`/`SameRow` early-out skips the occlusion walk
+  unless aligned), so it's not a CPU win — the answer is just visually honest.
+- **On detection the player snaps onto the seen tile, the zombie charges, and
+  everyone else freezes.** `UpdateZombies` switches to `MODE_ALERT`, records the
+  spotter (`wAlertZombie`), and calls **`SettlePlayerToSeen`** (player.asm): the
+  player's logical tile is snapped back to `wSeen` and set idle. Without this, a
+  player spotted mid-walk is a tile ahead of where the zombie saw them, and the
+  charge (which walks to the seen tile) would stride *through* them; the snap also
+  matches where the player visually sits (the camera was already lagged onto
+  `wSeen`), so it's seamless. In alert mode the main loop runs **only**
+  `UpdateAlert` — the player, the other zombies, the survivors and the spawner all
+  stop (their updaters live in the overworld branch). `UpdateAlert` holds the "!"
+  bubble for `ALERT_FRAMES` (easing any **residual slide** to 0 so a zombie spotted
+  mid-step finishes its wander step smoothly rather than snapping — `.detected`
+  must NOT zero `EO_SLIDE`), then steps the zombie straight at the player along its
+  sight line (`EO_FACING`, which LOS already aimed at them) at the normal shuffle
+  cadence; when the tile ahead is the player's it runs `BattleTransition` (the
+  placeholder flash) and returns to the overworld with the zombie removed.
+  `wChaseTimer` (`CHASE_MAX_FRAMES`) is a watchdog that forces the battle if the
+  charge ever stalls (an entity parked on the terrain-clear line), so alert mode
+  can't soft-lock.
 - **`UpdateAlert` lives in a `ROMX BANK[1]` section** ("Alert Code"), not ROM0 —
   the fixed bank is nearly full. It only runs from the overworld loop's alert
   branch, where bank 1 is mapped (`UpdateSound` restores it every frame), and every

@@ -142,10 +142,16 @@ UpdateZombies::
     ld [wEnt + EO_DIR], a
     xor a, a
     ld [wEnt + EO_STEPS], a
-    ld [wEnt + EO_SLIDE], a      ; drop any residual wander slide
     ld [wEnt + EO_TIMER], a      ; first charge step fires the moment the "!" ends
+    ; NB: do NOT zero EO_SLIDE — if the zombie was mid-step when it spotted you,
+    ; killing the slide would snap it up to 8px. UpdateAlert eases the residual
+    ; slide to 0 during the "!" beat, so its last wander step finishes smoothly.
     ld a, CHASE_MAX_FRAMES
     ld [wChaseTimer], a          ; arm the stall watchdog
+    ; Snap the player onto the tile the zombie actually saw them on, so the charge
+    ; (which walks to that tile) and its adjacency test agree — else, mid-walk, the
+    ; player's logical tile is a step ahead of wSeen and the zombie strides through.
+    call SettlePlayerToSeen
     ; EO_FACING already points straight at the player (that's how LOS resolved),
     ; so the charge just walks that direction until it reaches the player's tile.
     ld a, [wZombIdx]
@@ -265,6 +271,14 @@ UpdateZombieAI:
 ; CheckLOS: does wEnt see the player straight ahead (unobstructed)?
 ; Returns A = 1 if yes, 0 if no. Alignment check is cheap; the occlusion walk
 ; (Gen calls) only runs when the player is actually in line.
+;
+; Both sides compare their *visual* tile so detection matches what's on screen:
+; the player's is wSeen (its arrived tile), and the zombie's is LosAnchor — the
+; tile it's still sliding OFF while mid-step (its logical EO_WX jumps a tile ahead
+; at each step start, exactly like the player's). Comparing the player's lagging
+; visual tile to the zombie's leading logical tile made detection blink out a
+; frame early/late as either moved. LosAnchor leaves wGenX/wGenY at that tile, and
+; the occlusion walk starts from there (so no GenFromEnt below).
 ; -----------------------------------------------------------------------------
 CheckLOS:
     ld a, [wSwimming]
@@ -273,6 +287,7 @@ CheckLOS:
     xor a, a                    ; player is in the water: hidden, no detection
     ret
 .look:
+    call LosAnchor              ; wGenX/wGenY = the zombie's on-screen tile
     ld a, [wEnt + EO_FACING]
     cp EFACE_LEFT
     jr z, .horiz
@@ -281,16 +296,16 @@ CheckLOS:
     ; vertical (down / up): need same column
     call SameCol
     jr nz, .no
-    call PYmEY                  ; HL = playerY - entY
+    call PYmEY                  ; HL = playerY - genY
     ld a, [wEnt + EO_FACING]
     cp EFACE_UP
-    jr nz, .dist                ; down: distance is playerY - entY
-    call Neg16HL                ; up: distance is entY - playerY
+    jr nz, .dist                ; down: distance is playerY - genY
+    call Neg16HL                ; up: distance is genY - playerY
     jr .dist
 .horiz:
     call SameRow
     jr nz, .no
-    call PXmEX                  ; HL = playerX - entX
+    call PXmEX                  ; HL = playerX - genX
     ld a, [wEnt + EO_FACING]
     cp EFACE_LEFT
     jr nz, .dist
@@ -304,8 +319,7 @@ CheckLOS:
     jr z, .no                   ; same tile
     cp SIGHT_RANGE + 1
     jr nc, .no                  ; out of range
-    ; occlusion: walk (dist-1) tiles from the zombie toward the player
-    call GenFromEnt
+    ; occlusion: walk (dist-1) tiles from the anchor (already in wGen) toward you
     ld a, l
     dec a
     jr z, .yes                  ; adjacent -> visible
@@ -716,37 +730,53 @@ GenEqualsPlayer:
     cp [hl]
     ret
 
-; SameCol / SameRow: Z if wEnt shares the player's SEEN X / Y. LOS uses the tile
-; the player has fully arrived on (wSeen), not the logical one — so the encounter
-; fires when the step finishes, not the frame it starts (see wSeen in ram.asm).
+; LosAnchor: wGenX/wGenY = the zombie's VISUAL tile — the tile it appears on this
+; frame. Its logical position (EO_WX) jumps to the destination at each step start,
+; but it slides there over the step, so while EO_SLIDE is non-zero it's really
+; still on the tile it's leaving: EO_WX stepped one back along EO_SLIDEDIR. This
+; mirrors the player's wSeen (both name the tile being left mid-step), so LOS
+; compares like with like — on-screen position to on-screen position.
+LosAnchor:
+    call GenFromEnt             ; wGen = logical tile (EO_WX/WY)
+    ld a, [wEnt + EO_SLIDE]
+    and a, a
+    ret z                       ; settled: the logical tile IS the visual one
+    ld a, [wEnt + EO_SLIDEDIR]
+    xor 1                       ; reverse (DOWN<->UP, LEFT<->RIGHT): step back to
+    jp StepGen                  ; the tile it's sliding off (tail call)
+
+; SameCol / SameRow: Z if the LOS anchor (wGen) shares the player's SEEN X / Y.
+; Both are visual tiles: the player's arrived tile (wSeen) vs the zombie's
+; on-screen tile (LosAnchor) — so the encounter fires on what you can actually see
+; aligned, and only once your step finishes (wSeen), not the frame it starts.
 SameCol:
-    ld a, [wEnt + EO_WXLO]
+    ld a, [wGenX]
     ld hl, wSeenWX
     cp [hl]
     ret nz
-    ld a, [wEnt + EO_WXHI]
+    ld a, [wGenX+1]
     ld hl, wSeenWX+1
     cp [hl]
     ret
 SameRow:
-    ld a, [wEnt + EO_WYLO]
+    ld a, [wGenY]
     ld hl, wSeenWY
     cp [hl]
     ret nz
-    ld a, [wEnt + EO_WYHI]
+    ld a, [wGenY+1]
     ld hl, wSeenWY+1
     cp [hl]
     ret
 
-; PXmEX / PYmEY: HL = player SEEN coord - entity coord (16-bit signed).
+; PXmEX / PYmEY: HL = player SEEN coord - LOS anchor coord (16-bit signed).
 PXmEX:
     ld a, [wSeenWX]
     ld e, a
     ld a, [wSeenWX+1]
     ld d, a
-    ld a, [wEnt + EO_WXLO]
+    ld a, [wGenX]
     ld c, a
-    ld a, [wEnt + EO_WXHI]
+    ld a, [wGenX+1]
     ld b, a
     jr Sub16DE_BC
 PYmEY:
@@ -754,9 +784,9 @@ PYmEY:
     ld e, a
     ld a, [wSeenWY+1]
     ld d, a
-    ld a, [wEnt + EO_WYLO]
+    ld a, [wGenY]
     ld c, a
-    ld a, [wEnt + EO_WYHI]
+    ld a, [wGenY+1]
     ld b, a
     ; fall through
 Sub16DE_BC:
