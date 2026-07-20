@@ -567,12 +567,33 @@ scroll updates — so there's no seam or one-frame latency.
   spawn area walkable, biomes vary) on every run; `--seed N` runs the full
   statistics at one seed.
 - **`GenTileType` is biome-driven.** A coarse, domain-warped `CalcBiome` field
-  (~64-tile cells) picks city / plains / forest / marsh; each biome assembles its
-  own features from shared noise fields (`WaterField`, `TreeQuad`), so water
-  clusters in marsh, roads+houses in city, trees in forest — not uniform noise.
+  (~64-tile cells) slices the 0..255 noise value into **11 biomes** — city,
+  plains, forest, marsh, plus ruins, farm, jungle, graveyard, desert, mountains,
+  tundra (each `BIOME_*`; the threshold cascade must stay in lockstep with
+  `worldgen_model.py:biome()`). Each biome has its own `Gen*` routine assembling
+  features from shared noise fields (`WaterField`, `TreeQuad`, `ScatterHash`), so
+  water clusters in marsh, straight roads+houses in city (`RoadHere` is now a
+  clean 16-grid), trees in forest, cactus in desert, cracked roads+rubble in
+  ruins, fenced wheat fields in farm, headstones+a church in graveyard, etc.
+  The **band order is deliberate**: forest sits just below the marsh band so the
+  classic seed ($A5, field value 195) keeps its forest spawn (the reproducible
+  test world), and marsh keeps the wet top end so its water still dominates the
+  world's water (the model's clustering check). New biomes add **no water** (dry
+  ground or, for tundra, solid ICE via the water field) so marsh stays dominant.
   Trees are **2×2** (a `TreeQuad` anchor + per-cell quadrant tile); houses are one
   optional building per 16×16 chunk (`HouseTile`: wall perimeter + floor + door,
-  inset off the road grid). Domain-warped 2-octave water gives organic ponds.
+  inset off the road grid), gated on city **or graveyard** (a church). Domain-
+  warped 2-octave water gives organic ponds.
+- **New-biome BG terrain tiles live at ids 57..63** (sand, cactus, snow, ice,
+  grave, wheat, fence) — appended to the `Tiles` table (gfx.asm) after the splash
+  sprite so `LoadTiles` streams them into the free VRAM gap between the UI tiles
+  (..56) and portraits (64+). `PassTable`/`AttrTable` (world.asm) are indexed by
+  tile id and carry entries for them (ids 14..56 are filler — OBJ/UI tiles never
+  appear as a BG map cell). They reuse existing BG palettes 0..3, so they're
+  DMG-safe. The `> 13` BG-tile poison checks (`test_boot_hygiene`, `test_dmg`)
+  allow `57..63` too. **The mountains ledge-jump, slippery ice, and farm animals
+  are intentionally deferred** (they need new movement/collision semantics or OBJ
+  budget, not just terrain) — see docs; the biomes themselves are complete.
 - **Multi-tile features are decided from a consistent anchor so they never clip:**
   the terrain biome is sampled at the **2×2 block** anchor (`wGen & $FFFE`) so a
   tree's four quadrants always agree, and houses gate on the **16×16 chunk** anchor

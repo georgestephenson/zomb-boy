@@ -17,16 +17,31 @@ DEF BIOME_CITY     EQU 0
 DEF BIOME_PLAINS   EQU 1
 DEF BIOME_FOREST   EQU 2
 DEF BIOME_MARSH    EQU 3
+; Expansion biomes (each carves a band out of the same domain-warped field;
+; keep the thresholds in lockstep with CalcBiome / worldgen_model.py:biome()).
+DEF BIOME_RUINS     EQU 4          ; broken-up city: cracked roads + rubble
+DEF BIOME_FARM      EQU 5          ; regular fenced fields of tall wheat
+DEF BIOME_JUNGLE    EQU 6          ; dense trees + heavy undergrowth
+DEF BIOME_GRAVEYARD EQU 7          ; headstones + a church, extra zombies
+DEF BIOME_DESERT    EQU 8          ; sand + cactus
+DEF BIOME_MOUNTAINS EQU 9          ; rocky ground + boulders
+DEF BIOME_TUNDRA    EQU 10         ; snow + frozen ponds (ice)
+DEF BIOME_COUNT     EQU 11
 
 ; Per-biome water cutoffs on the shared (octaveA+octaveB)>>1 field (lower =
 ; wetter). Marsh is mostly water; plains/forest get only rare small ponds.
 DEF WATER_MARSH    EQU 116
 DEF WATER_FOREST   EQU 24
 DEF WATER_PLAINS   EQU 20
+DEF WATER_TUNDRA   EQU 20          ; frozen ponds (rendered as solid ICE, not water)
 ; Per-biome 2x2-tree anchor cutoffs (hash >= this -> a tree). Lower = denser.
 DEF TREE_FOREST    EQU 176
 DEF TREE_MARSH     EQU 236
 DEF TREE_PLAINS    EQU 248
+DEF TREE_JUNGLE    EQU 176         ; as dense as forest, but far brushier ground
+DEF TREE_GRAVE     EQU 250         ; the odd dead tree among the stones
+DEF TREE_TUNDRA    EQU 246         ; sparse frozen pines
+DEF TREE_MTN       EQU 240         ; sparse hardy pines on the slopes
 
 ; --- Tile type ids (also the VRAM tile index for background tiles) ----------
 DEF TILE_GRASS     EQU 0
@@ -43,6 +58,18 @@ DEF TILE_TREE_TL   EQU 10          ; 2x2 tree quadrants (all solid)
 DEF TILE_TREE_TR   EQU 11
 DEF TILE_TREE_BL   EQU 12
 DEF TILE_TREE_BR   EQU 13
+; Expansion-biome BG terrain tiles. These live at ids 57..63 (NOT 14..) because
+; 14..56 are OBJ/UI tiles; the new art is appended to the Tiles table after the
+; splash sprite so LoadTiles streams it into the free VRAM gap between the UI
+; tiles (..56) and the portrait block (64+). PassTable/AttrTable (world.asm)
+; carry entries for these ids; the boot-hygiene BG-tile poison test allows them.
+DEF TILE_SAND      EQU 57          ; desert ground (passable)
+DEF TILE_CACTUS    EQU 58          ; desert (solid)
+DEF TILE_SNOW      EQU 59          ; tundra ground (passable)
+DEF TILE_ICE       EQU 60          ; tundra frozen pond (solid; slip is LATER)
+DEF TILE_GRAVE     EQU 61          ; graveyard headstone (solid)
+DEF TILE_WHEAT     EQU 62          ; farm tall wheat (passable)
+DEF TILE_FENCE     EQU 63          ; farm fence (solid)
 ; Player OBJ tiles: down A/B = 14/15, up = 16/17, side = 18/19
 DEF TILE_PLAYER_BASE EQU 14
 ; Swimming: only the head + shoulders show above the waterline, so these are

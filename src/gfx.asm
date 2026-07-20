@@ -542,6 +542,69 @@ Tiles::
     dw `00000000
     dw `03000030
     dw `00000000
+; --- 57: sand (BG pal 2 tan, passable) — desert ground, sparse grains ---
+    dw `00000000
+    dw `00010000
+    dw `00000000
+    dw `00000100
+    dw `01000000
+    dw `00000000
+    dw `00000010
+    dw `00100000
+; --- 58: cactus (BG pal 0 green, solid) — a little saguaro ---
+    dw `00011000
+    dw `00111100
+    dw `01011010
+    dw `01011010
+    dw `01111110
+    dw `00011000
+    dw `00011000
+    dw `00111100
+; --- 59: snow (BG pal 1, colour 3 = foam-white, passable) — tundra ground ---
+    dw `33333333
+    dw `33303333
+    dw `33333333
+    dw `33333033
+    dw `30333333
+    dw `33333333
+    dw `33333330
+    dw `33033333
+; --- 60: ice (BG pal 1, solid) — frozen pond, blue cracks in white ---
+    dw `33333333
+    dw `30003333
+    dw `33303333
+    dw `33330033
+    dw `33033333
+    dw `00333303
+    dw `33330333
+    dw `33333330
+; --- 61: grave (BG pal 2, solid) — headstone with a carved cross ---
+    dw `00111100
+    dw `01111110
+    dw `01122110
+    dw `01111110
+    dw `01122110
+    dw `01111110
+    dw `01111110
+    dw `00000000
+; --- 62: wheat (BG pal 0, passable) — long field grass with heads ---
+    dw `01001001
+    dw `01001001
+    dw `01001001
+    dw `01101101
+    dw `10101010
+    dw `10101010
+    dw `01010100
+    dw `00100010
+; --- 63: fence (BG pal 2, solid) — two posts and rails ---
+    dw `20000200
+    dw `20000200
+    dw `22222222
+    dw `20000200
+    dw `20000200
+    dw `22222222
+    dw `20000200
+    dw `20000200
 TilesEnd::
 
 ; Per-persona survivor world sprites (OBJ), 3 tiles each: down, up, side
