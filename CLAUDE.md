@@ -81,6 +81,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `talk.asm` | Dialogue screen (MODE_TALK): SCRN1 UI, state machine, VRAM queue |
 | `dialogue.asm` | Grammar composer (bounded) + persona/tone affinity math |
 | `dialogue_data.asm` | Personas, word banks, templates (ROMX; charmap strings) |
+| `anim.asm` | Living-world tile-art animation: water shimmer, tree sway, brush rustle, house-door open/close (shared-tile-art swaps; no map/OAM changes) |
 | `hud.asm` | Window-layer status bar (HP/food/energy/clock) + the survival tick |
 | `battle.asm` | Placeholder battle transition (flash) |
 | `menu.asm` | START pause menu (MODE_MENU): party/equip/bag/status/save/options/exit |
@@ -101,9 +102,9 @@ Logic runs **before** VBlank; VRAM/OAM pushes happen **inside** VBlank:
 ```
 overworld: UpdateSound → ReadInput → UpdateSurvival → UpdatePlayer → UpdateView
            → (GenStrip if moved) → UpdateZombies → UpdateSpawns → UpdateLootSpawns
-           → CheckCarToggle → CheckLoot → CheckTalkStart
+           → CheckCarToggle → CheckLoot → CheckTreeTouch → CheckTalkStart → UpdateAnim
            → ComputeCamLag → DrawEntities
-           WaitVBlank → OAM DMA → SetScroll → PushHUD → BlitStream
+           WaitVBlank → OAM DMA → SetScroll → PushHUD → BlitStream → PushAnim
 talk mode: UpdateSound → ReadInput → UpdateTalk (fills wTalkQ)
            WaitVBlank → OAM DMA → DrainTalkQ
 menu mode: UpdateSound → ReadInput → UpdateMenu (input + panel nav, LCD-off
@@ -167,6 +168,39 @@ scroll updates — so there's no seam or one-frame latency.
   sharing existing OBJ palettes (there are no free ones). State is in ram.asm's
   "Loot State" section. **Ammo is intentionally not modelled yet** — it belongs on
   ranged weapons once real combat lands (see docs/design/04 §3).
+
+### Living world (anim.asm)
+- **Every effect is a swap of a SHARED background tile's ART in VRAM**
+  (`$8000 + id*16`) — never a tile-MAP write and never an OBJ sprite. That's the
+  key invariant: the map cell ids are untouched (so the streaming model and the
+  boot-hygiene "every map cell ≤ 13" / "OAM slots 33+ hidden" poison tests are
+  blind to it), it costs zero OAM budget, and it works identically on DMG (tile
+  data is bank-0, no attribute plane involved). Because the art is shared, an
+  effect animates **every on-screen instance of that tile at once** — a bumped
+  tree reads as a gust through the foliage, and doors/brush are sparse enough
+  that the shared-art caveat never shows.
+- **Nothing here touches `Rand`** (ambient timers are plain frame counters), so
+  spawn/loot/talk determinism — and the whole integration suite — is unperturbed.
+- Four effects: **water shimmer** (ambient 3-frame ripple on `TILE_WATER`),
+  **tree sway** (`TILE_TREE_TL/TR` wobble, triggered by bumping a tree in
+  `player.asm`'s step or an A-press via `CheckTreeTouch`, plus a periodic ambient
+  breeze), **brush rustle** (`TILE_BRUSH` ripples when a step commits onto it),
+  and **house doors** (`TILE_DOOR` swaps to an open leaf while `wOnDoor`, with a
+  short `DOOR_LINGER` so it visibly shuts behind you — reusing the car door SFX
+  `PlayCarDoor` on each open/close, as the design asked).
+- `UpdateAnim` (logic phase) advances the timers and picks each group's current
+  frame; `PushAnim` (VBlank) copies only the 16-byte frames that changed, and is
+  **skipped on the single strip-blit frame per step** (captured `wStrKind` before
+  `BlitStream`) to keep the DMG VBlank budget — a slow-cycling effect frame being
+  ~invisibly late is fine. Frame 0 of each group is byte-identical to the tile's
+  base art in `gfx.asm`, so the resting look never shifts. State + timing
+  constants live in ram.asm's "Anim State" and constants.inc's "World animation".
+- **Interactive feel (sway/rustle/swing) is a human check on mGBA/hardware** —
+  `test/integration/test_anim.py` verifies the *logic* (timers fire, VRAM art
+  actually swaps) end-to-end, but not how it looks.
+- The module lives in **ROMX `BANK[1]`** (ROM0 is full): bank 1 is the
+  default-mapped bank and is mapped in every context these routines run, so ROM0
+  callers reach it directly with no bank switching (see the banking invariant).
 
 ### HUD (hud.asm, docs/design/03 — v0: meters visible + draining, non-lethal)
 - The status bar is the **hardware window** over the **bottom 8 px**
@@ -524,8 +558,10 @@ scroll updates — so there's no seam or one-frame latency.
 
 - **The cart is 128 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
   `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds the
-  dialogue data (read throughout talk mode); boot maps it explicitly (don't
-  trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
+  dialogue data + code (read throughout talk mode) and — now that ROM0 is full —
+  the `anim.asm` living-world code (`BANK[1]`, run from the always-mapped bank so
+  it needs no switching, exactly like `dialogue.asm`); boot maps bank 1
+  explicitly (don't trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
   `ShowPortrait` (talk.asm); the song data floats in its own bank, mapped
   **only** inside `InitSound`/`UpdateSound` (audio.asm) via `BANK(song_demo)`.
   Both restore bank 1 before returning. New banked data must do the same:
