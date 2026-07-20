@@ -11,6 +11,8 @@
 #   make hugetracker Install the pinned hUGETracker music tracker (~4.6 MB)
 #   make run        Build, then play the ROM (auto-installs the emulator)
 #   make test       Build + run the memory-safety / logic test ROMs
+#   make smoke      Boot-smoke the ROM in SameBoy, CGB + true DMG mode
+#   make sameboy    Just install the pinned SameBoy tester (source build)
 #   make stats      Per-bank ROM/RAM utilization report (from the .map file)
 #   make play       Drive the ROM headless with a command script + screenshots
 #                   e.g. make play SCRIPT='walk right 60; state; shot'
@@ -32,6 +34,11 @@ HWINC_REF       := v4.12.0
 # Mesen2, whose settings-parsing std::regex crashes (std::bad_cast) on very new
 # libstdc++ builds like Ubuntu 26.04's.
 EMU_VERSION     := 0.10.5
+# LIJI32/SameBoy release tag. The accuracy-reference emulator; we build its
+# headless Tester as a second-emulator smoke gate (`make smoke`) — it can run
+# our CGB-flagged ROM in true DMG mode, which PyBoy cannot. Always a source
+# build (SameBoy ships no Linux binaries); needs git/make/cc + our RGBDS.
+SAMEBOY_VERSION := 1.0.3
 # SuperDisk/hUGETracker release tag. The GUI music tracker you compose in; it
 # exports songs in "RGBDS .asm" format that our vendored hUGEDriver plays. A dev
 # tool only (the ROM builds without it), so it's a pinned, checksum-verified
@@ -51,6 +58,8 @@ EMU_DIR         := $(TOOLS_DIR)/emulator
 EMU_BIN         := $(EMU_DIR)/squashfs-root/AppRun
 HUGETRACKER_DIR := $(TOOLS_DIR)/hugetracker
 HUGETRACKER_BIN := $(HUGETRACKER_DIR)/.version   # sentinel: fetch stamps this
+SAMEBOY_DIR     := $(TOOLS_DIR)/sameboy
+SAMEBOY_TESTER  := $(SAMEBOY_DIR)/sameboy_tester
 
 # --- Project layout ---------------------------------------------------------
 SRC_DIR         := src
@@ -101,7 +110,7 @@ EMULATOR        ?= $(EMU_BIN)
 # =============================================================================
 # Targets
 # =============================================================================
-.PHONY: all tools emulator hugetracker run test stats play shot clean distclean
+.PHONY: all tools emulator hugetracker sameboy run test smoke stats play shot clean distclean
 
 all: $(ROM)
 
@@ -127,6 +136,11 @@ $(EMU_BIN):
 
 $(HUGETRACKER_BIN):
 	./tools/fetch-hugetracker.sh $(HUGETRACKER_VERSION) $(HUGETRACKER_DIR)
+
+sameboy: $(SAMEBOY_TESTER)
+
+$(SAMEBOY_TESTER): | $(RGBASM)
+	./tools/fetch-sameboy.sh $(SAMEBOY_VERSION) $(SAMEBOY_DIR) $(RGBDS_DIR)
 
 # --- Build ------------------------------------------------------------------
 # Every object depends on the toolchain + includes being present (order-only),
@@ -173,6 +187,13 @@ run: $(ROM)
 # Tests need the built ROM (they run it headless in PyBoy), not the GUI emulator.
 test: $(ROM)
 	./tools/run-tests.sh
+
+# Second-emulator smoke gate: boot the ROM in SameBoy (the accuracy-reference
+# core) in BOTH CGB and true DMG mode — deadlock/blank-screen detection plus
+# end-state screenshots into build/smoke/. `make test` also runs this when the
+# tester is already installed; this target additionally auto-builds it.
+smoke: $(ROM) $(SAMEBOY_TESTER)
+	./tools/smoke-sameboy.sh $(ROM) $(SAMEBOY_DIR) build/smoke
 
 # --- Inspection (works headless; no GUI or display needed) -------------------
 # Per-bank utilization from the linker map — "how full is ROM0 and what's

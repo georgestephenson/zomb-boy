@@ -30,6 +30,18 @@ echo "== reference-model checks =="
 "$PY" "$ROOT/test/model/worldgen_model.py"
 "$PY" "$ROOT/test/model/dialogue_bounds.py"
 
+# SameBoy accuracy smoke (CGB + true DMG mode), when the tester is installed.
+# Opportunistic here so plain `make test` stays light on a fresh clone; CI and
+# anyone who has run `make sameboy` get the strict second-emulator gate.
+if [ -x "$ROOT/.tools/sameboy/sameboy_tester" ]; then
+    echo
+    echo "== SameBoy smoke (accuracy-reference emulator) =="
+    "$ROOT/tools/smoke-sameboy.sh" "$ROOT/build/zombboy.gbc" \
+        "$ROOT/.tools/sameboy" "$ROOT/build/smoke"
+else
+    echo "(SameBoy smoke skipped — run 'make sameboy' to install the tester)"
+fi
+
 echo
 echo "== headless integration tests =="
 # Every test boots its own PyBoy instance (function-scoped fixtures, no shared

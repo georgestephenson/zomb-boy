@@ -17,7 +17,11 @@ don't gold-plate ahead of a working core loop. Anything not yet needed is marked
 ```sh
 make            # build build/zombboy.gbc (auto-fetches pinned toolchain)
 make run        # build + launch in the vendored mGBA (auto-fetched first time)
-make test       # runs tools/run-tests.sh (model + on-target ROMs)
+make test       # runs tools/run-tests.sh (model + on-target ROMs; also runs
+                # the SameBoy smoke when the tester is installed)
+make smoke      # SameBoy accuracy smoke: boots the ROM in CGB AND true DMG
+                # mode (the DMG path PyBoy can't run); auto-builds the tester
+make sameboy    # just install the pinned SameBoy tester (source build)
 make stats      # per-bank ROM/RAM utilization from the .map (ROM0 is tight!)
 make play SCRIPT='walk right 60; state; entities; shot'
                 # scripted headless play: inputs, screenshots, memory/state
@@ -71,6 +75,9 @@ the `Makefile` (`RGBDS_VERSION`, `HWINC_REF`, `EMU_VERSION`).
   * **Emulator**: `make run` (mGBA) can't fetch its AppImage here and isn't
     usable headless anyway — that's fine, headless tests use PyBoy via pip.
     Interactive checks still need a human on a normal machine.
+  * **SameBoy** (`make smoke`/`make sameboy`) is always a source build (no
+    Linux release binaries exist), so it works here unattended too — git clone
+    + cc + our pinned RGBDS for its boot ROMs, ~a minute on first build.
 
 ## Architecture
 
@@ -740,3 +747,10 @@ scroll updates — so there's no seam or one-frame latency.
 - Commit messages: **do not** add Claude as an author/co-author (user's global
   rule). Branch off before committing on a default branch; only commit/push when
   asked.
+- **Versioning: minor bumps are the user's call.** Never bump the minor version
+  (v0.5 → v0.6) or tag a new minor release without asking first — the roadmap
+  buckets in README.md say what each minor means, and the user decides when a
+  version is "done". Patch/hotfix bumps (v0.5.0 → v0.5.1) are fine without
+  asking. When cutting any release tag, bump the cart header's mask-ROM version
+  byte to match (`rgbfix -n` in the Makefile's `FIXFLAGS`) — a real cartridge
+  revision did the same.

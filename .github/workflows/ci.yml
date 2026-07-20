@@ -45,6 +45,13 @@ jobs:
       - name: Run tests
         run: make test
 
+      # Second-emulator gate: SameBoy (the accuracy-reference core) boots the
+      # ROM in CGB AND true DMG mode — the DMG fallback path PyBoy can't run.
+      # Detects deadlocks/blank screens; end-state screenshots join the
+      # artifact below. The tester rides the .tools cache after first build.
+      - name: SameBoy smoke (CGB + DMG)
+        run: make smoke
+
       # A quick scripted play-through with screenshots: boot, a wander, and the
       # pause menu, downloadable from every run — eyes on the game without an
       # emulator. Reuses the venv `make test` just built.
@@ -56,7 +63,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: build/play/*.png
+          path: |
+            build/play/*.png
+            build/smoke/*.bmp
           if-no-files-found: error
 
       # Handy for downloading the built cart straight off a green run. The
