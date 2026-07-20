@@ -12,7 +12,7 @@
 ;   BAG     — the inventory (weapons, consumables, key items), a scrolling list.
 ;   STATUS  — the player avatar + HP/food/energy/time + position vs the spawn.
 ;   SAVE    — write a battery-backed save to cart RAM (MBC5+RAM, see items.asm).
-;   OPTIONS — game config (music on/off; the rest TBC).
+;   OPTIONS — game config: MUSIC and SFX on/off (two independent toggles).
 ;   EXIT    — soft-reset back to the title screen.
 ;
 ; Screen mechanics mirror talk.asm: each panel is built with the LCD OFF inside
@@ -266,29 +266,53 @@ UpdBag:
 ; =============================================================================
 ; Options
 ; =============================================================================
+; Two independent on/off toggles: MUSIC (cursor 0) and SFX (cursor 1). Up/down
+; move between them; A / LEFT / RIGHT flip the selected one.
 UpdOptions:
     ld a, [wNewKeys]
     and PAD_B
     jp nz, GotoRoot
     ld a, [wNewKeys]
+    bit 2, a                   ; up
+    jr z, .noUp
+    ld a, [wMenuCursor]
+    and a, a
+    jr z, .noUp
+    dec a
+    ld [wMenuCursor], a
+.noUp:
+    ld a, [wNewKeys]
+    bit 3, a                   ; down
+    jr z, .noDown
+    ld a, [wMenuCursor]
+    inc a
+    cp OPT_COUNT
+    jr nc, .noDown
+    ld [wMenuCursor], a
+.noDown:
+    ld a, [wNewKeys]
     and PAD_A | PAD_LEFT | PAD_RIGHT
     ret z
-    ; toggle music. wOptMusic gates UpdateSound in the main loop; unrouting the
-    ; channels (NR51=0) silences the held notes while it's gated off (the driver
-    ; owns NR50/the volume, so muting there wouldn't stick). Re-routing on resume;
-    ; the driver re-owns the channels on its next tick.
+    ld a, [wMenuCursor]
+    and a, a
+    jr nz, .toggleSfx
+    ; --- MUSIC: wOptMusic gates UpdateSound in the main loop. Muting can't just
+    ;     stop the driver (the channels hold their last note), so cut their DACs
+    ;     via SilenceMusic; the driver re-owns them when music resumes. NR51 stays
+    ;     routed so SFX keep working with music off. ---
     ld a, [wOptMusic]
     xor 1
     ld [wOptMusic], a
-    and a, a
-    jr z, .mute
-    ld a, $FF                  ; every channel routed to both speakers again
-    jr .setRoute
-.mute:
-    xor a, a                   ; unroute all channels -> silence
-.setRoute:
-    ldh [rNR51], a
-    jp GotoOptions             ; rebuild to refresh the ON/OFF text
+    jp nz, RebuildMenu         ; now ON -> the driver resumes on its own
+    call SilenceMusic          ; now OFF -> cut the currently-held notes
+    jp RebuildMenu
+.toggleSfx:
+    ; --- SFX: wOptSfx gates PlaySFX/PlaySplash/PlayCarDoor at the call. Nothing
+    ;     else to do — no channel is held between effects. ---
+    ld a, [wOptSfx]
+    xor 1
+    ld [wOptSfx], a
+    jp RebuildMenu
 
 ; =============================================================================
 ; Generic scrolling-list cursor (BAG, equip picker). Uses wListN/Cur/Top.
@@ -368,6 +392,8 @@ GotoStatus:
     ld [wMenuScreen], a
     jp RebuildMenu
 GotoOptions:
+    xor a, a
+    ld [wMenuCursor], a        ; open on the MUSIC row (toggles rebuild in place)
     ld a, MSCR_OPTIONS
     ld [wMenuScreen], a
     jp RebuildMenu
@@ -848,23 +874,31 @@ StatRow:
 BuildOptions:
     ld hl, HdrOptions
     call BuildBase
-    ld a, MENU_BODY_ROW
+    ld a, MENU_BODY_ROW        ; row 0: MUSIC  ON/OFF
     ld hl, LblMusic
-    call StatLine
+    call StatLine              ; DE = value cell
     ld a, [wOptMusic]
-    and a, a
-    jr z, .off
-    ld hl, TxtOn
-    jr .put
-.off:
-    ld hl, TxtOff
-.put:
-    call MPutsDE
+    call PutOnOff
+    ld a, MENU_BODY_ROW + 1    ; row 1: SFX    ON/OFF
+    ld hl, LblSfx
+    call StatLine
+    ld a, [wOptSfx]
+    call PutOnOff
     ld a, MENU_BODY_ROW + 3
     call RowAddr
     ld d, h
     ld e, l
     ld hl, TxtOptHint
+    jp MPutsDE                  ; tail call
+
+; PutOnOff: A = flag (0/1), DE = target cell. Write the ON/OFF text there.
+PutOnOff:
+    and a, a
+    jr z, .off
+    ld hl, TxtOn
+    jp MPutsDE                  ; tail call
+.off:
+    ld hl, TxtOff
     jp MPutsDE                  ; tail call
 
 BuildSave:
@@ -979,7 +1013,7 @@ DoSave:
     ld [sMagic], a
     ld a, $42                  ; "B"
     ld [sMagic+1], a
-    ld a, 2                    ; save v2: adds party level + XP
+    ld a, 3                    ; save v3: adds the SFX on/off option
     ld [sVersion], a
     ldh a, [hWorldSeed]
     ld [sSeed], a
@@ -1020,7 +1054,9 @@ DoSave:
     call SaveCopy
     ld a, [wOptMusic]
     ld [sOptMusic], a
-    ; checksum: 8-bit sum of the whole block (magic .. sOptMusic)
+    ld a, [wOptSfx]
+    ld [sOptSfx], a
+    ; checksum: 8-bit sum of the whole block (magic .. sOptSfx)
     ld hl, sMagic
     ld bc, sChecksum - sMagic
     ld d, 0
@@ -1369,9 +1405,10 @@ LblSpd:     db "SPEED     ", 0
 LblPageHint: db "L-R PAGE ", 0
 
 LblMusic:   db "MUSIC  ", 0
+LblSfx:     db "SFX    ", 0
 TxtOn:      db "ON ", 0
 TxtOff:     db "OFF", 0
-TxtOptHint: db "MORE TBC", 0
+TxtOptHint: db "A TOGGLES", 0
 
 TxtEmpty:      db "EMPTY", 0
 TxtSaved:      db "GAME SAVED!", 0

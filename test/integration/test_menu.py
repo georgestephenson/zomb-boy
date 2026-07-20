@@ -127,6 +127,10 @@ def test_equip_a_weapon():
 
 
 def test_options_toggles_music():
+    # NB: PyBoy stubs the APU hardware registers ($FF10-$FF26) to 0, so the
+    # *audible* effect of muting (SilenceMusic cutting the channel DACs) can't be
+    # observed here — that's a mGBA/hardware check. We verify the state machine:
+    # the toggle flips wOptMusic (which gates UpdateSound in the main loop).
     g = Game()
     try:
         open_menu(g)
@@ -134,13 +138,31 @@ def test_options_toggles_music():
             press(g, "down")
         press(g, "a")
         assert g.r8("wMenuScreen") == MSCR_OPTIONS
-        assert g.r8("wOptMusic") == 1
-        press(g, "a")               # toggle off
+        assert g.r8("wOptMusic") == 1  # on by default; cursor starts on MUSIC
+        press(g, "a")               # toggle music off
         assert g.r8("wOptMusic") == 0
-        # Muted: channels unrouted (NR51=0) and the per-frame music tick is gated.
-        assert g.r8(0xFF25) == 0, "NR51 not unrouted when muted"
+        assert g.r8("wOptSfx") == 1, "music toggle must not affect SFX"
         press(g, "a")               # toggle back on
         assert g.r8("wOptMusic") == 1
+    finally:
+        g.close()
+
+
+def test_options_toggles_sfx_independently():
+    g = Game()
+    try:
+        open_menu(g)
+        for _ in range(5):          # ...-> OPTIONS
+            press(g, "down")
+        press(g, "a")
+        assert g.r8("wMenuScreen") == MSCR_OPTIONS
+        assert g.r8("wOptSfx") == 1  # on by default
+        press(g, "down")             # move cursor MUSIC -> SFX
+        press(g, "a")                # toggle SFX off
+        assert g.r8("wOptSfx") == 0
+        assert g.r8("wOptMusic") == 1, "SFX toggle must not affect music"
+        press(g, "a")                # toggle SFX back on
+        assert g.r8("wOptSfx") == 1
     finally:
         g.close()
 

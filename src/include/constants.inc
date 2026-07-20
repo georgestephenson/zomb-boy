@@ -544,6 +544,7 @@ DEF MSCR_STATUS    EQU 5
 DEF MSCR_OPTIONS   EQU 6
 DEF MSCR_SAVE      EQU 7
 DEF ROOT_COUNT     EQU 7           ; PARTY EQUIP BAG STATUS SAVE OPTIONS EXIT
+DEF OPT_COUNT      EQU 2           ; OPTIONS rows: MUSIC, SFX (both on/off toggles)
 
 ; Menu layout on SCRN1: a full-screen panel; a header on row 1; content from
 ; MENU_BODY_ROW down. The cursor OBJ sits one column left of a list item.

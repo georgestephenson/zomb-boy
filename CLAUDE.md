@@ -442,8 +442,11 @@ scroll updates — so there's no seam or one-frame latency.
   level+XP (save version bumped to 2; the checksum spans them automatically).
 - **SAVE** writes a battery-backed block to cart RAM (see the ROM banking
   invariant below) with a magic + 8-bit checksum; **there is no load-on-boot yet**
-  (the title still captures a fresh seed) — that's LATER. OPTIONS is a music
-  on/off toggle (gates `UpdateSound` + unroutes NR51) with the rest TBC.
+  (the title still captures a fresh seed) — that's LATER. OPTIONS has two
+  independent on/off toggles — **MUSIC** (`wOptMusic`, gates `UpdateSound`;
+  muting calls `SilenceMusic` to cut the channel DACs) and **SFX** (`wOptSfx`,
+  gates `PlaySFX`/`PlaySplash`/`PlayCarDoor`) — navigated with up/down, flipped
+  with A/left/right; both persist in the save (version bumped to 3).
 
 ### Dialogue (npc/talk/dialogue*, docs/design/05)
 - The talk screen lives on **SCRN1** ($9C00) with SCX/SCY=0; the world map on
@@ -687,10 +690,13 @@ scroll updates — so there's no seam or one-frame latency.
   throttled by `wBumpCd`/`BUMP_COOLDOWN` so a held direction repeats the blip
   rather than screaming it every frame), pause-menu open/close/move/confirm
   (`EnterMenu`/`ExitMenu`/`MenuSFX`), dialogue cursor-move + tone-select
-  (talk.asm `.menu`), and eat vs. gear-pickup (loot.asm `GrantLoot`). SFX are
-  silenced with the music when OPTIONS unroutes the channels (NR51=0) — there is
-  no separate SFX toggle yet. `TODO(sfx)`: the register values are tuned by ear;
-  finalise on real hardware / mGBA.
+  (talk.asm `.menu`), and eat vs. gear-pickup (loot.asm `GrantLoot`). SFX have
+  their **own OPTIONS toggle** (`wOptSfx`, checked at the top of each Play*
+  routine), independent of the music toggle — so you can run SFX with music off
+  and vice versa. Because the driver owns NR51 (panning), each SFX **routes its
+  own channel** in NR51 before triggering, so it's audible whatever the song's
+  pan/mute state. `TODO(sfx)`: the register values are tuned by ear; finalise on
+  real hardware / mGBA.
 - Song data is `ROMX` in its **own bank** (it outgrew bank 1 when the
   dialogue data grew): every driver call is bracketed with a switch to the
   song's bank (`wMusicBank`, or `BANK(song_demo)` at init) and a restore of

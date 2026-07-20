@@ -237,7 +237,8 @@ wMenuScreen::       ds 1               ; MSCR_* — which panel is showing
 wRootCursor::       ds 1               ; selected option on the root list (kept
                                        ; across submenu visits so B returns here)
 wMenuCursor::       ds 1               ; sub-cursor for the equip slots / options
-wOptMusic::         ds 1               ; options: 1 = music on (drives NR50 mute)
+wOptMusic::         ds 1               ; options: 1 = music on (gates UpdateSound)
+wOptSfx::           ds 1               ; options: 1 = sound effects on (gates PlaySFX)
 wSaveDone::         ds 1               ; nonzero once a save has completed (SAVE screen)
 wMenuId::           ds 1               ; scratch: item id being drawn in a list row
 wMenuCount::        ds 1               ; scratch: its stack count
@@ -287,6 +288,7 @@ sPartyLevel::       ds MAX_PARTY               ; save version 2: levels + XP
 sPartyXP::          ds MAX_PARTY * 2
 sBag::              ds BAG_MAX * 2
 sOptMusic::         ds 1
+sOptSfx::           ds 1               ; save version 3: SFX on/off
 sChecksum::         ds 1               ; 8-bit sum of every byte above
 
 SECTION "HRAM Vars", HRAM

@@ -79,6 +79,7 @@ InitInventory::
     ld a, 1
     ld [wPartyCount], a         ; just the player to start
     ld [wOptMusic], a           ; music on by default (ClearRAM zeroed it)
+    ld [wOptSfx], a             ; sound effects on by default (A is still 1 here)
     xor a, a
     ld [wSaveDone], a
     ; clear every equip slot (nothing equipped)

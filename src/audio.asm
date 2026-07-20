@@ -10,9 +10,15 @@
 ;   InitSound        — power the APU on and start the title theme.
 ;   PlayMusic        — switch to a track by id (no-op if that song's already on).
 ;   UpdateSound      — advance playback one tick; call once per frame.
+;   SilenceMusic     — cut the held music notes when the music toggle goes off.
 ;   UpdateWorldMusic — pick the overworld track from the player's biome.
 ;   PlaySFX          — fire a short one-shot sound effect (channel 1).
 ;   PlaySplash / PlayCarDoor — bespoke channel-4 blips (kept from before).
+;
+; The OPTIONS menu has two independent toggles: wOptMusic (gates UpdateSound;
+; muting calls SilenceMusic) and wOptSfx (gates PlaySFX/PlaySplash/PlayCarDoor).
+; Because music-mute cuts the channels' DACs instead of unrouting NR51, SFX stay
+; audible with the music off — the two switches are fully independent.
 ;
 ; ---------------------------------------------------------------------------
 ; MUSIC: one asset, many slots (PLACEHOLDERS)
@@ -122,6 +128,23 @@ UpdateSound::
     ret
 
 ; -----------------------------------------------------------------------------
+; SilenceMusic: cut the currently-held music notes when the OPTIONS music toggle
+; goes off. The gate on UpdateSound freezes the driver, but the four channels
+; keep sounding their last note until something changes them — so we turn each
+; channel's DAC off (envelope/DAC bits = 0). NR51 stays fully routed, so sound
+; effects (which rewrite their channel's envelope + retrigger) are still audible
+; with music muted. When music is re-enabled the driver re-owns each channel on
+; its next note. Independent of the SFX toggle.
+; -----------------------------------------------------------------------------
+SilenceMusic::
+    xor a, a
+    ldh [rNR12], a                  ; ch1 envelope -> DAC off (silent)
+    ldh [rNR22], a                  ; ch2 envelope -> DAC off
+    ldh [rNR30], a                  ; ch3 DAC off (bit7)
+    ldh [rNR42], a                  ; ch4 envelope -> DAC off
+    ret
+
+; -----------------------------------------------------------------------------
 ; UpdateWorldMusic: choose the overworld track from the biome under the player
 ; and request it (a no-op while every biome shares the placeholder song). Called
 ; each sustained-overworld frame, so it also restores the world track when you
@@ -155,7 +178,13 @@ UpdateWorldMusic::
 ; the music when the OPTIONS toggle unroutes the channels (NR51=0). Clobbers a/de/hl.
 ; -----------------------------------------------------------------------------
 PlaySFX::
-    ld e, a
+    ld e, a                         ; e = SFX id (survives the toggle check below)
+    ld a, [wOptSfx]
+    and a, a
+    ret z                           ; sound effects turned off in OPTIONS
+    ldh a, [rNR51]                  ; the driver owns NR51 (panning), so make sure
+    or  %00010001                   ; ch1 is routed L+R for this blip — SFX must be
+    ldh [rNR51], a                  ; audible even with the music muted (driver frozen)
     ld d, 0
     ld hl, SFXTable
     add hl, de                      ; hl = SFXTable + 5*id
@@ -178,8 +207,15 @@ PlaySFX::
 ; Play a short splash blip on the noise channel (ch4) for entering/leaving water.
 ; This writes ch4 directly, borrowing it from the music for an instant: the driver
 ; re-owns the channel on its next tick, which is exactly a splash's length anyway.
-; NR51 (set in InitSound) already routes ch4 to both speakers.
+; Routes ch4 in NR51 first (the driver owns that register) so the blip is audible
+; regardless of the song's current panning or the music toggle.
 PlaySplash::
+    ld a, [wOptSfx]
+    and a, a
+    ret z                           ; sound effects turned off in OPTIONS
+    ldh a, [rNR51]                  ; route ch4 L+R (the driver owns NR51) so the
+    or  %10001000                   ; blip is audible even with the music muted
+    ldh [rNR51], a
     ld a, %00110000                 ; NR41: length timer (64-t) -> a brief burst
     ldh [rNR41], a
     ld a, $F2                       ; NR42: full volume, envelope down (quick decay)
@@ -194,6 +230,12 @@ PlaySplash::
 ; car — a stylised door thud, lower and with a touch more body than the splash.
 ; Same channel-borrowing trick as PlaySplash (the music re-owns ch4 next tick).
 PlayCarDoor::
+    ld a, [wOptSfx]
+    and a, a
+    ret z                           ; sound effects turned off in OPTIONS
+    ldh a, [rNR51]                  ; route ch4 L+R (the driver owns NR51) so the
+    or  %10001000                   ; blip is audible even with the music muted
+    ldh [rNR51], a
     ld a, %00100000                 ; NR41: length timer -> a bit more body than a splash
     ldh [rNR41], a
     ld a, $F3                       ; NR42: full volume, slower decay (a short ring)
