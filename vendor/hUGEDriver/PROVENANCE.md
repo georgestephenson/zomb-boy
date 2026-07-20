@@ -58,6 +58,17 @@ cp $H/rgbds_example/sample_song.asm $D/songs/song_demo.asm   # re-apply the song
 
 Then rebuild and re-test audio (see below).
 
+## Placeholder songs derived from the demo
+
+`song_demo.asm` is the only *composed* tune here. The game wants a distinct track
+per screen, so `tools/gen-placeholder-songs.py` (run automatically by the build,
+or `make songs`) derives extra **distinct placeholder** songs from it — the same
+patterns transposed and re-tempo'd — into the gitignored `build/gen/songs/`.
+They are guaranteed format-correct because they *are* the demo's data, just
+shifted, so they can't drift from the pinned 1.0.11 song format. They are NOT
+checked in (only the generator is). Replace any of them, or the demo, with a
+real composed export (keep the `song_*::` label) when one exists.
+
 ## Verifying audio without a human
 
 Interactive listening needs `make run` (mGBA). Headlessly you can still prove the

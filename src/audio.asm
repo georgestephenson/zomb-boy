@@ -21,26 +21,30 @@
 ; audible with the music off — the two switches are fully independent.
 ;
 ; ---------------------------------------------------------------------------
-; MUSIC: one asset, many slots (PLACEHOLDERS)
+; MUSIC: distinct placeholder songs, one bank each (PLACEHOLDERS)
 ; ---------------------------------------------------------------------------
 ; The design wants distinct music per screen — a title theme, eight overworld
 ; tracks (one per biome group), and a dialogue theme per persona. We only have
-; ONE composed song so far (the vendored public-domain demo), so EVERY slot in
-; MusicTracks points at it as a placeholder. PlayMusic compares the *song* (not
-; the track id), so requesting a different slot that resolves to the same asset
-; is a no-op — the demo just keeps playing seamlessly as you move between
-; screens. The moment real songs are dropped in and the table entries updated,
-; the per-screen switching below starts working with no other code changes.
-;   >>> TODO(music): replace the placeholder song per MusicTracks entry with a
-;   >>> real composed track (each in its OWN ROM bank — a full song is large;
-;   >>> see vendor/hUGEDriver/PROVENANCE.md for the export/vendoring flow). The
-;   >>> label on every entry says exactly where that track is heard.
+; ONE *composed* song (the vendored public-domain demo), and no way to fetch
+; more that match our pinned song format — so tools/gen-placeholder-songs.py
+; derives extra distinct, format-correct songs from the demo (transposed and
+; re-tempo'd) into the build tree. MusicTracks points TITLE at the demo and the
+; world/dialogue slots at those derivatives, so the screens genuinely sound
+; different today. PlayMusic compares the *song pointer*, so slots that share a
+; placeholder (e.g. every persona → song_talk) don't restart it; distinct ones
+; switch. Each song occupies its OWN ROM bank (~10 KB, one per 16 KB bank), so
+; the cartridge already carries the true memory cost of real music, and the
+; "Music Bank Reservation" section (bottom of this file) reserves banks for the
+; rest of the vision.
+;   >>> TODO(music): replace any placeholder with a real composed track (keep the
+;   >>> label) — see vendor/hUGEDriver/PROVENANCE.md for the export flow. No code
+;   >>> change needed; the MusicTracks comment says where each track is heard.
 ;
-; BANKING: song data lives in ROMX (its own bank, since it outgrew bank 1 beside
-; the dialogue data). Both driver entry points read song data, so InitSound/
-; PlayMusic/UpdateSound bracket the driver calls with a switch to the song's bank
-; (remembered in wMusicBank) and a restore of bank 1 — the repo invariant. The
-; driver keeps only WRAM state between ticks, so nothing dangles across a switch.
+; BANKING: song data lives in ROMX — each song in its own bank. Both driver
+; entry points read song data, so InitSound/PlayMusic/UpdateSound bracket the
+; driver calls with a switch to the *current* song's bank (remembered in
+; wMusicBank) and a restore of bank 1 — the repo invariant. The driver keeps
+; only WRAM state between ticks, so nothing dangles across a switch.
 ; PlaySFX/PlaySplash/PlayCarDoor are pure register writes and need no banking.
 ; =============================================================================
 INCLUDE "hardware.inc"
@@ -253,51 +257,56 @@ SECTION "Audio Tables", ROM0
 
 ; -----------------------------------------------------------------------------
 ; Music track table (indexed by TRK_*). Each entry is `db songBank` then
-; `dw songPtr` (3 bytes). EVERY entry is the vendored demo song for now — a
-; PLACEHOLDER. The comment on each line is where that track plays; replace the
-; asset (and give it its own bank) to make the game's music per-screen. See the
-; big TODO(music) at the top of this file.
+; `dw songPtr` (3 bytes) — a song descriptor plus the ROM bank it lives in, so
+; UpdateSound can map that bank each tick and PlayMusic knows when the song
+; actually changed. Every song here is a PLACEHOLDER: `song_demo` is the one
+; vendored tune, and song_urban..song_talk are distinct derivatives of it
+; (transposed / re-tempo'd by tools/gen-placeholder-songs.py) so the different
+; screens genuinely sound different AND the ROM reserves a real bank per song.
+; Replace any entry with a real composed tune (keep the label) — no code change.
+;   TODO(music): compose the real per-screen tracks; these are stand-ins.
 ; -----------------------------------------------------------------------------
 MusicTracks::
     db BANK(song_demo)
-    dw song_demo                    ; TRK_TITLE   — title screen         TODO(music): real title theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_0 — overworld: city/ruins TODO(music): urban theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_1 — overworld: plains/farm TODO(music): open/pastoral theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_2 — overworld: forest/jungle TODO(music): green/wild theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_3 — overworld: marsh      TODO(music): wet/uneasy theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_4 — overworld: graveyard  TODO(music): eerie theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_5 — overworld: desert     TODO(music): arid theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_6 — overworld: mountains  TODO(music): high/sparse theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_WORLD_7 — overworld: tundra     TODO(music): cold theme
-    ; --- per-persona dialogue themes (TRK_TALK_0 + persona id) ---
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_0  — talk: persona 0 (police)  TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_1  — talk: persona 1            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_2  — talk: persona 2            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_3  — talk: persona 3            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_4  — talk: persona 4            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_5  — talk: persona 5            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_6  — talk: persona 6            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_7  — talk: persona 7            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_8  — talk: persona 8            TODO(music): persona theme
-    db BANK(song_demo)
-    dw song_demo                    ; TRK_TALK_9  — talk: persona 9            TODO(music): persona theme
+    dw song_demo                    ; TRK_TITLE   — title screen theme
+    db BANK(song_urban)
+    dw song_urban                   ; TRK_WORLD_0 — overworld: city / ruins
+    db BANK(song_open)
+    dw song_open                    ; TRK_WORLD_1 — overworld: plains / farm
+    db BANK(song_green)
+    dw song_green                   ; TRK_WORLD_2 — overworld: forest / jungle
+    db BANK(song_wet)
+    dw song_wet                     ; TRK_WORLD_3 — overworld: marsh
+    db BANK(song_eerie)
+    dw song_eerie                   ; TRK_WORLD_4 — overworld: graveyard
+    db BANK(song_arid)
+    dw song_arid                    ; TRK_WORLD_5 — overworld: desert
+    db BANK(song_cold)
+    dw song_cold                    ; TRK_WORLD_6 — overworld: mountains
+    db BANK(song_cold)
+    dw song_cold                    ; TRK_WORLD_7 — overworld: tundra (shares the cold theme)
+    ; --- per-persona dialogue themes (TRK_TALK_0 + persona id). One shared
+    ;     dialogue placeholder for now; give personas distinct tunes later. ---
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_0  — talk: persona 0 (police)
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_1  — talk: persona 1
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_2  — talk: persona 2
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_3  — talk: persona 3
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_4  — talk: persona 4
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_5  — talk: persona 5
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_6  — talk: persona 6
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_7  — talk: persona 7
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_8  — talk: persona 8
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_9  — talk: persona 9
 
 ; Map each biome to one of the eight world tracks (indexed by BIOME_*). Groups
 ; related biomes so the eight tracks cover all eleven biomes with a coherent
@@ -330,3 +339,23 @@ SFXTable::
     db $36, $86, $94, $C0, $C6      ; SFX_CLOSE   — falling chirp (menu closes)
     db $13, $41, $63, $80, $C5      ; SFX_EAT     — soft low "nom" (consume food)
     db $00, $88, $C4, $C0, $C7      ; SFX_PICKUP  — bright "ding" (gear into the bag)
+
+; =============================================================================
+; Music bank reservation
+; -----------------------------------------------------------------------------
+; A distinct song costs one ~10 KB ROM bank EACH (two won't fit in a 16 KB
+; bank). The full music design wants a track per screen — title + 8 world
+; biomes + a theme per persona — i.e. up to ~19 distinct songs. Only a handful
+; of placeholder songs are linked today (see MusicTracks); the rest of the song
+; banks are empty. This 1-byte anchor in the top bank forces the linker to size
+; the cartridge for the FULL music vision NOW, so dropping in real per-track
+; songs later can never overflow or force a cart resize — the memory is already
+; reserved. rgbfix -p pads the reserved-but-empty banks with $FF.
+;
+; BANK[31] => banks 0..31 = 32 banks = 512 KB. Non-music content lives in the
+; low banks (0..3); that leaves banks 4..31 (28 banks) for songs — comfortably
+; more than the ~19 the design calls for. Shrink BANK[] (e.g. 15 -> 256 KB) if
+; the final music footprint is settled smaller.
+; =============================================================================
+SECTION "Music Bank Reservation", ROMX, BANK[31]
+    db $FF

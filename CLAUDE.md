@@ -675,14 +675,22 @@ scroll updates — so there's no seam or one-frame latency.
   that tight budget. `UpdateWorldMusic` (overworld loop) maps the player's biome
   → a world track via `WorldTrackForBiome`; it touches no `Rand`, so
   worldgen/spawn determinism is unperturbed.
-- **Music tracks are PLACEHOLDERS: every `MusicTracks` entry points at the one
-  vendored demo song.** Because `PlayMusic` compares the *song pointer*, not the
-  track id, a request for a different slot that resolves to the same asset is a
-  no-op — so today the demo just plays continuously across every screen with no
-  restart. Each entry is labelled with where it plays and carries a
-  `TODO(music)`: drop in a real composed song per slot (each in its **own ROM
-  bank** — a full song is large) and the per-screen switching starts working with
-  no code change.
+- **Music tracks are PLACEHOLDERS, but DISTINCT ones.** We have one *composed*
+  song (the vendored demo) and can't fetch more that match our pinned song
+  format, so `tools/gen-placeholder-songs.py` derives extra distinct,
+  format-correct songs from the demo — transposing the notes and changing the
+  tempo (`make songs` regenerates them into the gitignored build tree; keep the
+  tool's `VARIANTS` in lockstep with `PLACEHOLDER_SONGS` in the Makefile).
+  `MusicTracks` points TITLE at the demo, the eight world slots at eight
+  derivatives (`song_urban/open/green/wet/eerie/arid/cold`), and every persona at
+  `song_talk`, so the screens genuinely sound different today. Each song is
+  **~10 KB = one ROM bank**; `PlayMusic` compares the *(bank, pointer)* pair, and
+  since every song sits at `$4000` in its own bank the **bank is the
+  discriminator** — slots that share a song don't restart it, distinct ones
+  switch. `TODO(music)`: replace any placeholder with a real composed track (keep
+  the label). The `"Music Bank Reservation"` section pins `BANK[31]` so the cart
+  is pre-sized (512 KB) for the full ~19-track vision — real songs drop into the
+  empty reserved banks with no resize.
 - **Sound effects** are short one-shot channel-1 blips (`PlaySFX A=SFX_*`,
   driven by the 5-byte-per-entry `SFXTable`: NR10..NR14), the same
   channel-borrowing trick as `PlaySplash`/`PlayCarDoor` (ch4) — the driver
@@ -697,30 +705,37 @@ scroll updates — so there's no seam or one-frame latency.
   own channel** in NR51 before triggering, so it's audible whatever the song's
   pan/mute state. `TODO(sfx)`: the register values are tuned by ear; finalise on
   real hardware / mGBA.
-- Song data is `ROMX` in its **own bank** (it outgrew bank 1 when the
-  dialogue data grew): every driver call is bracketed with a switch to the
-  song's bank (`wMusicBank`, or `BANK(song_demo)` at init) and a restore of
-  bank 1, per the ROM banking invariant below. `test/integration/test_audio.py`
-  asserts the driver's WRAM tempo/order-count match the song, that the row cursor
-  advances, and that the manager loaded a track (`wMusicSong`/`wMusicBank`) — the
-  headless canary for a broken bank seam (or driver/tracker format drift, which
-  fails the same way).
-- To swap the tune: export from hUGETracker as "RGBDS .asm", drop it in
-  `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label. Real
-  per-screen music additionally needs a new song object in its own bank and its
-  `MusicTracks` entries repointed.
+- Each song is `ROMX` in its **own bank** (banks 4+): every driver call is
+  bracketed with a switch to the current song's bank (`wMusicBank`, or
+  `BANK(song_demo)` at init) and a restore of bank 1, per the ROM banking
+  invariant below. `test/integration/test_audio.py` asserts the driver's WRAM
+  tempo/order-count match the song, that the row cursor advances, and that boot
+  loads the **forest world track** (`song_green`, the classic-seed spawn biome) —
+  proving the biome→track→PlayMusic path end to end and the per-song banking.
+- To swap the demo: export from hUGETracker as "RGBDS .asm", drop it in
+  `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label (then
+  `make songs` re-derives the placeholders from it). To add a **real** track for a
+  slot, drop its song object in its own bank and repoint that `MusicTracks` entry
+  — the reserved banks are already there.
 
 ## Conventions & invariants (don't break these)
 
-- **The cart is 128 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
-  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** Bank 1 holds the
+- **The cart is 512 KB MBC5 with 8 KB battery RAM (`-m 0x1B -r 0x02` in
+  `FIXFLAGS`); ROMX bank 1 is the default-mapped bank.** It grew from 128 KB to
+  512 KB to **reserve one ROM bank per distinct music track** (each song is
+  ~10 KB = a full 16 KB bank; the design wants up to ~19). Non-music content
+  lives in the low banks (ROM0 + banks 1-3); the song banks start at bank 4, and
+  the `"Music Bank Reservation"` section (audio.asm, `BANK[31]`) pins the top
+  bank so the linker sizes the cart for the whole music vision even while most
+  song banks are still empty. Bank 1 holds the
   dialogue data + code (read throughout talk mode) and — now that ROM0 is full —
   the `anim.asm` living-world code and the whole of `loot.asm` (`BANK[1]`, run
   from the always-mapped bank so they need no switching, exactly like
   `dialogue.asm`); boot maps bank 1
   explicitly (don't trust MBC power-on state). Portraits are `BANK[2]`, mapped **only** inside
-  `ShowPortrait` (talk.asm); the song data floats in its own bank, mapped
-  **only** inside `InitSound`/`UpdateSound` (audio.asm) via `BANK(song_demo)`.
+  `ShowPortrait` (talk.asm); each song floats in its own bank (banks 4+), mapped
+  **only** inside `InitSound`/`PlayMusic`/`UpdateSound` (audio.asm) via the
+  current track's `wMusicBank`.
   The **graphics data** (`gfx.asm` `GfxData`: tiles/font/palettes) is `BANK[3]`
   too (shared with the boot-only title image), read **only** by
   `LoadTiles`/`LoadFont`/`LoadPalettes` (video.asm), each of which maps
