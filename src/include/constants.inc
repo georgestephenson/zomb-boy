@@ -498,6 +498,10 @@ DEF TILE_LOOT_BEANS EQU TILE_LOOT_BASE + 1
 DEF TILE_LOOT_CRATE EQU TILE_LOOT_BASE + 2
 DEF TILE_LOOT_POT   EQU TILE_LOOT_BASE + 3
 DEF TILE_LOOT_CHEST EQU TILE_LOOT_BASE + 4
+; Exhaust puff sprite — one tile appended to PersonaTiles after the loot (id 224).
+; A single OBJ tile drawn on OBJ palette 6 (charcoal/black) by DrawSmoke (car.asm)
+; while driving; the car coughs one out when it starts rolling or changes heading.
+DEF TILE_SMOKE      EQU TILE_LOOT_BASE + 5
 ; --- World loot (loot.asm): dynamic pickups + breakable containers ----------
 ; Loot objects reuse the 16-byte entity struct (kind in EO_KIND) and the same
 ; spawn manager as the entities: they appear in a ring just outside the view,
@@ -520,6 +524,7 @@ DEF APPLE_FOOD     EQU 10           ; small
 DEF BEANS_FOOD     EQU 25           ; medium
 DEF RATION_FOOD    EQU 50           ; large (ration pack, from a crate/pot)
 DEF OAM_LOOT       EQU 25           ; loot OBJ slots 25..25+MAX_LOOT-1 (after the car)
+DEF OAM_SMOKE      EQU OAM_LOOT + MAX_LOOT   ; the driving exhaust puff (slot 33)
 
 DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP_SPEED)
 ; Engine rumble: while driving, the 2x2 car sprite occasionally jitters one pixel
@@ -530,6 +535,9 @@ DEF CAR_STEP_SPEED EQU 2           ; step sub-units/frame while driving (2x STEP
 ; RUMBLE_PERIOD must be a power of 2 (masked, not divided).
 DEF RUMBLE_PERIOD  EQU 64          ; frames per rumble cycle (~1s at 60fps)
 DEF RUMBLE_ON      EQU 6           ; frames of shudder at the start of each cycle
+; Exhaust puff: how long a smoke sprite lingers after the car starts rolling or
+; changes heading (DrawSmoke drifts it "behind" the car as it ages, then hides it).
+DEF SMOKE_FRAMES   EQU 14
 DEF CAR_SPAWN_DX   EQU 0           ; FALLBACK spawn offset from the player start (tiles)
 DEF CAR_SPAWN_DY   EQU 3
 DEF FUEL_START     EQU METER_MAX   ; a full tank at spawn (0..METER_MAX, saturating)

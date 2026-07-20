@@ -142,17 +142,32 @@ def test_los_keys_off_arrived_tile_not_step_start():
     try:
         g.pyboy.memory[g.addr("wSwimming")] = 0
         _clear_pool(g, "wZombies", MAX_ZOMBIES)   # only our planted zombie may alert
-        _plant_zombie_facing_player(g)            # in line with the LOGICAL tile
         px, py = g.r16("wPlayerWX"), g.r16("wPlayerWY")
-        # mid-step: arrived tile is still a row away from the zombie's sight line
-        _w16(g, g.addr("wSeenWX"), px)
-        _w16(g, g.addr("wSeenWY"), (py + 3) & 0xFFFF)
-        g.tick(2)
-        assert g.r8("wGameMode") == MODE_OVERWORLD, "alerted before the step finished"
-        # step finished: the arrived tile catches up to the logical tile
-        _w16(g, g.addr("wSeenWX"), px)
-        _w16(g, g.addr("wSeenWY"), py)
-        g.tick(2)
+        # We re-plant the zombie on the sight line every frame: an idle zombie's
+        # wander timer drains within a tick and it re-plans, so a one-shot plant
+        # only holds it in line by frame-phase luck (which shifts with any ROM
+        # size change). Re-pinning each frame decouples the LOS check from that
+        # phase — the zombie is provably on the line whenever we sample the mode.
+        #
+        # mid-step: the arrived tile (wSeen) is a row off the zombie's sight line,
+        # so even with the zombie pinned in line it must NOT alert (LOS keys off
+        # wSeen, not the logical tile).
+        for _ in range(3):
+            _plant_zombie_facing_player(g)
+            _w16(g, g.addr("wSeenWX"), px)
+            _w16(g, g.addr("wSeenWY"), (py + 3) & 0xFFFF)
+            g.tick(1)
+            assert g.r8("wGameMode") == MODE_OVERWORLD, \
+                "alerted before the step finished"
+        # step finished: snap the arrived tile onto the line -> the very same
+        # zombie now spots the player (allow a few frames for the loop's CheckLOS).
+        for _ in range(6):
+            _plant_zombie_facing_player(g)
+            _w16(g, g.addr("wSeenWX"), px)
+            _w16(g, g.addr("wSeenWY"), py)
+            g.tick(1)
+            if g.r8("wGameMode") == MODE_ALERT:
+                break
         assert g.r8("wGameMode") == MODE_ALERT, "no alert after arriving on the tile"
     finally:
         g.close()

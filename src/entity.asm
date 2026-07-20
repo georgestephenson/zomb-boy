@@ -360,7 +360,8 @@ DrawEntities::
     call DrawZombies
     call DrawNPCs
     call DrawLoot               ; world pickups + containers (OAM_LOOT..)
-    call DrawCar                ; the 2x2 car (OAM_CAR..+3): driving or parked
+    call DrawCar                ; the 2x2 car (OAM_CAR..+3): driving or parked; while
+                                ; driving it also emits the exhaust puff (DrawSmoke)
     ret
 
 ; DrawZombies: hide the entity sprite slots, then draw each active + on-screen

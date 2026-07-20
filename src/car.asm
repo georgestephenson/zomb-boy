@@ -377,6 +377,8 @@ StartBoardStep::
 ExitCar:
     xor a, a
     ld [wInCar], a
+    ld [wSmokeTimer], a        ; kill any lingering exhaust puff...
+    ld [wShadowOAM + OAM_SMOKE * 4], a   ; ...and hide its slot (DrawSmoke won't run on foot)
     ld a, [wFacing]
     ld [wCarFacing], a         ; the parked car keeps the heading you left on
     ; pick an ejection direction for the player: face dir first, then a sweep
@@ -595,7 +597,7 @@ DrawCar::
     and a
     jr z, .hide
     ld a, [wCarFacing]
-    jr DrawCar2x2
+    jp DrawCar2x2                  ; parked: no exhaust — plain tail call (on-foot path)
 .driving:
     ; the driver sits at wPlayerWX/WY, a tile inside the footprint; the car's
     ; top-left is that many tiles up/left of the player cell (seat = player - car,
@@ -626,8 +628,15 @@ DrawCar::
     call CarRumbleY               ; A = engine wobble (-1/0/+1), advances wCarRumble
     add a, c
     ld [wScrY], a
+    ; stash the on-screen top-left so DrawSmoke can anchor the exhaust puff behind
+    ; the car (both slots sit on the same camera-locked cell block)
+    ld a, [wScrX]
+    ld [wCarScrX], a
+    ld a, [wScrY]
+    ld [wCarScrY], a
     ld a, [wFacing]
-    jr DrawCar2x2
+    call DrawCar2x2               ; paint the 2x2 body...
+    jp DrawSmoke                  ; ...then the exhaust puff (driving only); tail call
 .hide:
     xor a, a
     ld [wShadowOAM + (OAM_CAR + 0) * 4], a   ; Y = 0 -> off-screen
@@ -663,6 +672,111 @@ CarRumbleY:
 .still:
     xor a, a
     ret
+
+; -----------------------------------------------------------------------------
+; TriggerCarSmoke: arm an exhaust puff for SMOKE_FRAMES frames. Called from the
+; driving-step commit (player.asm) when the car starts rolling or turns.
+; -----------------------------------------------------------------------------
+TriggerCarSmoke::
+    ld a, SMOKE_FRAMES
+    ld [wSmokeTimer], a
+    ret
+
+; -----------------------------------------------------------------------------
+; DrawSmoke: draw the exhaust puff in OAM_SMOKE while its timer runs, then hide
+; the slot. The puff sits one "car length" BEHIND the car (opposite wFacing) and
+; drifts a little further behind as it ages, so it reads as smoke peeling off the
+; tailpipe. Anchored to wCarScrX/WY (the car's camera-locked on-screen top-left,
+; stashed by DrawCar). Tail-called from DrawCar's driving branch ONLY, so the
+; on-foot loop never touches it (ExitCar hides the slot on the way out).
+; -----------------------------------------------------------------------------
+DrawSmoke::
+    ld a, [wSmokeTimer]
+    and a
+    jr z, .hide
+    ld b, a                       ; B = timer (before this frame's decrement)
+    dec a
+    ld [wSmokeTimer], a
+    ; dist = 8 + age, age = SMOKE_FRAMES - timer (0 on the first shown frame). The
+    ; puff centre is the car centre pushed "behind" by dist; so the further it ages
+    ; the further back it drifts. dist stays small (<= 8 + SMOKE_FRAMES-1).
+    ld a, SMOKE_FRAMES
+    sub b
+    add a, 8
+    ld c, a                       ; C = dist
+    ld a, [wFacing]
+    call SmokeBehindTable         ; DE -> (behindX, behindY) signed unit vector
+    ; --- puff Y = wCarScrY + 4 + behindY * dist ---
+    ld a, [wCarScrY]
+    add a, 4
+    ld b, a
+    inc de                        ; -> behindY
+    ld a, [de]
+    dec de                        ; leave DE at behindX for the X calc
+    call .applySign               ; B += sign(A) * C
+    ld a, b
+    push af                       ; save puff Y
+    ; --- puff X = wCarScrX + 4 + behindX * dist ---
+    ld a, [wCarScrX]
+    add a, 4
+    ld b, a
+    ld a, [de]                    ; behindX
+    call .applySign
+    ld d, b                       ; D = puff X
+    pop af                        ; A = puff Y
+    ld hl, wShadowOAM + OAM_SMOKE * 4
+    ld [hl+], a                   ; OAM Y
+    ld a, d
+    ld [hl+], a                   ; OAM X
+    ld a, TILE_SMOKE
+    ld [hl+], a
+    ld a, 6                       ; OBJ palette 6 (charcoal/black puff)
+    ld [hl], a
+    ret
+; .applySign: A = signed unit (0 / +1 / $FF); B += A * C. Preserves C and DE.
+.applySign:
+    and a
+    ret z
+    bit 7, a
+    jr nz, .neg
+    ld a, b
+    add a, c
+    ld b, a
+    ret
+.neg:
+    ld a, b
+    sub c
+    ld b, a
+    ret
+.hide:
+    xor a, a
+    ld [wShadowOAM + OAM_SMOKE * 4], a   ; no active puff this frame -> Y = 0 (hidden)
+    ret
+
+; SmokeBehindTable: A = facing -> DE = a 2-byte signed unit vector pointing from
+; the car toward its tail (opposite the heading), used to place/drift the puff.
+SmokeBehindTable:
+    cp EFACE_UP
+    jr z, .up
+    cp EFACE_LEFT
+    jr z, .left
+    cp EFACE_RIGHT
+    jr z, .right
+    ld de, SmokeBehindDown
+    ret
+.up:
+    ld de, SmokeBehindUp
+    ret
+.left:
+    ld de, SmokeBehindLeft
+    ret
+.right:
+    ld de, SmokeBehindRight
+    ret
+SmokeBehindDown:  db 0, -1          ; driving down -> exhaust trails up-screen
+SmokeBehindUp:    db 0, 1           ; driving up   -> exhaust trails down-screen
+SmokeBehindLeft:  db 1, 0           ; driving left -> exhaust trails to the right
+SmokeBehindRight: db -1, 0          ; driving right-> exhaust trails to the left
 
 ; DrawCar2x2: A = facing; wScrX/wScrY = the OAM position of the footprint's
 ; top-left tile. Paint the four quadrant tiles into OAM_CAR..OAM_CAR+3 aligned to
