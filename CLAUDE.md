@@ -107,7 +107,7 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `rng.asm` | 16-bit LFSR (`Rand`) — dynamic behaviour, NOT worldgen |
 | `video.asm` | VBlank sync, OAM DMA, palettes, font loader, scroll; VBlank IRQ vector |
 | `input.asm` | Joypad read with edge detection |
-| `audio.asm` | Music seam over vendored hUGEDriver (`InitSound`/`UpdateSound`) |
+| `audio.asm` | Music manager + SFX over vendored hUGEDriver (`InitSound`/`PlayMusic`/`UpdateSound`/`PlaySFX`) |
 | `gfx.asm` | Tile + palette data; 1bpp font (expanded to $8800 at boot) |
 | `ram.asm` | **All** WRAM/HRAM variables (one place) |
 | `util.asm` | 16-bit LE pointer math (`Inc16Ptr`/`Dec16Ptr`/`Add16Ptr`) |
@@ -659,19 +659,50 @@ scroll updates — so there's no seam or one-frame latency.
   and **without** `-Weverything` (third-party; upstream's style, not ours). They
   keep their **own** bundled `hardware.inc` (newer `rAUDxxx` names) — that's fine,
   each object only needs EQUs at assemble time, independent of our pinned v4.
-- `audio.asm` is the seam: `InitSound` powers the APU on + `hUGE_init`s the song;
-  `UpdateSound` (`hUGE_dosound`) advances one tick. Call `UpdateSound` **once per
-  frame, outside VBlank** (top of the loop) — the loop is frame-locked by
-  `WaitVBlank`, and keeping it out of the VBlank window spares that tight budget.
+- `audio.asm` is the seam. **A small music manager sits over the driver so each
+  screen can request its own track by id** (`TRK_*` in constants.inc): a title
+  theme, **eight world tracks** (one per biome group), and a **per-persona
+  dialogue theme** (`TRK_TALK_0 + persona`). `InitSound` powers the APU on and
+  starts the title theme; `PlayMusic A=TRK_*` looks the id up in `MusicTracks`
+  (a `db bank, dw ptr` table) and re-inits the driver **only if the song
+  actually changed**; `UpdateSound` (`hUGE_dosound`) advances one tick, mapping
+  the *current* song's bank (`wMusicBank`). Call `UpdateSound` **once per frame,
+  outside VBlank** (top of the loop, and once per title-loop frame) — the loop is
+  frame-locked by `WaitVBlank`, and keeping it out of the VBlank window spares
+  that tight budget. `UpdateWorldMusic` (overworld loop) maps the player's biome
+  → a world track via `WorldTrackForBiome`; it touches no `Rand`, so
+  worldgen/spawn determinism is unperturbed.
+- **Music tracks are PLACEHOLDERS: every `MusicTracks` entry points at the one
+  vendored demo song.** Because `PlayMusic` compares the *song pointer*, not the
+  track id, a request for a different slot that resolves to the same asset is a
+  no-op — so today the demo just plays continuously across every screen with no
+  restart. Each entry is labelled with where it plays and carries a
+  `TODO(music)`: drop in a real composed song per slot (each in its **own ROM
+  bank** — a full song is large) and the per-screen switching starts working with
+  no code change.
+- **Sound effects** are short one-shot channel-1 blips (`PlaySFX A=SFX_*`,
+  driven by the 5-byte-per-entry `SFXTable`: NR10..NR14), the same
+  channel-borrowing trick as `PlaySplash`/`PlayCarDoor` (ch4) — the driver
+  re-owns the channel on its next tick. Wired at: wall bump (player `.blocked`,
+  throttled by `wBumpCd`/`BUMP_COOLDOWN` so a held direction repeats the blip
+  rather than screaming it every frame), pause-menu open/close/move/confirm
+  (`EnterMenu`/`ExitMenu`/`MenuSFX`), dialogue cursor-move + tone-select
+  (talk.asm `.menu`), and eat vs. gear-pickup (loot.asm `GrantLoot`). SFX are
+  silenced with the music when OPTIONS unroutes the channels (NR51=0) — there is
+  no separate SFX toggle yet. `TODO(sfx)`: the register values are tuned by ear;
+  finalise on real hardware / mGBA.
 - Song data is `ROMX` in its **own bank** (it outgrew bank 1 when the
-  dialogue data grew): `InitSound`/`UpdateSound` bracket every driver call
-  with a switch to `BANK(song_demo)` and a restore of bank 1, per the ROM
-  banking invariant below. `test/integration/test_audio.py` asserts the
-  driver's WRAM tempo/order-count match the song and that the row cursor
-  advances — the headless canary for a broken bank seam (or driver/tracker
-  format drift, which fails the same way).
+  dialogue data grew): every driver call is bracketed with a switch to the
+  song's bank (`wMusicBank`, or `BANK(song_demo)` at init) and a restore of
+  bank 1, per the ROM banking invariant below. `test/integration/test_audio.py`
+  asserts the driver's WRAM tempo/order-count match the song, that the row cursor
+  advances, and that the manager loaded a track (`wMusicSong`/`wMusicBank`) — the
+  headless canary for a broken bank seam (or driver/tracker format drift, which
+  fails the same way).
 - To swap the tune: export from hUGETracker as "RGBDS .asm", drop it in
-  `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label.
+  `vendor/hUGEDriver/songs/` keeping the `song_demo::` descriptor label. Real
+  per-screen music additionally needs a new song object in its own bank and its
+  `MusicTracks` entries repointed.
 
 ## Conventions & invariants (don't break these)
 

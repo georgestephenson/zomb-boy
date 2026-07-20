@@ -265,7 +265,7 @@ CollectLoot:
     call ComposeHUD                ; food may have changed -> refresh the row
     ld a, 1
     ld [wHUDDirty], a
-    jp PlaySplash                  ; a short pickup blip (tail call)
+    ret                            ; the eat/pickup blip already fired in GrantLoot
 
 ; GrantLoot: A = LOOT_* kind. Food goes to the meter; containers roll their table.
 GrantLoot:
@@ -281,6 +281,8 @@ GrantLoot:
     jr nz, .crateGear
     ld a, RATION_FOOD              ; 1/4 -> ration pack (large food)
     call AddFood
+    ld a, SFX_EAT
+    call PlaySFX
     ld de, MsgRation
     jp ShowNotice
 .crateGear:
@@ -301,16 +303,22 @@ GrantLoot:
     ld b, a
     ld c, 1                        ; one of it
     call AddItem                   ; into the bag
+    ld a, SFX_PICKUP               ; gear-into-the-bag "ding"
+    call PlaySFX
     pop af                         ; A = item id
     jp ShowNoticeItem              ; "GOT <name>"
 .apple:
     ld a, APPLE_FOOD
     call AddFood
+    ld a, SFX_EAT
+    call PlaySFX
     ld de, MsgApple
     jp ShowNotice
 .beans:
     ld a, BEANS_FOOD
     call AddFood
+    ld a, SFX_EAT
+    call PlaySFX
     ld de, MsgBeans
     jp ShowNotice
 

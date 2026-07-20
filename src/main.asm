@@ -104,11 +104,13 @@ Start::                             ; exported: the menu's EXIT soft-resets here
     ldh [rSCX], a
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_BG8000 | LCDCF_BG9800
     ldh [rLCDC], a
+    call InitSound                  ; power the APU on + start the title theme
 .title:
     ldh a, [rLY]                    ; leave the current VBlank...
     cp SCRN_Y
     jr nc, .title
     call WaitVBlankLY               ; ...and spin to the next: one tick/frame
+    call UpdateSound                ; advance the title music one tick
     ld hl, wTitleTick
     inc [hl]
     call ReadInput
@@ -153,7 +155,8 @@ Start::                             ; exported: the menu's EXIT soft-resets here
     call InitHUD                    ; meters/clock + the window row (LCD is off)
     call InitInventory              ; party (just the player) + starting bag + options
 
-    call InitSound                  ; power on the APU + start the demo song
+    call UpdateWorldMusic           ; APU is already on from the title; swap the
+                                    ; title theme for this biome's overworld track
 
     call DrawEntities
     ld a, HIGH(wShadowOAM)
@@ -210,6 +213,8 @@ MainLoop:
     cp MODE_TALK
     jr z, MainLoop                  ; EnterTalk presented its own frame
     call UpdateAnim                 ; advance world animation (water/trees/brush/doors)
+    call UpdateWorldMusic           ; track follows the player's biome (no-op unless
+                                    ; it changed; also resumes world music after talk)
     jr .draw
 .alert:
     call UpdateAlert                ; "!" beat -> zombie charges the player -> battle

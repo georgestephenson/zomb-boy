@@ -33,3 +33,14 @@ def test_music_advances(game):
     game.tick(16)
     after = (game.r8("current_order"), game.r8("row"))
     assert after != before, f"music not advancing: stuck at order/row {before}"
+
+
+def test_music_manager_loaded_a_track(game):
+    """PlayMusic (audio.asm) records which song is loaded so UpdateSound can map
+    its bank each tick and so a same-song track request is a no-op. After boot a
+    world track must be selected: wMusicSong points at the (placeholder) song and
+    wMusicBank names its ROM bank. A zero here means PlayMusic never ran (the game
+    would still hear whatever bank 1 happened to hold)."""
+    assert game.r16("wMusicSong") == game.addr("song_demo"), \
+        "music manager didn't load the song descriptor"
+    assert game.r8("wMusicBank") != 0, "music manager didn't record the song's bank"

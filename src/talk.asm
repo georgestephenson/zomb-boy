@@ -37,6 +37,8 @@ EnterTalk::
     call CopyPoolIn            ; wEnt = the survivor, for the whole conversation
     ld a, [wEnt + EO_PERSONA]
     ld [wTalkPersona], a
+    add TRK_TALK_0             ; this persona's dialogue theme (track per persona)
+    call PlayMusic
     ld a, [wEnt + EO_AFFIN]
     call MoodFromAffin
     ld [wTalkMood], a
@@ -240,9 +242,17 @@ UpdateTalk::
     xor a, 2
     ld [wTalkCursor], a
 .pick:
+    ld a, b                    ; any d-pad press moved the cursor -> a move blip
+    and PAD_LEFT | PAD_RIGHT | PAD_UP | PAD_DOWN
+    jr z, .noMove
+    ld a, SFX_MOVE
+    call PlaySFX
+.noMove:
     ld a, [wNewKeys]
     and PAD_A
     ret z
+    ld a, SFX_CONFIRM          ; you picked a reply tone
+    call PlaySFX
     ; apply the chosen tone: delta -> affinity (saturating) -> mood
     ld a, [wTalkCursor]
     ld e, a

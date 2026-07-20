@@ -32,6 +32,8 @@ SECTION "Menu", ROM0
 ; world strip, build the root panel with the LCD off, then flip to SCRN1.
 ; -----------------------------------------------------------------------------
 EnterMenu::
+    ld a, SFX_OPEN
+    call PlaySFX               ; menu-open chirp
 .flush:
     ld a, [wStrKind]
     and a, a
@@ -62,6 +64,8 @@ EnterMenu::
 ; ExitTalkScreen). BuildRoot wiped SCRN1 row 0, so DrawHUDRow restores the bar.
 ; -----------------------------------------------------------------------------
 ExitMenu:
+    ld a, SFX_CLOSE
+    call PlaySFX               ; menu-close chirp
     ld a, MODE_OVERWORLD
     ld [wGameMode], a
     call ComputeCamLag
@@ -80,11 +84,31 @@ MenuLCDOn:
     ret
 
 ; -----------------------------------------------------------------------------
+; MenuSFX: generic pause-menu feedback, read once per frame before the panel
+; handlers run. Any d-pad press is a cursor-move blip; A is a confirm blip. B
+; (back / close) makes no sound of its own — closing the menu plays SFX_CLOSE in
+; ExitMenu, and backing out of a submenu is deliberately quiet.
+; -----------------------------------------------------------------------------
+MenuSFX:
+    ld a, [wNewKeys]
+    and PAD_A
+    jr nz, .confirm
+    ld a, [wNewKeys]
+    and PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT
+    ret z
+    ld a, SFX_MOVE
+    jp PlaySFX
+.confirm:
+    ld a, SFX_CONFIRM
+    jp PlaySFX
+
+; -----------------------------------------------------------------------------
 ; UpdateMenu: one logic frame. Position the cursor, then dispatch to the active
 ; panel's handler. Panels resolve navigation by rebuilding via Goto* helpers.
 ; -----------------------------------------------------------------------------
 UpdateMenu::
     call DrawMenuCursor
+    call MenuSFX               ; d-pad -> move blip, A -> confirm blip (before dispatch)
     ld a, [wMenuScreen]
     cp MSCR_ROOT
     jp z, UpdRoot

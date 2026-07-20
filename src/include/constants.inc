@@ -610,4 +610,42 @@ DEF BAG_STACK_MAX  EQU 99          ; per-stack count cap (saturating)
 DEF OAM_MENU_CURSOR EQU 0          ; menu clears OAM, so slot 0 is free
 DEF OAM_MENU_AVATAR EQU 1          ; the player avatar on the status screen
 
+; --- Music tracks (audio.asm MusicTracks) -----------------------------------
+; Each screen/context requests a track id; PlayMusic maps it to a song
+; descriptor. There is one real song asset so far (the vendored demo), so EVERY
+; slot currently points at it as a PLACEHOLDER — see the big TODO on MusicTracks.
+; The ids below are the contract the game code uses; wiring real music is just a
+; matter of swapping the table entries (and giving each song its own ROM bank).
+DEF TRK_TITLE      EQU 0           ; title screen theme
+DEF TRK_WORLD_0    EQU 1           ; overworld: city / ruins (urban)
+DEF TRK_WORLD_1    EQU 2           ; overworld: plains / farm (open, pastoral)
+DEF TRK_WORLD_2    EQU 3           ; overworld: forest / jungle (green, wild)
+DEF TRK_WORLD_3    EQU 4           ; overworld: marsh (wet, uneasy)
+DEF TRK_WORLD_4    EQU 5           ; overworld: graveyard (eerie)
+DEF TRK_WORLD_5    EQU 6           ; overworld: desert (arid)
+DEF TRK_WORLD_6    EQU 7           ; overworld: mountains (high, sparse)
+DEF TRK_WORLD_7    EQU 8           ; overworld: tundra (cold)
+DEF TRK_WORLD_COUNT EQU 8          ; eight world tracks (one per biome group)
+; Per-persona dialogue themes: track = TRK_TALK_0 + persona id (0..PERSONA_COUNT-1)
+DEF TRK_TALK_0     EQU TRK_WORLD_0 + TRK_WORLD_COUNT   ; = 9
+DEF TRK_COUNT      EQU TRK_TALK_0 + PERSONA_COUNT      ; title + 8 world + N talk
+
+; --- Sound effects (audio.asm SFXTable / PlaySFX) ---------------------------
+; Short one-shot blips: each entry is a set of channel-1 (pulse) register
+; writes, triggered instantly. The music driver re-owns the channel on its next
+; tick, so an SFX is a brief attack over the music (the same channel-borrowing
+; trick as PlaySplash). Ids index SFXTable.
+DEF SFX_BUMP       EQU 0           ; walked into a wall / solid object (Pokemon-style)
+DEF SFX_MOVE       EQU 1           ; menu / dialogue cursor moved
+DEF SFX_CONFIRM    EQU 2           ; selected a menu / dialogue option (A)
+DEF SFX_CANCEL     EQU 3           ; backed out (B) — reserved, see MenuSFX
+DEF SFX_OPEN       EQU 4           ; opened the pause menu
+DEF SFX_CLOSE      EQU 5           ; closed the pause menu
+DEF SFX_EAT        EQU 6           ; ate a consumable (apple / beans / ration)
+DEF SFX_PICKUP     EQU 7           ; collected gear into the bag
+DEF SFX_COUNT      EQU 8
+; While the player holds a direction into a wall the bump SFX repeats on this
+; cadence (frames) instead of every frame; a fresh bump (counter at 0) is instant.
+DEF BUMP_COOLDOWN  EQU 20
+
 ENDC
