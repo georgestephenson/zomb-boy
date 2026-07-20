@@ -102,6 +102,13 @@ PlayMusic::
     cp d
     ret z                           ; same song already loaded -> keep it playing
 .switch:
+    ; Cut every channel's held note BEFORE loading the new song. hUGE_init only
+    ; resets the driver's WRAM state — it never touches the hardware channels — so
+    ; without this the old song's notes keep sounding on any channel the new song
+    ; doesn't retrigger in its first rows (a common case), which is heard as
+    ; sustained notes / glitches across a biome or dialogue switch. The driver
+    ; re-owns each channel on its next note, so a clean cut here is invisible.
+    call SilenceChannels
     ld a, b
     ld [wMusicBank], a              ; remember the new song for UpdateSound's banking
     ld a, e
@@ -141,6 +148,9 @@ UpdateSound::
 ; its next note. Independent of the SFX toggle.
 ; -----------------------------------------------------------------------------
 SilenceMusic::
+; SilenceChannels: same cut, called by PlayMusic on a real song switch so the
+; outgoing song's held notes don't hang on channels the new song leaves idle.
+SilenceChannels::
     xor a, a
     ldh [rNR12], a                  ; ch1 envelope -> DAC off (silent)
     ldh [rNR22], a                  ; ch2 envelope -> DAC off
