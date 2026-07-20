@@ -25,10 +25,18 @@ INCLUDE "include/constants.inc"
 SECTION "Car Code", ROM0
 
 ; -----------------------------------------------------------------------------
-; InitCar: place the one car near the player start (CAR_SPAWN_DX/DY, nudged
-; right to a clear 2x2 block — the InitZombies/InitNPCs scheme, widened for the
-; car's footprint), on foot, tank full. Call after InitPlayer/InitMap and the
-; other spawns. wCarWX/WY is the top-left tile of the 2x2 footprint.
+; InitCar: place the one car and set it on foot with a full tank. Call after
+; InitPlayer/InitMap and the other spawns. wCarWX/WY is the top-left tile of the
+; 2x2 footprint.
+;
+; It first hunts (CAR_SPAWN_TRIES random anchors) for a clear 2x2 spot that sits
+; ON/beside a road, away from the start (CAR_MIN_DIST+), and NOT inside a house —
+; a car belongs on a road. Roads are 2 tiles wide now, so a footprint straddling
+; an avenue/street is a natural fit. The random probes come from the dynamic
+; RNG, saved/restored around the search so it doesn't perturb the spawn stream
+; (every dynamic-spawn test stays byte-identical). If nothing turns up (e.g. a
+; forest spawn with no road nearby), it falls back to the classic near-player
+; nudge-right placement.
 ; -----------------------------------------------------------------------------
 InitCar::
     xor a, a
@@ -36,28 +44,24 @@ InitCar::
     ld [wCarEject], a
     ld [wCarBoard], a
     ld [wBoarding], a
-    ; wGenX = playerWX + CAR_SPAWN_DX
-    ld a, [wPlayerWX]
-    ld [wGenX], a
-    ld a, [wPlayerWX+1]
-    ld [wGenX+1], a
-    ld a, CAR_SPAWN_DX
-    ld hl, wGenX
-    call AddSByteAt16
-    ; wGenY = playerWY + CAR_SPAWN_DY
-    ld a, [wPlayerWY]
-    ld [wGenY], a
-    ld a, [wPlayerWY+1]
-    ld [wGenY+1], a
-    ld a, CAR_SPAWN_DY
-    ld hl, wGenY
-    call AddSByteAt16
-    ; nudge right until the whole 2x2 footprint is passable (water is solid, so
-    ; the car never parks in it — same bounded search as the other spawners).
-    ; The candidate anchor is stashed in wCarWX/WY (also the final destination),
-    ; since Is2x2Clear clobbers wGen and GenTileType clobbers every other scratch.
-    ld b, 8
-.place:
+    ; --- save the dynamic RNG so the road hunt is invisible to it ---
+    ld a, [wRngState]
+    ld [wCarRngSave], a
+    ld a, [wRngState+1]
+    ld [wCarRngSave+1], a
+    ld a, CAR_SPAWN_TRIES
+    ld [wCarTries], a
+.try:
+    call PickCarAnchor              ; wGenX/WY = a random anchor away from spawn
+    call CarSpotOK                  ; Z if clear, on/next to a road, no house
+    jr z, .found
+    ld a, [wCarTries]
+    dec a
+    ld [wCarTries], a
+    jr nz, .try
+    ; --- no road spot found: fall back to the near-player clear placement ---
+    call PlaceCarNearPlayer         ; leaves the anchor in wGenX/WY
+.found:
     ld a, [wGenX]
     ld [wCarWX], a
     ld a, [wGenX+1]
@@ -66,27 +70,153 @@ InitCar::
     ld [wCarWY], a
     ld a, [wGenY+1]
     ld [wCarWY+1], a
-    call Is2x2Clear
-    jr z, .placeOk
-    ; restore the anchor, step one tile right, retry
-    ld a, [wCarWX]
-    ld [wGenX], a
-    ld a, [wCarWX+1]
-    ld [wGenX+1], a
-    ld a, [wCarWY]
-    ld [wGenY], a
-    ld a, [wCarWY+1]
-    ld [wGenY+1], a
-    ld hl, wGenX
-    call Inc16Ptr
-    dec b
-    jr nz, .place
-.placeOk:
+    ; restore the RNG stream the dynamic spawns will run from
+    ld a, [wCarRngSave]
+    ld [wRngState], a
+    ld a, [wCarRngSave+1]
+    ld [wRngState+1], a
     ld a, EFACE_DOWN
     ld [wCarFacing], a
     ld a, FUEL_START
     ld [wFuel], a
     ret
+
+; -----------------------------------------------------------------------------
+; PickCarAnchor: wGenX/WY = the player's tile offset by a random amount away from
+; the start. One axis (chosen at random) is the "primary": magnitude CAR_MIN_DIST
+; .. CAR_MIN_DIST+CAR_DIST_MASK, random sign; the other is a free -16..+15 spread.
+; So the anchor is never right on top of the player. Consumes two Rand bytes.
+; -----------------------------------------------------------------------------
+PickCarAnchor:
+    call GenFromPlayer              ; wGen = player tile
+    call Rand
+    ld e, a                         ; E = random bits (survives Rand/AddSByteAt16)
+    and CAR_DIST_MASK
+    add a, CAR_MIN_DIST             ; primary magnitude
+    bit 7, e
+    jr z, .primPos
+    cpl
+    inc a                           ; negate -> signed negative offset
+.primPos:
+    ld c, a                         ; C = signed primary offset
+    call Rand
+    and 31
+    sub 16                          ; secondary offset -16..+15
+    ld d, a                         ; D = signed secondary offset
+    bit 6, e
+    jr nz, .yPrimary
+    ; x is the far axis
+    ld a, c
+    ld hl, wGenX
+    call AddSByteAt16
+    ld a, d
+    ld hl, wGenY
+    jp AddSByteAt16                 ; tail call
+.yPrimary:
+    ld a, c
+    ld hl, wGenY
+    call AddSByteAt16
+    ld a, d
+    ld hl, wGenX
+    jp AddSByteAt16                 ; tail call
+
+; -----------------------------------------------------------------------------
+; CarSpotOK: wGenX/WY = the 2x2 footprint's top-left. Z if it is a good car spot:
+; all four tiles passable, none a house interior (floor/door), and at least one a
+; road tile (so the car sits on/beside a road). Walks the 2x2 by stepping wGen
+; and leaves it back at the anchor. Uses wCarScan (bit0 = a road tile was seen).
+; -----------------------------------------------------------------------------
+CarSpotOK:
+    xor a, a
+    ld [wCarScan], a
+    call .cell                      ; (0,0)
+    ret nz                          ; wGen already at the anchor
+    ld hl, wGenX
+    call Inc16Ptr                   ; -> (1,0)
+    call .cell
+    jr nz, .no1
+    ld hl, wGenY
+    call Inc16Ptr                   ; -> (1,1)
+    call .cell
+    jr nz, .no2
+    ld hl, wGenX
+    call Dec16Ptr                   ; -> (0,1)
+    call .cell
+    jr nz, .no3
+    ld hl, wGenY
+    call Dec16Ptr                   ; -> (0,0): footprint fully classified
+    ld a, [wCarScan]
+    and 1
+    jr z, .no                       ; no road tile touched -> reject
+    xor a, a                        ; Z = accept
+    ret
+.no3:                               ; wGen at (0,1) -> restore Y
+    ld hl, wGenY
+    call Dec16Ptr
+    jr .no
+.no2:                               ; wGen at (1,1) -> restore X and Y
+    ld hl, wGenX
+    call Dec16Ptr
+    ld hl, wGenY
+    call Dec16Ptr
+    jr .no
+.no1:                               ; wGen at (1,0) -> restore X
+    ld hl, wGenX
+    call Dec16Ptr
+.no:
+    or a, 1                         ; NZ = reject
+    ret
+; .cell: classify the tile at wGen. Z (spot still OK) if it is passable and not a
+; house interior; NZ if it disqualifies the spot. Flags a road in wCarScan bit0.
+; GenTileType preserves wGenX/WY, so the 2x2 walk above is safe.
+.cell:
+    call GenTileType                ; A = tile id
+    cp TILE_ROAD
+    jr nz, .notRoad
+    ld a, [wCarScan]
+    or 1
+    ld [wCarScan], a
+    xor a, a                        ; road: passable and welcome -> Z
+    ret
+.notRoad:
+    cp TILE_FLOOR
+    jr z, .bad                      ; inside a house -> reject the spot
+    cp TILE_DOOR
+    jr z, .bad
+    jp IsSolid                      ; else Z iff passable (tail call)
+.bad:
+    or a, 1                         ; NZ
+    ret
+
+; -----------------------------------------------------------------------------
+; PlaceCarNearPlayer: the classic fallback. Start at player + CAR_SPAWN_DX/DY and
+; nudge right until the whole 2x2 footprint is passable (water is solid, so the
+; car never parks in it). Leaves the chosen anchor in wGenX/WY for the caller.
+; -----------------------------------------------------------------------------
+PlaceCarNearPlayer:
+    ld a, [wPlayerWX]
+    ld [wGenX], a
+    ld a, [wPlayerWX+1]
+    ld [wGenX+1], a
+    ld a, CAR_SPAWN_DX
+    ld hl, wGenX
+    call AddSByteAt16
+    ld a, [wPlayerWY]
+    ld [wGenY], a
+    ld a, [wPlayerWY+1]
+    ld [wGenY+1], a
+    ld a, CAR_SPAWN_DY
+    ld hl, wGenY
+    call AddSByteAt16
+    ld b, 8
+.place:
+    call Is2x2Clear                 ; preserves wGen (walks and restores it)
+    ret z
+    ld hl, wGenX
+    call Inc16Ptr                   ; step one tile right, retry
+    dec b
+    jr nz, .place
+    ret                             ; boxed in: use the last candidate anyway
 
 ; -----------------------------------------------------------------------------
 ; Is2x2Clear: Z if the 2x2 block whose top-left is (wGenX, wGenY) is all

@@ -8,7 +8,11 @@ that flag — and drive along a lane the reference model confirms is clear, sinc
 a car (unlike the swimmer) can't cross water.
 """
 from harness import Game
-from worldgen_model import gen_tile_type, SOLID
+from worldgen_model import gen_tile_type, SOLID, TILE_ROAD, TILE_FLOOR, TILE_DOOR
+
+CAR_MIN_DIST = 6                 # InitCar's nearest road-spawn (constants.inc)
+CAR_MAX_DIST = 21                # primary axis magnitude 6..21 -> Chebyshev <= 21
+HOUSE_TILES = {TILE_FLOOR, TILE_DOOR}
 
 EFACE_DOWN, EFACE_UP, EFACE_LEFT, EFACE_RIGHT = 0, 1, 2, 3
 FONT_BASE = 128
@@ -103,12 +107,31 @@ def _min_step_gap(g, button, frames=90):
 def test_car_spawns_on_foot_with_a_full_tank():
     g = Game()
     try:
-        px, py = _pos(g)
         cx, cy = g.s16("wCarWX"), g.s16("wCarWY")
-        assert abs(cx - px) <= 10 and abs(cy - py) <= 10, \
-            f"car spawned far from the player: {(cx, cy)} vs {(px, py)}"
         assert g.r8("wInCar") == 0, "should start on foot"
         assert g.r8("wFuel") == FUEL_START, f"tank not full at spawn: {g.r8('wFuel')}"
+        # the 2x2 footprint is always a clear spot that is never inside a house
+        foot = [gen_tile_type(cx + i, cy + j) for i in (0, 1) for j in (0, 1)]
+        assert all(t not in SOLID for t in foot), f"car parked on a solid tile: {foot}"
+        assert all(t not in HOUSE_TILES for t in foot), \
+            f"car spawned inside a house: {foot}"
+    finally:
+        g.close()
+
+
+def test_car_spawns_on_a_road_away_from_the_start():
+    """InitCar hunts for a clear 2x2 ON/beside a road, away from the start. The
+    classic seed has a city within reach, so the car lands on a road (a 2x2 spot
+    touching TILE_ROAD) at least CAR_MIN_DIST tiles out — not on top of you."""
+    g = Game()
+    try:
+        px, py = _pos(g)
+        cx, cy = g.s16("wCarWX"), g.s16("wCarWY")
+        cheby = max(abs(cx - px), abs(cy - py))
+        assert CAR_MIN_DIST <= cheby <= CAR_MAX_DIST, \
+            f"car not in the road-spawn ring: cheby={cheby} at {(cx, cy)}"
+        foot = [gen_tile_type(cx + i, cy + j) for i in (0, 1) for j in (0, 1)]
+        assert TILE_ROAD in foot, f"road-spawned car not touching a road: {foot}"
     finally:
         g.close()
 

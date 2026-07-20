@@ -139,35 +139,40 @@ def tree_tile(x: int, y: int, thresh: int):
 
 
 def road_here(x: int, y: int) -> bool:
-    """Mirror of RoadHere. Avenues are full-length straight vertical lines (one
+    """Mirror of RoadHere. Avenues and cross-streets are 2 tiles wide (lanes jit
+    and jit+1) so the 2x2 car can drive them; jit is 0..7 so the second lane
+    stays inside the 16-band. Avenues are full-length straight vertical lines (one
     per 16-wide band, column jittered 0..7 by the band index) — the connected
     backbone. Cross-streets are horizontal but JOG: a street's row is jittered
     per *avenue-interval*, so it steps up/down each time it crosses an avenue,
     producing bends and T-junctions. Crucially the jog happens exactly AT an
     avenue, and the full-length avenue bridges the two different-row segments —
     so every street segment has both ends on an avenue and the whole network
-    stays connected. The ruins biome reuses this and cracks it."""
+    stays connected. Spurs stay 1-wide. The ruins biome reuses this and cracks
+    it."""
     k = (x >> 4) & U16
     jit_k = hash8(k, 0, 21) & 7
     xlow = x & 0x0F
-    if xlow == jit_k:
-        return True                                   # on the vertical avenue
+    if xlow == jit_k or xlow == jit_k + 1:
+        return True                                   # on the 2-wide vertical avenue
     # which avenue-interval is x in? (the avenue at/left of x identifies it)
     kL = k if xlow > jit_k else (k - 1) & U16
-    if (y & 0x0F) == (hash8(kL, (y >> 4) & U16, 22) & 7):
-        return True                                   # on the jogging cross-street
+    jit_s = hash8(kL, (y >> 4) & U16, 22) & 7
+    yl = y & 0x0F
+    if yl == jit_s or yl == jit_s + 1:
+        return True                                   # on the 2-wide jogging cross-street
     # dead-end spurs / cul-de-sacs: a short residential stub branching RIGHT off
     # this band's avenue, entirely within the band (so it only needs this band's
-    # jitter). It touches the avenue at d==1, so it always connects; the far end
-    # just stops (dead-end), or for a cul-de-sac widens to a 3-tall turnaround.
+    # jitter). Its first cell (d==2) abuts the now-2-wide avenue, so it always
+    # connects; the far end just stops (dead-end), or for a cul-de-sac widens to a
+    # 3-tall turnaround.
     if xlow > jit_k:
         h = hash8(k, (y >> 4) & U16, 23)
         if (h & 3) == 0:                              # ~1/4 of (avenue, row-band) slots
             sr = 3 + ((h >> 2) & 7)                   # spur row within the band (3..10)
             length = 2 + ((h >> 5) & 3)               # 2..5 tiles long
             cul = (h >> 7) & 1
-            yl = y & 0x0F
-            d = xlow - jit_k                          # tiles right of the avenue (>=1)
+            d = xlow - jit_k                          # tiles right of the avenue (>=2)
             if yl == sr and d <= length:
                 return True                           # the spur itself
             if cul and d == length and (yl == sr - 1 or yl == sr + 1):
