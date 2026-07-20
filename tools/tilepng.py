@@ -120,8 +120,52 @@ TILE_PALETTES = {
     "Font1bpp": [("BG", 4)] * 53,   # every glyph is talk-UI paper/ink
 }
 
-COLS = 16   # tiles per atlas row; each block starts on a fresh row
+COLS = 16   # atlas width in tiles; blocks/groups wrap at this width
 TILE = 8    # px per tile edge
+
+
+# --- atlas grouping: multi-tile objects render as their real 2D shape ----------
+# A group is (w, h, [(dx, dy), ...]) and consumes len(offsets) CONSECUTIVE tiles
+# (in gfx.asm order) placed at those cell offsets inside a w x h box. Groups are
+# shelf-packed left-to-right (wrapping at COLS), each block starting a fresh band,
+# so a tree/car-side reads as a 2x2, the framed UI corners+edges as a 3x3 frame,
+# etc. The atlas cell <-> tile mapping stays deterministic (same for export and
+# import), so idempotency holds. Every block's groups must consume EXACTLY its
+# tiles, in order — extend these when you add tiles (see CLAUDE.md).
+def _tile():
+    return (1, 1, [(0, 0)])
+
+
+def _grid(w, h):
+    return (w, h, [(x, y) for y in range(h) for x in range(w)])
+
+
+# frame tiles are authored TL, TR, BL, BR, then edges T, B, L, R — lay them as a
+# 3x3 picture frame (centre cell empty/transparent).
+_FRAME = (3, 3, [(0, 0), (2, 0), (0, 2), (2, 2), (1, 0), (1, 2), (0, 1), (2, 1)])
+
+GROUPS = {
+    "Tiles": (
+        [_tile()] * 10        # 0-9 grass..marsh (single ground tiles)
+        + [_grid(2, 2)]       # 10-13 tree (TL TR / BL BR)
+        + [_grid(6, 1)]       # 14-19 player walk frames
+        + [_grid(6, 1)]       # 20-25 zombie walk frames
+        + [_tile(), _tile()]  # 26 alert bubble, 27 menu cursor
+        + [_FRAME]            # 28-35 portrait frame
+        + [_grid(9, 1)]       # 36-44 affinity bar 0/8..8/8
+        + [_FRAME]            # 45-52 UI panel frame
+        + [_grid(3, 1)]       # 53-55 swim frames
+        + [_tile()]           # 56 splash
+    ),
+    "PersonaTiles": (
+        [_grid(3, 1)] * 10    # 10 personas x (down, up, side) kept on one row
+        + [_grid(1, 2)]       # car down: top/bottom LEFT halves (right = X-flip)
+        + [_grid(1, 2)]       # car up:   top/bottom left halves
+        + [_grid(2, 2)]       # car side: TL TR / BL BR (full 2x2)
+        + [_tile()] * 5       # loot: apple, beans, crate, pot, chest
+    ),
+    "Font1bpp": [_tile()] * 53,   # glyphs flow COLS per row
+}
 
 _ROW2_RE = re.compile(r"^(\s*dw\s+`)([0-3]{8})(.*)$")
 _ROW1_RE = re.compile(
@@ -239,16 +283,33 @@ def parse_palettes(lines):
 
 
 # ---- atlas geometry ----------------------------------------------------------
-def layout(counts):
-    """Atlas placements from per-block tile counts (order == TILE_BLOCKS).
-    placement = (block_name, tile_idx, col, row). Each block starts a fresh row."""
-    names = [b[0] for b in TILE_BLOCKS]
-    placements, row0 = [], 0
-    for bi, cnt in enumerate(counts):
-        for ti in range(cnt):
-            placements.append((names[bi], ti, ti % COLS, row0 + ti // COLS))
-        row0 += (cnt + COLS - 1) // COLS
-    return placements, row0
+def layout():
+    """Atlas placements from GROUPS (shelf-packed). placement = (block_name,
+    tile_idx, col, row); returns (placements, grid_rows). Each block starts on a
+    fresh band; multi-tile groups occupy their w x h box."""
+    placements, y = [], 0
+    for name, _end, _kind in TILE_BLOCKS:
+        x = band = ti = 0
+        for (w, h, offs) in GROUPS[name]:
+            if x + w > COLS:
+                y += band
+                x = band = 0
+            for (dx, dy) in offs:
+                placements.append((name, ti, x + dx, y + dy))
+                ti += 1
+            x += w
+            band = max(band, h)
+        y += band
+    return placements, y
+
+
+def _check_counts(blocks):
+    """GROUPS must consume exactly each block's tiles, in order (maintenance)."""
+    for name, tiles in blocks.items():
+        placed = sum(len(offs) for (_w, _h, offs) in GROUPS[name])
+        if placed != len(tiles):
+            raise SystemExit(f"tilepng: GROUPS[{name!r}] lays out {placed} tiles "
+                             f"but the block has {len(tiles)} — update GROUPS")
 
 
 # ---- palette reconciliation + tile decode (import) ---------------------------
@@ -434,7 +495,8 @@ def export(gfx=None, atlas=None):
     pals = parse_palettes(lines)
     names = [b[0] for b in TILE_BLOCKS]
     counts = [len(blocks[n]) for n in names]
-    placements, grid_rows = layout(counts)
+    _check_counts(blocks)
+    placements, grid_rows = layout()
     img = Image.new("RGBA", (COLS * TILE, grid_rows * TILE), (0, 0, 0, 0))
     px = img.load()
     for (block, tidx, c, r) in placements:
@@ -462,7 +524,8 @@ def import_(gfx=None, atlas=None):
     pal_old = parse_palettes(lines)
     names = [b[0] for b in TILE_BLOCKS]
     counts = [len(blocks[n]) for n in names]
-    placements, grid_rows = layout(counts)
+    _check_counts(blocks)
+    placements, grid_rows = layout()
 
     img = Image.open(atlas).convert("RGBA")
     exp = (COLS * TILE, grid_rows * TILE)

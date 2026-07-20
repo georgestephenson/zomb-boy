@@ -26,7 +26,7 @@ import tilepng  # noqa: E402
 def main():
     counts = tilepng.export()
     names = [b[0] for b in tilepng.TILE_BLOCKS]
-    _, grid_rows = tilepng.layout(counts)
+    _, grid_rows = tilepng.layout()
     for n, c in zip(names, counts):
         print(f"  {n:<14} {c:3d} tiles")
     print(f"wrote {os.path.relpath(tilepng.ATLAS, tilepng.ROOT)}  "
