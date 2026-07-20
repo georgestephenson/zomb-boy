@@ -154,8 +154,25 @@ def road_here(x: int, y: int) -> bool:
         return True                                   # on the vertical avenue
     # which avenue-interval is x in? (the avenue at/left of x identifies it)
     kL = k if xlow > jit_k else (k - 1) & U16
-    jit_s = hash8(kL, (y >> 4) & U16, 22) & 7
-    return (y & 0x0F) == jit_s                         # on the jogging cross-street
+    if (y & 0x0F) == (hash8(kL, (y >> 4) & U16, 22) & 7):
+        return True                                   # on the jogging cross-street
+    # dead-end spurs / cul-de-sacs: a short residential stub branching RIGHT off
+    # this band's avenue, entirely within the band (so it only needs this band's
+    # jitter). It touches the avenue at d==1, so it always connects; the far end
+    # just stops (dead-end), or for a cul-de-sac widens to a 3-tall turnaround.
+    if xlow > jit_k:
+        h = hash8(k, (y >> 4) & U16, 23)
+        if (h & 3) == 0:                              # ~1/4 of (avenue, row-band) slots
+            sr = 3 + ((h >> 2) & 7)                   # spur row within the band (3..10)
+            length = 2 + ((h >> 5) & 3)               # 2..5 tiles long
+            cul = (h >> 7) & 1
+            yl = y & 0x0F
+            d = xlow - jit_k                          # tiles right of the avenue (>=1)
+            if yl == sr and d <= length:
+                return True                           # the spur itself
+            if cul and d == length and (yl == sr - 1 or yl == sr + 1):
+                return True                           # cul-de-sac turnaround head
+    return False
 
 
 def house_tile(x: int, y: int):

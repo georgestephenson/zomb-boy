@@ -583,7 +583,14 @@ scroll updates — so there's no seam or one-frame latency.
   different-row segments, so every street segment has both ends on an avenue and
   the whole network stays connected (verified 100% within a city by flood fill;
   a straight-only grid was the earlier, blander version). Avenue spacing varies
-  9..23 tiles too, so blocks are irregular in both axes.
+  9..23 tiles too, so blocks are irregular in both axes. Some bands also sprout a
+  short **dead-end / cul-de-sac spur** branching right off their avenue (a 1-hash
+  decision keyed on the avenue band + 16-row-band): it stays within the band and
+  touches the avenue at its base, so it always connects; the far end just stops
+  (dead-end) or, for a cul-de-sac, widens to a 3-tall turnaround head. Because
+  city roads aren't the only walkable tiles (dirt/grass are passable too), road
+  connectivity is purely aesthetic — spurs and cul-de-sacs are a deliberate
+  feature, not a hazard.
   **A city building yields to any avenue/street that runs through it**
   (`GenTileType` checks `RoadHere` before letting a house stand) so streets stay
   whole; a graveyard church always stands (no roads there). Ruins reuse the same

@@ -566,7 +566,10 @@ TreeQuad:
 ; an avenue → bends and T-junctions. The jog lands exactly ON an avenue, and the
 ; full-length avenue bridges the two different-row segments, so every street
 ; segment has both ends on an avenue and the whole network stays connected.
+; Finally, some bands sprout a short dead-end/cul-de-sac SPUR branching right off
+; their avenue (entirely within the band, touching the avenue so it connects).
 ; Mirror: worldgen_model.py:road_here. The ruins biome reuses this and cracks it.
+; Uses wHDX as a 1-byte scratch (free here — HouseTile's result is already in E).
 ; -----------------------------------------------------------------------------
 RoadHere:
     ; --- avenue: band k = x>>4, jittered column jit_k = hash(k,0,21) & 7 ---
@@ -586,26 +589,69 @@ RoadHere:
     and $0F                     ; xlow
     cp c
     ret z                       ; on the avenue -> road (Z set)
-    ; interval index kL = k (if xlow > jit_k) else k-1. wHX still holds k.
-    jr nc, .haveInterval
-    ld a, [wHX]                 ; kL = k - 1 (16-bit decrement of wHX)
+    jr nc, .eligible            ; xlow > jit_k -> kL = k, spur-eligible
+    ; xlow < jit_k -> interval kL = k-1 (16-bit decrement of wHX), no spur
+    ld a, [wHX]
     sub 1
     ld [wHX], a
     ld a, [wHX+1]
     sbc 0
     ld [wHX+1], a
-.haveInterval:
-    ; --- cross-street row jitter jit_s = hash(kL, y>>4, 22) & 7 ---
+    call .loadWHYshifted        ; wHY = y >> 4
+    jr .street
+.eligible:                      ; A = xlow, C = jit_k, wHX = k, wHY = 0
+    sub c
+    ld [wHDX], a                ; d = xlow - jit_k (>= 1), saved
+    call .loadWHYshifted        ; wHY = y >> 4 (wHX = k intact)
+    ; --- spur presence/shape: h = hash(k, y>>4, 23) ---
+    ld b, 23
+    call Hash8
+    ld d, a                     ; D = h (Hash8 preserves D thereafter)
+    and 3
+    jr nz, .street              ; spur not present in this band -> just the street
+    ld a, d
+    srl a
+    srl a
+    and 7
+    add a, 3
+    ld c, a                     ; C = sr = 3 + ((h>>2)&7)
+    ld a, d
+    swap a
+    srl a
+    and 3
+    add a, 2
+    ld b, a                     ; B = length = 2 + ((h>>5)&3)
     ld a, [wGenY]
-    ld [wHY], a
-    ld a, [wGenY+1]
-    ld [wHY+1], a               ; wHY = y (wHX = kL, must not be shifted)
-    REPT 4
-    ld hl, wHY+1
-    srl [hl]
-    dec hl
-    rr [hl]
-    ENDR                        ; wHY = y >> 4 (shifted alone; wHX untouched)
+    and $0F                     ; ylow
+    cp c
+    jr nz, .spurHead            ; not the spur's own row -> maybe its cul-de-sac head
+    ld a, [wHDX]               ; d
+    cp b
+    jr z, .isRoad               ; d == length (tip)
+    jr c, .isRoad               ; d <  length (along the spur)
+    jr .street                  ; d >  length -> past the dead-end
+.spurHead:
+    ld a, d
+    and $80                     ; cul-de-sac bit (h>>7)
+    jr z, .street               ; plain dead-end, no turnaround head
+    ld a, [wHDX]               ; d
+    cp b
+    jr nz, .street              ; head only at the tip (d == length)
+    ld a, [wGenY]
+    and $0F                     ; ylow
+    inc a
+    cp c
+    jr z, .isRoad               ; ylow + 1 == sr  (head cell above)
+    dec a
+    dec a
+    cp c
+    jr z, .isRoad               ; ylow - 1 == sr  (head cell below)
+    jr .street
+.isRoad:
+    xor a, a                    ; Z set -> road
+    ret
+.street:
+    ; --- cross-street row jitter jit_s = hash(kL, y>>4, 22) & 7 ---
     ld b, 22
     call Hash8
     and 7                       ; jit_s
@@ -614,6 +660,19 @@ RoadHere:
     and $0F                     ; ylow
     cp c
     ret                         ; Z iff on the (jogging) cross-street
+; wHY = wGenY >> 4, shifted alone so wHX is left untouched.
+.loadWHYshifted:
+    ld a, [wGenY]
+    ld [wHY], a
+    ld a, [wGenY+1]
+    ld [wHY+1], a
+    REPT 4
+    ld hl, wHY+1
+    srl [hl]
+    dec hl
+    rr [hl]
+    ENDR
+    ret
 
 ; -----------------------------------------------------------------------------
 ; HouseTile: one optional building per 16x16 chunk. A = wall/floor/door tile if
