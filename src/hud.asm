@@ -25,6 +25,7 @@
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
+INCLUDE "include/charmap.inc"       ; toast strings assemble to font tile ids
 
 SECTION "HUD", ROM0
 
@@ -107,6 +108,7 @@ PushHUD::
 ; tick apply the drains and recompose the row (the clock changed anyway).
 ; -----------------------------------------------------------------------------
 UpdateSurvival::
+    call TickNotice            ; count down / expire a pickup toast (never pauses)
     ld hl, wClockFrame
     inc [hl]
     ld a, [hl]
@@ -174,6 +176,9 @@ UpdateSurvival::
 ; Field layout (20 cells): sym+3 digits+space, x3, then HH:MM.
 ; -----------------------------------------------------------------------------
 ComposeHUD::
+    ld a, [wNoticeTimer]
+    and a, a
+    ret nz                     ; a pickup toast owns the row right now — leave it
     ld hl, wHUDText
     ld a, TILE_HUD_HP
     ld [hl+], a
@@ -278,3 +283,89 @@ Put3:
     ld [hl+], a
     ld d, 1
     ret
+
+; =============================================================================
+; Pickup toasts — briefly show "ATE APPLE" / "GOT PISTOL" on the HUD row without
+; pausing. ComposeHUD yields while wNoticeTimer is up; TickNotice expires it.
+; =============================================================================
+; TickNotice: overworld per-frame (called from UpdateSurvival). Count an active
+; toast down; when it hits 0, rebuild the meters. No-op when no toast is up.
+TickNotice:
+    ld a, [wNoticeTimer]
+    and a, a
+    ret z
+    dec a
+    ld [wNoticeTimer], a
+    ret nz
+    call ComposeHUD            ; timer now 0 -> composes the meters again
+    ld a, 1
+    ld [wHUDDirty], a
+    ret
+
+; ShowNotice: DE = 0-terminated charmap string. Copy it (space-padded) into the
+; HUD row and start the toast timer. Truncates past HUD_COLS.
+ShowNotice::
+    ld hl, wHUDText
+    ld b, HUD_COLS
+.copy:
+    ld a, [de]
+    and a, a
+    jr z, .pad
+    ld [hl+], a
+    inc de
+    dec b
+    jr nz, .copy
+    jr .arm
+.pad:
+    ld a, " "                  ; charmap: space -> FONT_BASE
+.padLoop:
+    ld [hl+], a
+    dec b
+    jr nz, .padLoop
+.arm:
+    ld a, NOTICE_FRAMES
+    ld [wNoticeTimer], a
+    ld a, 1
+    ld [wHUDDirty], a
+    ret
+
+; ShowNoticeItem: A = item id -> toast "GOT <name>" (name space-padded to fit).
+ShowNoticeItem::
+    ld c, a                    ; save the id
+    ld hl, wHUDText
+    ld de, MsgGot
+    ld b, 4
+.pfx:
+    ld a, [de]
+    ld [hl+], a
+    inc de
+    dec b
+    jr nz, .pfx
+    ld a, c
+    call GetItemName           ; HL = name string (already space-padded to 8)
+    ld d, h
+    ld e, l                    ; DE = name source
+    ld hl, wHUDText + 4
+    ld b, ITEM_NAME_MAX
+.name:
+    ld a, [de]
+    and a, a
+    jr z, .nameEnd
+    ld [hl+], a
+    inc de
+    dec b
+    jr nz, .name
+.nameEnd:
+    ld a, " "                  ; pad any remainder of the row with spaces
+    ld b, HUD_COLS - 4 - ITEM_NAME_MAX
+.tail:
+    ld [hl+], a
+    dec b
+    jr nz, .tail
+    ld a, NOTICE_FRAMES
+    ld [wNoticeTimer], a
+    ld a, 1
+    ld [wHUDDirty], a
+    ret
+
+MsgGot: db "GOT "              ; 4 cells, no terminator (copied by fixed length)

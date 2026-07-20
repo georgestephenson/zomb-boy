@@ -152,9 +152,17 @@ scroll updates — so there's no seam or one-frame latency.
   `UpdateZombies`) **culls** any zombie/survivor whose Chebyshev distance from the
   player exceeds `ENT_CULL_DIST` (frees its pool slot) and, on a throttled timer,
   **respawns** one in a ring at `ENT_SPAWN_DIST` — just outside the visible window —
-  when the pool is below target (zombies → `MAX_ZOMBIES`, survivors →
-  `NPC_SPAWN_TARGET`). So the world stays populated wherever you go, encounters
-  never repeat when you backtrack, and the fixed pools cap count (memory safety).
+  when the pool is below its *refill target* (zombies → `ZOMB_SPAWN_TARGET`,
+  survivors → `NPC_SPAWN_TARGET`; the `MAX_*` pool sizes stay the hard cap). So the
+  world stays populated wherever you go, encounters never repeat when you backtrack,
+  and the fixed pools cap count (memory safety).
+- **Rarity is tuned by the targets/periods.** Survivors are deliberately rare
+  (`NPC_SPAWN_TARGET` small, `NPC_SPAWN_PERIOD` long) because their rewards are big
+  and they should be hard to find; zombies refill toward `ZOMB_SPAWN_TARGET` (below
+  `MAX_ZOMBIES`) so the overworld isn't wall-to-wall. Lowering a target only changes
+  the far-exploration density — near the spawn the boot cluster keeps the pool at or
+  above target, so the manager stays inert (no RNG) there and the tests stay
+  deterministic.
 - **Spawn positions come from the dynamic LFSR (`Rand`), NOT the terrain hash** —
   that's the whole point: the same ground yields a different encounter each visit.
   `PickRingTile` picks one of four sides + a −8..+7 offset (so one axis is always
@@ -254,6 +262,12 @@ scroll updates — so there's no seam or one-frame latency.
 - Sprites render **on top of** the window, so `EntScreenPos` culls any sprite
   with OAM Y >= 145 (its 8-px box would reach the bar). The player never can
   (fixed at screen row 9). Day/night palettes and starvation damage are LATER.
+- **Pickup toasts** reuse the row **without pausing**: `ShowNotice` (a charmap'd
+  string) / `ShowNoticeItem` (`GOT <name>` from an item id) overwrite `wHUDText`
+  and arm `wNoticeTimer` (`NOTICE_FRAMES`). `ComposeHUD` yields while the timer is
+  up (so a minute tick can't clobber the message), and `TickNotice` (called from
+  `UpdateSurvival` every overworld frame) counts it down and rebuilds the meters
+  when it expires. loot.asm fires these on eat/open (`ATE APPLE`, `GOT PISTOL`, …).
 
 ### Swimming (player.asm / entity.asm / hud.asm)
 - **Water stays solid in `PassTable`** — zombies still avoid it and LOS occlusion

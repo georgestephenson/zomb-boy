@@ -52,12 +52,15 @@ your own emulator instead of the vendored one: `make run EMULATOR=/path/to/it`.
   far behind and respawns fresh ones (from the dynamic RNG, not the terrain
   hash) in a ring just off-screen — so the world stays populated wherever you
   wander, encounters never repeat when you backtrack, and fixed pools keep the
-  count bounded.
+  count bounded. Survivors are **rare** (their rewards are big, so they're a real
+  find); zombies are common but not wall-to-wall.
 - **Scavengeable loot.** Food and containers spawn the same way — biome-flavoured
   (apples in forest, cans of beans in the city) and fresh every time. Walk over
   food to eat it (it refills the hunger meter); break **crates and pots** (solid —
   face them and press A) for everyday gear and ration packs; crack **treasure
-  chests** for the rare, valuable finds. Gear lands in your bag.
+  chests** for the rare, valuable finds. Gear lands in your bag, and a quick
+  **toast** on the status bar tells you what you picked up ("ATE APPLE", "GOT
+  PISTOL") without pausing the game.
 - **Survivors & dialogue.** Ten personas (policeman, scientist, cheerleader,
   maid, businessman, prepper, medic, raider, preacher, farmer) stand in the
   world; face one, press **A**, and a dialogue screen opens. Every round is

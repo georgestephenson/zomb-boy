@@ -18,6 +18,7 @@
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
+INCLUDE "include/charmap.inc"       ; toast strings assemble to font tile ids
 
 SECTION "Loot Code", ROM0
 
@@ -287,7 +288,9 @@ GrantLoot:
     and 3
     jr nz, .crateGear
     ld a, RATION_FOOD              ; 1/4 -> ration pack (large food)
-    jp AddFood
+    call AddFood
+    ld de, MsgRation
+    jp ShowNotice
 .crateGear:
     call Rand
     and 7
@@ -301,15 +304,28 @@ GrantLoot:
     ld e, a
     ld d, 0
     add hl, de
-    ld b, [hl]                     ; item id
+    ld a, [hl]                     ; item id
+    push af                        ; keep it for the toast (AddItem clobbers regs)
+    ld b, a
     ld c, 1                        ; one of it
-    jp AddItem                     ; into the bag (tail call)
+    call AddItem                   ; into the bag
+    pop af                         ; A = item id
+    jp ShowNoticeItem              ; "GOT <name>"
 .apple:
     ld a, APPLE_FOOD
-    jp AddFood
+    call AddFood
+    ld de, MsgApple
+    jp ShowNotice
 .beans:
     ld a, BEANS_FOOD
-    ; fall through to AddFood
+    call AddFood
+    ld de, MsgBeans
+    jp ShowNotice
+
+; Toast strings (charmap'd to font tile ids).
+MsgApple:  db "ATE APPLE", 0
+MsgBeans:  db "ATE BEANS", 0
+MsgRation: db "ATE RATION", 0
 
 ; AddFood: A = amount. Saturating add to the food meter (caps at METER_MAX).
 AddFood:

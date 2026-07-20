@@ -174,6 +174,7 @@ wClockM::           ds 1
 wClockFrame::       ds 1               ; frames into the current minute
 wClockMinCount::    ds 1               ; free-running minute counter (drain mask)
 wHUDDirty::         ds 1               ; nonzero: wHUDText needs a VRAM push
+wNoticeTimer::      ds 1               ; >0: a pickup toast owns the row (frames left)
 wHUDText::          ds HUD_COLS        ; the composed row (font tile ids)
 
 ; Talk mode (survivor dialogue screen) — see talk.asm / dialogue.asm.

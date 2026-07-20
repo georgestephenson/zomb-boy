@@ -843,8 +843,8 @@ UpdateSpawns::
     ld de, wZombies
     ld b, MAX_ZOMBIES
     call CountActivePool
-    cp MAX_ZOMBIES
-    jr nc, .npc                 ; pool full -> no spawn, no RNG consumed
+    cp ZOMB_SPAWN_TARGET
+    jr nc, .npc                 ; at target -> no spawn, no RNG consumed
     call SpawnZombie
 .npc:
     ; --- throttled survivor respawn ---
