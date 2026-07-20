@@ -83,7 +83,18 @@ OBJS            := $(patsubst $(SRC_DIR)/%.asm,$(OBJ_DIR)/%.o,$(SRCS))
 # against their own directory (-i $(HUGE_DIR)/), so they get their own rules and
 # object outputs rather than going through the src/ pattern rule above.
 HUGE_DIR        := vendor/hUGEDriver
-AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o
+# Placeholder songs: we have one composed tune (the demo). To give each screen
+# its own track — and to genuinely RESERVE the cartridge memory distinct songs
+# need (one ~10 KB song per 16 KB ROM bank) — tools/gen-placeholder-songs.py
+# derives extra distinct, format-correct songs from the demo (transposed /
+# re-tempo'd) into the gitignored build tree; the ROM reserves banks for the
+# full music vision (see the "Music bank reservation" SECTION in audio.asm).
+# Keep this list in lockstep with the tool's VARIANTS.
+PLACEHOLDER_SONGS := urban open green wet eerie arid cold talk
+GEN_SONG_DIR      := $(GEN_DIR)/songs
+PLACEHOLDER_ASM   := $(addprefix $(GEN_SONG_DIR)/song_,$(addsuffix .asm,$(PLACEHOLDER_SONGS)))
+PLACEHOLDER_OBJS  := $(addprefix $(OBJ_DIR)/vendor/song_,$(addsuffix .o,$(PLACEHOLDER_SONGS)))
+AUDIO_OBJS      := $(OBJ_DIR)/vendor/hUGEDriver.o $(OBJ_DIR)/vendor/song_demo.o $(PLACEHOLDER_OBJS)
 
 # --- Toolchain flags --------------------------------------------------------
 # -Weverything: surface every warning; asm bugs are costly on real hardware.
@@ -91,8 +102,10 @@ ASMFLAGS        := $(INCLUDES) -Weverything -Wno-obsolete
 # rgbfix: -c = GBC-compatible ($80, runs on DMG too — the ROM detects the console
 # at boot and falls back to grayscale), -v = fix header, -p 0xFF = pad (also sets
 # the ROM-size byte; $FF is the era-authentic filler, matching unprogrammed mask
-# ROM), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 64 KB — ROMX bank 1
-# is the default-mapped bank (song + dialogue data), bank 2 the portraits — and
+# ROM), -m 0x1B = MBC5+RAM+BATTERY: the ROM is 512 KB (grown from 128 KB to
+# reserve one bank per distinct music track — see audio.asm's Music Bank
+# Reservation) — ROMX bank 1 is the default-mapped bank (dialogue data),
+# bank 2 the portraits, banks 4+ the songs — and
 # the cart carries 8 KB of battery-backed RAM (-r 0x02) for the menu's SAVE
 # option (see menu.asm DoSave / the SaveData SRAM section). Title <= 11.
 # Licensed-era header conventions (cosmetic, but what a real post-1994 cart
@@ -110,7 +123,7 @@ EMULATOR        ?= $(EMU_BIN)
 # =============================================================================
 # Targets
 # =============================================================================
-.PHONY: all tools emulator hugetracker sameboy run test smoke stats play shot clean distclean
+.PHONY: all tools emulator hugetracker sameboy run test smoke stats play shot songs clean distclean
 
 all: $(ROM)
 
@@ -166,6 +179,21 @@ $(OBJ_DIR)/vendor/hUGEDriver.o: $(HUGE_DIR)/hUGEDriver.asm $(VENDORED_AUDIO) | $
 $(OBJ_DIR)/vendor/song_demo.o: $(HUGE_DIR)/songs/song_demo.asm $(VENDORED_AUDIO) | $(RGBASM)
 	@mkdir -p $(dir $@)
 	$(RGBASM) -i $(HUGE_DIR)/ -o $@ $<
+
+# Generated placeholder songs: derive them from the demo (one batch, gated by a
+# stamp), then assemble each like the demo. Regenerate on demand with `make songs`.
+$(GEN_SONG_DIR)/.stamp: tools/gen-placeholder-songs.py $(HUGE_DIR)/songs/song_demo.asm $(HUGE_DIR)/include/hUGE.inc
+	@mkdir -p $(GEN_SONG_DIR)
+	python3 tools/gen-placeholder-songs.py
+	@touch $@
+$(PLACEHOLDER_ASM): $(GEN_SONG_DIR)/.stamp
+	@test -f $@ || { echo "error: $@ not generated — is it in the tool's VARIANTS?" >&2; exit 1; }
+
+$(OBJ_DIR)/vendor/song_%.o: $(GEN_SONG_DIR)/song_%.asm $(VENDORED_AUDIO) | $(RGBASM)
+	@mkdir -p $(dir $@)
+	$(RGBASM) -i $(HUGE_DIR)/ -o $@ $<
+
+songs: $(GEN_SONG_DIR)/.stamp   ## regenerate the placeholder songs from the demo
 
 $(ROM): $(OBJS) $(AUDIO_OBJS)
 	@mkdir -p $(dir $@)

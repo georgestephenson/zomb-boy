@@ -33,3 +33,31 @@ def test_music_advances(game):
     game.tick(16)
     after = (game.r8("current_order"), game.r8("row"))
     assert after != before, f"music not advancing: stuck at order/row {before}"
+
+
+def _sym_bank(name):
+    """The ROM bank a symbol lives in (load_symbols keeps only the address).
+    Every placeholder song sits at $4000 in its OWN bank, so the bank — not the
+    16-bit pointer — is what tells the tracks apart."""
+    from harness import SYM
+    with open(SYM) as f:
+        for line in f:
+            line = line.split(";", 1)[0].strip()
+            addr_part, _, sym = line.partition(" ")
+            if sym.strip() == name and ":" in addr_part:
+                return int(addr_part.split(":")[0], 16)
+    raise KeyError(name)
+
+
+def test_music_manager_loaded_the_world_track(game):
+    """PlayMusic records which song is loaded so UpdateSound can map its bank and
+    a same-song request is a no-op. After boot the overworld picks the biome's
+    world track (UpdateWorldMusic). The classic-seed world spawns in FOREST,
+    which WorldTrackForBiome maps to song_green — so the manager must have loaded
+    song_green's bank. This exercises the whole biome -> track -> PlayMusic path
+    and the per-song banking; a title-demo bank here would mean the switch never
+    happened, a zero that PlayMusic never ran."""
+    assert game.r16("wMusicSong") == game.addr("song_green"), \
+        "song descriptor pointer wrong (songs live at $4000 in their bank)"
+    assert game.r8("wMusicBank") == _sym_bank("song_green"), \
+        "boot didn't load the forest world track (biome->music wiring broken)"

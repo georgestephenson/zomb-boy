@@ -125,6 +125,12 @@ UpdateView::
 UpdatePlayer::
     xor a, a
     ld [wMoveDir], a           ; default: no step started this frame (no stream)
+    ld hl, wBumpCd             ; wall-bump SFX throttle ticks down every frame so a
+    ld a, [hl]                 ; fresh bump (counter 0) blips at once, a held one repeats
+    and a
+    jr z, .bumpReady
+    dec [hl]
+.bumpReady:
     ld a, [wPlayerState]
     cp PSTATE_WALK
     jp z, .walking
@@ -326,7 +332,16 @@ TryStartStep:
     call GenPlayerStep         ; wGen = the new top-left anchor, for the commit
     jr .ok
 .blocked:
-    ; bump — stay idle, keep facing
+    ; bump — stay idle, keep facing; blip a Pokemon-style bump the first frame,
+    ; then only every BUMP_COOLDOWN frames while the direction stays held.
+    ld a, [wBumpCd]
+    and a
+    jr nz, .noBumpSfx
+    ld a, SFX_BUMP
+    call PlaySFX
+    ld a, BUMP_COOLDOWN
+    ld [wBumpCd], a
+.noBumpSfx:
     ld a, PSTATE_IDLE
     ld [wPlayerState], a
     xor a, a

@@ -143,6 +143,16 @@ wCarEject::         ds 1               ; 0 = none; else (EFACE_*+1) = get out of
 wFuel::             ds 1               ; 0..METER_MAX, saturating (drives the HUD
                                        ; fuel readout; replaces energy while driving)
 
+; Music manager + SFX state (audio.asm). The currently-loaded song is remembered
+; so PlayMusic only re-inits the driver when the track actually changes song (a
+; same-song request — e.g. every world track sharing the one placeholder asset —
+; is a no-op, so the music never restarts as you cross screens/biomes).
+SECTION "Audio State", WRAM0
+wMusicSong::        ds 2               ; pointer to the loaded song descriptor (0 = none)
+wMusicBank::        ds 1               ; its ROM bank (UpdateSound maps this each tick)
+wWorldTrack::       ds 1               ; last world track selected (TRK_WORLD_*), for resume
+wBumpCd::           ds 1               ; frames until the wall-bump SFX may fire again
+
 ; World animation (anim.asm): ambient + reactive tile-art swaps. All 1-byte
 ; frame counters / current-frame indices; "shown" tracks what PushAnim last wrote
 ; so it only re-copies art on a change. Zeroed by ClearRAM, then InitAnim arms
@@ -227,7 +237,8 @@ wMenuScreen::       ds 1               ; MSCR_* — which panel is showing
 wRootCursor::       ds 1               ; selected option on the root list (kept
                                        ; across submenu visits so B returns here)
 wMenuCursor::       ds 1               ; sub-cursor for the equip slots / options
-wOptMusic::         ds 1               ; options: 1 = music on (drives NR50 mute)
+wOptMusic::         ds 1               ; options: 1 = music on (gates UpdateSound)
+wOptSfx::           ds 1               ; options: 1 = sound effects on (gates PlaySFX)
 wSaveDone::         ds 1               ; nonzero once a save has completed (SAVE screen)
 wMenuId::           ds 1               ; scratch: item id being drawn in a list row
 wMenuCount::        ds 1               ; scratch: its stack count
@@ -277,6 +288,7 @@ sPartyLevel::       ds MAX_PARTY               ; save version 2: levels + XP
 sPartyXP::          ds MAX_PARTY * 2
 sBag::              ds BAG_MAX * 2
 sOptMusic::         ds 1
+sOptSfx::           ds 1               ; save version 3: SFX on/off
 sChecksum::         ds 1               ; 8-bit sum of every byte above
 
 SECTION "HRAM Vars", HRAM

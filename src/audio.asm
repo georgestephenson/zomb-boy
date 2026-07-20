@@ -1,33 +1,62 @@
 ; =============================================================================
-; audio.asm — music playback seam over the vendored hUGEDriver.
+; audio.asm — music + sound-effects seam over the vendored hUGEDriver.
 ; -----------------------------------------------------------------------------
-; The driver itself (vendor/hUGEDriver/hUGEDriver.asm) and the demo song
-; (vendor/hUGEDriver/songs/song_demo.asm) are third-party, assembled separately
-; and linked in (see the Makefile's AUDIO_OBJS). This module is the *game-side*
-; wrapper: it keeps the driver's external symbols (hUGE_init / hUGE_dosound /
-; song_demo) in one place and uses our project's pinned v4.12.0 hardware.inc
-; names (rNR5x), so the rest of the game never touches driver internals.
+; The driver itself (vendor/hUGEDriver/hUGEDriver.asm) and the song data
+; (vendor/hUGEDriver/songs/*.asm) are third-party, assembled separately and
+; linked in (see the Makefile's AUDIO_OBJS). This module is the *game-side*
+; wrapper: the rest of the game asks for a track by id or an SFX by id and never
+; touches driver internals or channel registers directly.
 ;
-;   InitSound   — power the APU on, full volume both sides, load the demo song.
-;   UpdateSound — advance playback by one tick; call once per frame.
+;   InitSound        — power the APU on and start the title theme.
+;   PlayMusic        — switch to a track by id (no-op if that song's already on).
+;   UpdateSound      — advance playback one tick; call once per frame.
+;   SilenceMusic     — cut the held music notes when the music toggle goes off.
+;   UpdateWorldMusic — pick the overworld track from the player's biome.
+;   PlaySFX          — fire a short one-shot sound effect (channel 1).
+;   PlaySplash / PlayCarDoor — bespoke channel-4 blips (kept from before).
 ;
-; BANKING: the song data no longer fits in bank 1 beside the (grown) dialogue
-; data, so it lives in its own ROMX bank. Both driver entry points read song
-; data, so this seam brackets them with a switch to BANK(song_demo) and a
-; restore of bank 1 (the repo invariant: switch, read, restore bank 1) — the
-; same pattern as talk.asm's ShowPortrait. The driver holds only WRAM state
-; between ticks, so nothing dangles across the switch. PlaySplash/PlayCarDoor
-; are pure register writes and need no banking.
+; The OPTIONS menu has two independent toggles: wOptMusic (gates UpdateSound;
+; muting calls SilenceMusic) and wOptSfx (gates PlaySFX/PlaySplash/PlayCarDoor).
+; Because music-mute cuts the channels' DACs instead of unrouting NR51, SFX stay
+; audible with the music off — the two switches are fully independent.
+;
+; ---------------------------------------------------------------------------
+; MUSIC: distinct placeholder songs, one bank each (PLACEHOLDERS)
+; ---------------------------------------------------------------------------
+; The design wants distinct music per screen — a title theme, eight overworld
+; tracks (one per biome group), and a dialogue theme per persona. We only have
+; ONE *composed* song (the vendored public-domain demo), and no way to fetch
+; more that match our pinned song format — so tools/gen-placeholder-songs.py
+; derives extra distinct, format-correct songs from the demo (transposed and
+; re-tempo'd) into the build tree. MusicTracks points TITLE at the demo and the
+; world/dialogue slots at those derivatives, so the screens genuinely sound
+; different today. PlayMusic compares the *song pointer*, so slots that share a
+; placeholder (e.g. every persona → song_talk) don't restart it; distinct ones
+; switch. Each song occupies its OWN ROM bank (~10 KB, one per 16 KB bank), so
+; the cartridge already carries the true memory cost of real music, and the
+; "Music Bank Reservation" section (bottom of this file) reserves banks for the
+; rest of the vision.
+;   >>> TODO(music): replace any placeholder with a real composed track (keep the
+;   >>> label) — see vendor/hUGEDriver/PROVENANCE.md for the export flow. No code
+;   >>> change needed; the MusicTracks comment says where each track is heard.
+;
+; BANKING: song data lives in ROMX — each song in its own bank. Both driver
+; entry points read song data, so InitSound/PlayMusic/UpdateSound bracket the
+; driver calls with a switch to the *current* song's bank (remembered in
+; wMusicBank) and a restore of bank 1 — the repo invariant. The driver keeps
+; only WRAM state between ticks, so nothing dangles across a switch.
+; PlaySFX/PlaySplash/PlayCarDoor are pure register writes and need no banking.
 ; =============================================================================
 INCLUDE "hardware.inc"
 INCLUDE "include/constants.inc"
 
 SECTION "Audio", ROM0
 
-; Turn the APU on and start the demo song. Call once, after the LCD/content is
-; set up and before the main loop. hUGEDriver requires the APU enabled before
-; hUGE_init, so we power it up first (this supersedes the boot-time InitAudio
-; silence in video.asm).
+; -----------------------------------------------------------------------------
+; InitSound: turn the APU on and start the title theme. Call once at boot, after
+; the LCD/content is set up and before the title loop (hUGEDriver requires the
+; APU enabled before hUGE_init). Supersedes the boot-time InitAudio silence.
+; -----------------------------------------------------------------------------
 InitSound::
     ld a, $80                       ; NR52: master enable (bit7). Must precede any
     ldh [rNR52], a                  ;       other APU writes — regs ignore writes off.
@@ -35,32 +64,162 @@ InitSound::
     ldh [rNR51], a
     ld a, $77                       ; NR50: max master volume, left and right.
     ldh [rNR50], a
+    xor a, a                        ; "no song loaded yet" so PlayMusic really inits
+    ld [wMusicSong], a
+    ld [wMusicSong+1], a
+    ld [wMusicBank], a
+    ld a, TRK_TITLE
+    jp PlayMusic                    ; tail-call: load + start the title theme
 
-    ld a, BANK(song_demo)           ; map the song's bank (init copies the
-    ld [rROMB0], a                  ; descriptor + pattern pointers from ROM)
-    ld hl, song_demo                ; song descriptor (see songs/song_demo.asm)
+; -----------------------------------------------------------------------------
+; PlayMusic: A = TRK_* track id. Look the track up in MusicTracks, and if it
+; resolves to a DIFFERENT song than the one currently loaded, (re)initialise the
+; driver on it. If it's the same song (e.g. two world biomes sharing the one
+; placeholder asset), do nothing — the music plays on uninterrupted. Clobbers
+; a/bc/de/hl (hUGE_init clobbers freely; callers must tolerate it).
+; -----------------------------------------------------------------------------
+PlayMusic::
+    ld e, a
+    ld d, 0
+    ld hl, MusicTracks
+    add hl, de                      ; hl = MusicTracks + 3*track (entry = db bank, dw ptr)
+    add hl, de
+    add hl, de
+    ld a, [hl+]                     ; B = the track's song bank
+    ld b, a
+    ld a, [hl+]                     ; DE = the song descriptor pointer (little-endian)
+    ld e, a
+    ld a, [hl]
+    ld d, a
+    ; already playing this exact song? (compare bank + pointer)
+    ld a, [wMusicBank]
+    cp b
+    jr nz, .switch
+    ld a, [wMusicSong]
+    cp e
+    jr nz, .switch
+    ld a, [wMusicSong+1]
+    cp d
+    ret z                           ; same song already loaded -> keep it playing
+.switch:
+    ld a, b
+    ld [wMusicBank], a              ; remember the new song for UpdateSound's banking
+    ld a, e
+    ld [wMusicSong], a
+    ld a, d
+    ld [wMusicSong+1], a
+    ld a, b
+    ld [rROMB0], a                  ; map the song's bank for hUGE_init to read
+    ld h, d
+    ld l, e                         ; HL = song descriptor
     call hUGE_init
-    ld a, 1                         ; back to the default (dialogue) bank
-    ld [rROMB0], a
+    ld a, 1
+    ld [rROMB0], a                  ; restore the default (dialogue) bank
     ret
 
-; Advance the music one tick. Must be called at a steady once-per-frame rate for
-; correct tempo; the main loop is frame-locked by WaitVBlank, so calling it once
-; per iteration (outside the VBlank window, to spare that tight budget) is exactly
-; one call per frame. Clobbers a/bc/de/hl — fine at the top of the loop.
+; -----------------------------------------------------------------------------
+; UpdateSound: advance the music one tick. Call at a steady once-per-frame rate;
+; the main loop is frame-locked by WaitVBlank, so calling it once per iteration
+; (outside the VBlank window) is exactly one call per frame. Maps the current
+; song's bank (the driver re-reads pattern bytes each tick), then restores bank 1.
+; -----------------------------------------------------------------------------
 UpdateSound::
-    ld a, BANK(song_demo)           ; the driver re-reads pattern bytes each tick
+    ld a, [wMusicBank]
     ld [rROMB0], a
     call hUGE_dosound
     ld a, 1                         ; back to the default (dialogue) bank
     ld [rROMB0], a
     ret
 
+; -----------------------------------------------------------------------------
+; SilenceMusic: cut the currently-held music notes when the OPTIONS music toggle
+; goes off. The gate on UpdateSound freezes the driver, but the four channels
+; keep sounding their last note until something changes them — so we turn each
+; channel's DAC off (envelope/DAC bits = 0). NR51 stays fully routed, so sound
+; effects (which rewrite their channel's envelope + retrigger) are still audible
+; with music muted. When music is re-enabled the driver re-owns each channel on
+; its next note. Independent of the SFX toggle.
+; -----------------------------------------------------------------------------
+SilenceMusic::
+    xor a, a
+    ldh [rNR12], a                  ; ch1 envelope -> DAC off (silent)
+    ldh [rNR22], a                  ; ch2 envelope -> DAC off
+    ldh [rNR30], a                  ; ch3 DAC off (bit7)
+    ldh [rNR42], a                  ; ch4 envelope -> DAC off
+    ret
+
+; -----------------------------------------------------------------------------
+; UpdateWorldMusic: choose the overworld track from the biome under the player
+; and request it (a no-op while every biome shares the placeholder song). Called
+; each sustained-overworld frame, so it also restores the world track when you
+; step back out of a dialogue. CalcBiome is memoized; this touches no RNG, so
+; worldgen/spawn determinism is unperturbed.
+; -----------------------------------------------------------------------------
+UpdateWorldMusic::
+    call GenFromPlayer              ; wGen = player's world tile (entity.asm)
+    ld a, [wGenX]
+    ld [wBiX], a
+    ld a, [wGenX+1]
+    ld [wBiX+1], a
+    ld a, [wGenY]
+    ld [wBiY], a
+    ld a, [wGenY+1]
+    ld [wBiY+1], a
+    call CalcBiome                  ; A = BIOME_* at the player
+    ld e, a
+    ld d, 0
+    ld hl, WorldTrackForBiome
+    add hl, de
+    ld a, [hl]                      ; TRK_WORLD_* for this biome group
+    ld [wWorldTrack], a
+    jp PlayMusic                    ; tail-call
+
+; -----------------------------------------------------------------------------
+; PlaySFX: A = SFX_* id. Fire a short one-shot blip on channel 1 (pulse) by
+; writing its five register bytes from SFXTable and triggering. The music driver
+; re-owns the channel on its next tick, so the effect is a brief attack layered
+; over the music — the same channel-borrowing trick as PlaySplash. Silenced with
+; the music when the OPTIONS toggle unroutes the channels (NR51=0). Clobbers a/de/hl.
+; -----------------------------------------------------------------------------
+PlaySFX::
+    ld e, a                         ; e = SFX id (survives the toggle check below)
+    ld a, [wOptSfx]
+    and a, a
+    ret z                           ; sound effects turned off in OPTIONS
+    ldh a, [rNR51]                  ; the driver owns NR51 (panning), so make sure
+    or  %00010001                   ; ch1 is routed L+R for this blip — SFX must be
+    ldh [rNR51], a                  ; audible even with the music muted (driver frozen)
+    ld d, 0
+    ld hl, SFXTable
+    add hl, de                      ; hl = SFXTable + 5*id
+    add hl, de
+    add hl, de
+    add hl, de
+    add hl, de
+    ld a, [hl+]
+    ldh [rNR10], a                  ; sweep
+    ld a, [hl+]
+    ldh [rNR11], a                  ; duty + length
+    ld a, [hl+]
+    ldh [rNR12], a                  ; envelope (volume + decay)
+    ld a, [hl+]
+    ldh [rNR13], a                  ; frequency low
+    ld a, [hl]
+    ldh [rNR14], a                  ; trigger + length-enable + frequency high
+    ret
+
 ; Play a short splash blip on the noise channel (ch4) for entering/leaving water.
 ; This writes ch4 directly, borrowing it from the music for an instant: the driver
 ; re-owns the channel on its next tick, which is exactly a splash's length anyway.
-; NR51 (set in InitSound) already routes ch4 to both speakers.
+; Routes ch4 in NR51 first (the driver owns that register) so the blip is audible
+; regardless of the song's current panning or the music toggle.
 PlaySplash::
+    ld a, [wOptSfx]
+    and a, a
+    ret z                           ; sound effects turned off in OPTIONS
+    ldh a, [rNR51]                  ; route ch4 L+R (the driver owns NR51) so the
+    or  %10001000                   ; blip is audible even with the music muted
+    ldh [rNR51], a
     ld a, %00110000                 ; NR41: length timer (64-t) -> a brief burst
     ldh [rNR41], a
     ld a, $F2                       ; NR42: full volume, envelope down (quick decay)
@@ -75,6 +234,12 @@ PlaySplash::
 ; car — a stylised door thud, lower and with a touch more body than the splash.
 ; Same channel-borrowing trick as PlaySplash (the music re-owns ch4 next tick).
 PlayCarDoor::
+    ld a, [wOptSfx]
+    and a, a
+    ret z                           ; sound effects turned off in OPTIONS
+    ldh a, [rNR51]                  ; route ch4 L+R (the driver owns NR51) so the
+    or  %10001000                   ; blip is audible even with the music muted
+    ldh [rNR51], a
     ld a, %00100000                 ; NR41: length timer -> a bit more body than a splash
     ldh [rNR41], a
     ld a, $F3                       ; NR42: full volume, slower decay (a short ring)
@@ -84,3 +249,113 @@ PlayCarDoor::
     ld a, $C0                       ; NR44: trigger (bit7) + length-enable (bit6)
     ldh [rNR44], a
     ret
+
+; =============================================================================
+; Data
+; =============================================================================
+SECTION "Audio Tables", ROM0
+
+; -----------------------------------------------------------------------------
+; Music track table (indexed by TRK_*). Each entry is `db songBank` then
+; `dw songPtr` (3 bytes) — a song descriptor plus the ROM bank it lives in, so
+; UpdateSound can map that bank each tick and PlayMusic knows when the song
+; actually changed. Every song here is a PLACEHOLDER: `song_demo` is the one
+; vendored tune, and song_urban..song_talk are distinct derivatives of it
+; (transposed / re-tempo'd by tools/gen-placeholder-songs.py) so the different
+; screens genuinely sound different AND the ROM reserves a real bank per song.
+; Replace any entry with a real composed tune (keep the label) — no code change.
+;   TODO(music): compose the real per-screen tracks; these are stand-ins.
+; -----------------------------------------------------------------------------
+MusicTracks::
+    db BANK(song_demo)
+    dw song_demo                    ; TRK_TITLE   — title screen theme
+    db BANK(song_urban)
+    dw song_urban                   ; TRK_WORLD_0 — overworld: city / ruins
+    db BANK(song_open)
+    dw song_open                    ; TRK_WORLD_1 — overworld: plains / farm
+    db BANK(song_green)
+    dw song_green                   ; TRK_WORLD_2 — overworld: forest / jungle
+    db BANK(song_wet)
+    dw song_wet                     ; TRK_WORLD_3 — overworld: marsh
+    db BANK(song_eerie)
+    dw song_eerie                   ; TRK_WORLD_4 — overworld: graveyard
+    db BANK(song_arid)
+    dw song_arid                    ; TRK_WORLD_5 — overworld: desert
+    db BANK(song_cold)
+    dw song_cold                    ; TRK_WORLD_6 — overworld: mountains
+    db BANK(song_cold)
+    dw song_cold                    ; TRK_WORLD_7 — overworld: tundra (shares the cold theme)
+    ; --- per-persona dialogue themes (TRK_TALK_0 + persona id). One shared
+    ;     dialogue placeholder for now; give personas distinct tunes later. ---
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_0  — talk: persona 0 (police)
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_1  — talk: persona 1
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_2  — talk: persona 2
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_3  — talk: persona 3
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_4  — talk: persona 4
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_5  — talk: persona 5
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_6  — talk: persona 6
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_7  — talk: persona 7
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_8  — talk: persona 8
+    db BANK(song_talk)
+    dw song_talk                    ; TRK_TALK_9  — talk: persona 9
+
+; Map each biome to one of the eight world tracks (indexed by BIOME_*). Groups
+; related biomes so the eight tracks cover all eleven biomes with a coherent
+; mood per region.
+WorldTrackForBiome::
+    db TRK_WORLD_0     ; BIOME_CITY      urban
+    db TRK_WORLD_1     ; BIOME_PLAINS    open
+    db TRK_WORLD_2     ; BIOME_FOREST    green
+    db TRK_WORLD_3     ; BIOME_MARSH     wet
+    db TRK_WORLD_0     ; BIOME_RUINS     urban (broken city)
+    db TRK_WORLD_1     ; BIOME_FARM      open (fields)
+    db TRK_WORLD_2     ; BIOME_JUNGLE    green (dense)
+    db TRK_WORLD_4     ; BIOME_GRAVEYARD eerie
+    db TRK_WORLD_5     ; BIOME_DESERT    arid
+    db TRK_WORLD_6     ; BIOME_MOUNTAINS high
+    db TRK_WORLD_7     ; BIOME_TUNDRA    cold
+
+; Sound-effect table (indexed by SFX_*): five channel-1 register bytes each —
+; NR10 (sweep), NR11 (duty+length), NR12 (envelope), NR13 (freq low), NR14
+; (trigger+len-enable+freq high). These are hand-tuned by ear on the design's
+; intent; feel free to nudge the pitches/decays — they're just data.
+;   TODO(sfx): tune final values on real hardware / mGBA (PyBoy proves they fire,
+;   not how they sound).
+SFXTable::
+    db $34, $80, $81, $60, $C6      ; SFX_BUMP    — low thud, quick downward sweep (walls)
+    db $00, $B8, $71, $00, $C7      ; SFX_MOVE    — tiny high click (cursor move)
+    db $15, $86, $A3, $00, $C6      ; SFX_CONFIRM — rising "bwip" (select an option)
+    db $24, $05, $81, $C0, $C5      ; SFX_CANCEL  — thin falling tone (back out)
+    db $16, $86, $A4, $40, $C6      ; SFX_OPEN    — rising chirp (menu opens)
+    db $36, $86, $94, $C0, $C6      ; SFX_CLOSE   — falling chirp (menu closes)
+    db $13, $41, $63, $80, $C5      ; SFX_EAT     — soft low "nom" (consume food)
+    db $00, $88, $C4, $C0, $C7      ; SFX_PICKUP  — bright "ding" (gear into the bag)
+
+; =============================================================================
+; Music bank reservation
+; -----------------------------------------------------------------------------
+; A distinct song costs one ~10 KB ROM bank EACH (two won't fit in a 16 KB
+; bank). The full music design wants a track per screen — title + 8 world
+; biomes + a theme per persona — i.e. up to ~19 distinct songs. Only a handful
+; of placeholder songs are linked today (see MusicTracks); the rest of the song
+; banks are empty. This 1-byte anchor in the top bank forces the linker to size
+; the cartridge for the FULL music vision NOW, so dropping in real per-track
+; songs later can never overflow or force a cart resize — the memory is already
+; reserved. rgbfix -p pads the reserved-but-empty banks with $FF.
+;
+; BANK[31] => banks 0..31 = 32 banks = 512 KB. Non-music content lives in the
+; low banks (0..3); that leaves banks 4..31 (28 banks) for songs — comfortably
+; more than the ~19 the design calls for. Shrink BANK[] (e.g. 15 -> 256 KB) if
+; the final music footprint is settled smaller.
+; =============================================================================
+SECTION "Music Bank Reservation", ROMX, BANK[31]
+    db $FF
