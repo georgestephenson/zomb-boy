@@ -273,6 +273,9 @@ def _gen_ruins(x, y, f):
 
 
 def _gen_farm(x, y, f):
+    if (x & 7) == 0 and (y & 7) == 0:
+        return TILE_FENCE            # corner post: never a gap, so a fence-line
+                                     # gap always has a walkable field neighbour
     if (x & 7) == 0 or (y & 7) == 0:
         if (f & 3) == 0:
             return TILE_DIRT          # a gate/gap keeps fields crossable
@@ -445,7 +448,8 @@ def sweep(n: int = 48) -> int:
     """Exhaustive reliability check: the in-game seed is one byte, so EVERY
     possible world can be vetted. Per seed this runs cheaper invariants than
     check_seed (which does the full statistics at one seed): the boot spawn
-    scan must land on a passable tile, the spawn neighbourhood must not be
+    scan must land on a passable tile that isn't boxed in (>=1 walkable
+    4-neighbour to actually step to), the spawn neighbourhood must not be
     degenerate (boxed in by solids), and the biome field must actually vary.
     """
     bad = []
@@ -454,6 +458,13 @@ def sweep(n: int = 48) -> int:
         sx, sy = find_start()
         if gen_tile_type(sx, sy) in SOLID:
             bad.append((seed, "boot spawn scan found no passable tile"))
+            continue
+        # The player moves orthogonally, so a passable start tile is useless if
+        # every 4-neighbour is solid (the farm fence-intersection trap): the
+        # spawn must have somewhere to step.
+        if all(gen_tile_type(sx + dx, sy + dy) in SOLID
+               for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            bad.append((seed, "spawn boxed in: all 4 neighbours solid"))
             continue
         total = n * n
         walkable = sum(1 for y in range(n) for x in range(n)
