@@ -1022,6 +1022,47 @@ PersonaTiles::
     dw `01333311
     dw `00133100
     dw `00011000
+; Battle target-bar cells (BG, palette PAL_BG_ZONE = {bg, red, amber, green}); a
+; solid fill of one palette index each, so the ZoneBar layout reads red/amber/
+; green. On DMG (attributes ignored) the three indices map to distinct rBGP
+; greys, so the zones stay legible. A 1px dark top/bottom rail frames the band.
+; --- 225: zone red (miss) ---
+    dw `00000000
+    dw `11111111
+    dw `11111111
+    dw `11111111
+    dw `11111111
+    dw `11111111
+    dw `11111111
+    dw `00000000
+; --- 226: zone amber (hit) ---
+    dw `00000000
+    dw `22222222
+    dw `22222222
+    dw `22222222
+    dw `22222222
+    dw `22222222
+    dw `22222222
+    dw `00000000
+; --- 227: zone green (crit) ---
+    dw `00000000
+    dw `33333333
+    dw `33333333
+    dw `33333333
+    dw `33333333
+    dw `33333333
+    dw `33333333
+    dw `00000000
+; --- 228: crosshair (OBJ palette PAL_OBJ_CROSS; 3 = white, 1 = yellow). A
+;          downward arrow that hovers above the bar and marks the lock point. ---
+    dw `33333333
+    dw `31111113
+    dw `03111130
+    dw `00311300
+    dw `00033000
+    dw `00000000
+    dw `00000000
+    dw `00000000
 PersonaTilesEnd::
 
 ; -----------------------------------------------------------------------------

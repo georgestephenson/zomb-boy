@@ -1,5 +1,5 @@
 ; =============================================================================
-; menu.asm — the Pokemon-style START/pause menu (MODE_MENU).
+; menu.asm — the monster-battler-style START/pause menu (MODE_MENU).
 ;
 ; START in the overworld opens a full-screen menu on SCRN1 (the same layer the
 ; talk screen uses; the world map on SCRN0 is left intact so closing is a cheap

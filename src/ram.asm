@@ -19,7 +19,7 @@ wSpawnWY::          ds 2               ; the status screen shows position relati
 ; The tile the player has FULLY arrived on — lags the logical tile by one step
 ; while mid-walk (the logical tile jumps at step start; this catches up only when
 ; the step finishes). Zombie line-of-sight is tested against THIS so an encounter
-; only triggers once you've stepped onto the tile, Pokemon-style — not the instant
+; only triggers once you've stepped onto the tile, monster-battler-style — not the instant
 ; you begin the step (SyncSeen in player.asm updates it).
 wSeenWX::           ds 2
 wSeenWY::           ds 2
@@ -100,6 +100,10 @@ wScrX::             ds 1               ; scratch: on-screen sprite X
 wScrY::             ds 1               ; scratch: on-screen sprite Y
 wEnt::              ds ENT_SIZE        ; the entity currently being processed
 wZombies::          ds MAX_ZOMBIES * ENT_SIZE
+; Frames after a battle during which no new alert may fire, so a flee/loss isn't
+; instantly re-triggered while the player is still in the zombie's sight line.
+; (Placed after the pool so it doesn't shift the entity-scratch addresses.)
+wAlertGrace::       ds 1
 
 ; Survivor NPCs (same 16-byte entity struct; EO_PERSONA/EO_AFFIN in 13/14).
 SECTION "NPC State", WRAM0
@@ -326,6 +330,39 @@ sBag::              ds BAG_MAX * 2
 sOptMusic::         ds 1
 sOptSfx::           ds 1               ; save version 3: SFX on/off
 sChecksum::         ds 1               ; 8-bit sum of every byte above
+
+; Battle mode (turn-based combat screen) — see battle.asm. A dedicated scratch
+; region, fully cleared on EnterBattle so no stale fight leaks in (design 04 §6);
+; wBattleGuard is a $C5 canary the poison test asserts survives.
+SECTION "Battle State", WRAM0
+wBattleState::      ds 1               ; BS_*
+wBattleMenu::       ds 1               ; BM_MAIN / BM_FIGHT
+wBattleCursor::     ds 1               ; 0..3 (bit0 = col, bit1 = row)
+wBattleOutcome::    ds 1               ; BO_*
+wBattleEKind::      ds 1               ; EPK_* (which portrait table)
+wBattleEIdx::       ds 1               ; enemy portrait index
+wBattleFoe::        ds 1               ; zombie pool index to despawn on a win,
+                                       ; or $FF (survivor fight — nothing to remove)
+; Enemy stats (copied from the ZombieTable row on entry)
+wEnemyMaxHP::       ds 1
+wEnemyHP::          ds 1
+wEnemyATK::         ds 1
+wEnemyDEF::         ds 1
+wEnemyName::        ds 2               ; ptr to the enemy's name string
+; Crosshair minigame
+wCrossX::           ds 1               ; 0..CROSS_MAX
+wCrossDir::         ds 1               ; 0 = moving +, 1 = moving -
+wBattleWeapon::     ds 1               ; weapon index chosen for the current lock
+wSkillCd::          ds SKILL_COUNT     ; per-skill cooldown counters
+wBattleMsgNext::    ds 1               ; BS_* to enter when the message is A'd
+; Message / menu paint buffer: composed in the logic phase, revealed to SCRN1
+; a few cells per frame (bounded) via the write queue.
+wBattleBox::        ds BATTLE_BOX_CELLS
+wBoxPos::           ds 1               ; next cell to paint (== CELLS: done)
+wBattleGuard::      ds 1               ; $C5 canary (see above)
+; VRAM write queue: logic fills (bounded), the battle VBlank path drains fully.
+wBattleQN::         ds 1
+wBattleQ::          ds BATTLEQ_CAP * 3 ; {addrHi, addrLo, value}
 
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ

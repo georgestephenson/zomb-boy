@@ -188,6 +188,8 @@ MainLoop:
     jp z, .talk
     cp MODE_MENU
     jp z, .menu
+    cp MODE_BATTLE
+    jp z, .battle
     and a, a                        ; MODE_OVERWORLD == 0
     jr nz, .alert
     ; --- overworld ---
@@ -220,6 +222,9 @@ MainLoop:
     jr .draw
 .alert:
     call UpdateAlert                ; "!" beat -> zombie charges the player -> battle
+    ld a, [wGameMode]
+    cp MODE_BATTLE
+    jp z, MainLoop                  ; EnterBattle presented its own frame
 .draw:
     call ComputeCamLag              ; shared sub-tile camera offset (BG + sprites)
     call DrawEntities
@@ -245,6 +250,9 @@ MainLoop:
 ; --- talk mode: dialogue logic, then a lighter VBlank (no scroll/stream) ---
 .talk:
     call UpdateTalk                 ; state machine; fills the VRAM write queue
+    ld a, [wGameMode]
+    cp MODE_TALK
+    jp nz, MainLoop                 ; exited (to overworld or battle) — frame shown
     call WaitVBlank
     ld a, HIGH(wShadowOAM)
     call hOAMDMA
@@ -258,6 +266,25 @@ MainLoop:
     call WaitVBlank
     ld a, HIGH(wShadowOAM)
     call hOAMDMA
+    jp MainLoop
+
+; --- battle mode: combat logic, then a lighter VBlank (no scroll/stream). The
+;     engine + its VBlank drainer live in a floating ROMX bank (ROM0/bank1 are
+;     full), so map it around the calls and hand bank 1 back before looping. ---
+.battle:
+    ld a, BANK(UpdateBattle)
+    ld [rROMB0], a
+    call UpdateBattle               ; state machine; fills the VRAM write queue
+    ld a, [wGameMode]
+    cp MODE_BATTLE
+    jr nz, .battleDone              ; ExitBattle already restored + presented a frame
+    call WaitVBlank
+    ld a, HIGH(wShadowOAM)
+    call hOAMDMA
+    call DrainBattleQ
+.battleDone:
+    ld a, 1                         ; restore the default bank for the next frame
+    ld [rROMB0], a
     jp MainLoop
 
 ; -----------------------------------------------------------------------------

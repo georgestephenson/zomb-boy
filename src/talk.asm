@@ -1,7 +1,7 @@
 ; =============================================================================
 ; talk.asm — the survivor dialogue screen (MODE_TALK).
 ;
-; A Pokemon-battle-style full-screen conversation: the survivor speaks in
+; A monster-battler-style full-screen conversation: the survivor speaks in
 ; generated sentences (dialogue.asm), you answer with one of four tones, their
 ; affinity shifts, and after TALK_ROUNDS replies the conversation resolves:
 ; fight / part ways / reward (docs/design/05 §4-§5).
@@ -303,15 +303,17 @@ DecideOutcome:
     ld [wTalkOutcome], a
     ret
 
-; TalkFinish: outcome line acknowledged. Leave; a FIGHT outcome plays the
-; placeholder battle flash on the restored world screen (real combat LATER —
-; the reward item is text-only until the inventory slice, too).
+; TalkFinish: outcome line acknowledged. Leave; a FIGHT outcome drops straight
+; into real combat (battle.asm) against this survivor — the SAME engine a zombie
+; uses, with the persona's portrait as the enemy. (The reward item is text-only
+; until the inventory slice.)
 TalkFinish:
     call ExitTalkScreen
     ld a, [wTalkOutcome]
     cp OUTCOME_FIGHT
     ret nz
-    jp BattleTransition
+    ld a, [wTalkPersona]
+    jp EnterBattleSurvivor
 
 ; -----------------------------------------------------------------------------
 ; ExitTalkScreen: back to the overworld — world map is still intact on SCRN0,
