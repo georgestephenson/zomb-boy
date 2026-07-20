@@ -39,15 +39,23 @@ TILE_GRASS, TILE_BRUSH, TILE_FLOWER, TILE_DIRT = 0, 1, 2, 3
 TILE_WATER, TILE_ROAD, TILE_WALL, TILE_FLOOR = 4, 5, 6, 7
 TILE_DOOR, TILE_MARSH = 8, 9
 TILE_TREE_TL, TILE_TREE_TR, TILE_TREE_BL, TILE_TREE_BR = 10, 11, 12, 13
+# Expansion-biome BG terrain tiles (ids 57..63; see constants.inc).
+TILE_SAND, TILE_CACTUS, TILE_SNOW, TILE_ICE = 57, 58, 59, 60
+TILE_GRAVE, TILE_WHEAT, TILE_FENCE = 61, 62, 63
 SOLID = {TILE_WATER, TILE_WALL,
-         TILE_TREE_TL, TILE_TREE_TR, TILE_TREE_BL, TILE_TREE_BR}
+         TILE_TREE_TL, TILE_TREE_TR, TILE_TREE_BL, TILE_TREE_BR,
+         TILE_CACTUS, TILE_ICE, TILE_GRAVE, TILE_FENCE}
 
 # --- biome ids --------------------------------------------------------------
 BIOME_CITY, BIOME_PLAINS, BIOME_FOREST, BIOME_MARSH = 0, 1, 2, 3
+BIOME_RUINS, BIOME_FARM, BIOME_JUNGLE = 4, 5, 6
+BIOME_GRAVEYARD, BIOME_DESERT, BIOME_MOUNTAINS, BIOME_TUNDRA = 7, 8, 9, 10
 
 # --- per-biome tuning (must equal the constants.inc / world.asm literals) ----
 WATER_MARSH, WATER_FOREST, WATER_PLAINS = 116, 24, 20
+WATER_TUNDRA = 20
 TREE_FOREST, TREE_MARSH, TREE_PLAINS = 176, 236, 248
+TREE_JUNGLE, TREE_GRAVE, TREE_TUNDRA, TREE_MTN = 176, 250, 246, 240
 
 U8 = 0xFF
 U16 = 0xFFFF
@@ -85,13 +93,32 @@ def biome(x: int, y: int) -> int:
     wx = (x + (hash8((x >> 3) & U16, (y >> 3) & U16, 60) & 15)) & U16
     wy = (y + (hash8((x >> 3) & U16, (y >> 3) & U16, 61) & 15)) & U16
     b = hash8((wx >> 6) & U16, (wy >> 6) & U16, 70)
-    if b < 64:
-        return BIOME_CITY       # ~25%
-    if b < 160:
-        return BIOME_PLAINS     # ~37%
+    # 11 bands over the 0..255 field. City/ruins share the low end (they share
+    # the road grid); forest/jungle keep the high-but-below-marsh band so the
+    # classic seed's spawn (field value 195) stays FOREST as it always was — the
+    # reproducible test world, and a feature-rich start; marsh holds the wet top
+    # so its water still dominates the world's water (the clustering check).
+    if b < 24:
+        return BIOME_CITY
+    if b < 44:
+        return BIOME_RUINS
+    if b < 76:
+        return BIOME_PLAINS
+    if b < 96:
+        return BIOME_FARM
+    if b < 118:
+        return BIOME_DESERT
+    if b < 138:
+        return BIOME_MOUNTAINS
+    if b < 156:
+        return BIOME_TUNDRA
+    if b < 174:
+        return BIOME_GRAVEYARD
+    if b < 194:
+        return BIOME_JUNGLE
     if b < 212:
-        return BIOME_FOREST     # ~20%
-    return BIOME_MARSH          # ~17%
+        return BIOME_FOREST
+    return BIOME_MARSH
 
 
 def water_field(x: int, y: int) -> int:
@@ -111,21 +138,40 @@ def tree_tile(x: int, y: int, thresh: int):
     return None
 
 
-# Per-biome feature thresholds keyed by biome id (None = biome has no such
-# feature). Trees/water are decided from the *block* biome so a 2x2 tree never
-# straddles a biome edge; city has neither.
-_TREE_THRESH = {BIOME_FOREST: TREE_FOREST, BIOME_MARSH: TREE_MARSH,
-                BIOME_PLAINS: TREE_PLAINS}
-_WATER_THRESH = {BIOME_FOREST: WATER_FOREST, BIOME_MARSH: WATER_MARSH,
-                 BIOME_PLAINS: WATER_PLAINS}
-
-
 def road_here(x: int, y: int) -> bool:
-    """Mirror of RoadHere: a 16-tile grid whose lines wobble by a small offset."""
-    if ((x + (hash8(0, (y >> 3) & U16, 21) & 3)) & 0x0F) == 0:
-        return True
-    if ((y + (hash8((x >> 3) & U16, 0, 22) & 3)) & 0x0F) == 0:
-        return True
+    """Mirror of RoadHere. Avenues are full-length straight vertical lines (one
+    per 16-wide band, column jittered 0..7 by the band index) — the connected
+    backbone. Cross-streets are horizontal but JOG: a street's row is jittered
+    per *avenue-interval*, so it steps up/down each time it crosses an avenue,
+    producing bends and T-junctions. Crucially the jog happens exactly AT an
+    avenue, and the full-length avenue bridges the two different-row segments —
+    so every street segment has both ends on an avenue and the whole network
+    stays connected. The ruins biome reuses this and cracks it."""
+    k = (x >> 4) & U16
+    jit_k = hash8(k, 0, 21) & 7
+    xlow = x & 0x0F
+    if xlow == jit_k:
+        return True                                   # on the vertical avenue
+    # which avenue-interval is x in? (the avenue at/left of x identifies it)
+    kL = k if xlow > jit_k else (k - 1) & U16
+    if (y & 0x0F) == (hash8(kL, (y >> 4) & U16, 22) & 7):
+        return True                                   # on the jogging cross-street
+    # dead-end spurs / cul-de-sacs: a short residential stub branching RIGHT off
+    # this band's avenue, entirely within the band (so it only needs this band's
+    # jitter). It touches the avenue at d==1, so it always connects; the far end
+    # just stops (dead-end), or for a cul-de-sac widens to a 3-tall turnaround.
+    if xlow > jit_k:
+        h = hash8(k, (y >> 4) & U16, 23)
+        if (h & 3) == 0:                              # ~1/4 of (avenue, row-band) slots
+            sr = 3 + ((h >> 2) & 7)                   # spur row within the band (3..10)
+            length = 2 + ((h >> 5) & 3)               # 2..5 tiles long
+            cul = (h >> 7) & 1
+            yl = y & 0x0F
+            d = xlow - jit_k                          # tiles right of the avenue (>=1)
+            if yl == sr and d <= length:
+                return True                           # the spur itself
+            if cul and d == length and (yl == sr - 1 or yl == sr + 1):
+                return True                           # cul-de-sac turnaround head
     return False
 
 
@@ -159,62 +205,173 @@ def _scatter(x, y):
     return hash8(x & U16, y & U16, 91)
 
 
+# --- per-biome ground generators (each mirrors a Gen* routine in world.asm) --
+# Trees/water are keyed on the *block* biome so a 2x2 feature never straddles a
+# biome edge; each function is self-contained (its own trees/water/scatter).
+
+def _gen_plains(x, y, f):
+    t = tree_tile(x, y, TREE_PLAINS)
+    if t is not None:
+        return t
+    if water_field(x, y) < WATER_PLAINS:
+        return TILE_WATER
+    if f >= 246:
+        return TILE_FLOWER
+    if f >= 232:
+        return TILE_BRUSH
+    return TILE_GRASS
+
+
+def _gen_forest(x, y, f):
+    t = tree_tile(x, y, TREE_FOREST)
+    if t is not None:
+        return t
+    if water_field(x, y) < WATER_FOREST:
+        return TILE_WATER
+    if f >= 150:
+        return TILE_BRUSH
+    return TILE_GRASS
+
+
+def _gen_marsh(x, y, f):
+    t = tree_tile(x, y, TREE_MARSH)
+    if t is not None:
+        return t
+    if water_field(x, y) < WATER_MARSH:
+        return TILE_WATER
+    if f >= 205:
+        return TILE_BRUSH             # reeds
+    return TILE_MARSH
+
+
+def _gen_city(x, y, f):
+    if road_here(x, y):
+        return TILE_ROAD
+    if f >= 250:
+        return TILE_WALL              # rubble
+    if f >= 230:
+        return TILE_GRASS             # weed patch
+    if f >= 215:
+        return TILE_BRUSH
+    return TILE_DIRT
+
+
+def _gen_ruins(x, y, f):
+    if road_here(x, y):
+        if f >= 105:
+            return TILE_ROAD          # ~59% of the street still holds
+        if f >= 60:
+            return TILE_WALL          # collapsed into rubble
+        return TILE_DIRT              # cracked to bare dirt
+    if f >= 240:
+        return TILE_WALL              # scattered rubble
+    if f >= 215:
+        return TILE_BRUSH             # weeds through the cracks
+    if f >= 140:
+        return TILE_DIRT
+    return TILE_GRASS
+
+
+def _gen_farm(x, y, f):
+    if (x & 7) == 0 or (y & 7) == 0:
+        if (f & 3) == 0:
+            return TILE_DIRT          # a gate/gap keeps fields crossable
+        return TILE_FENCE
+    if f >= 128:
+        return TILE_WHEAT
+    return TILE_DIRT                  # tilled soil
+
+
+def _gen_jungle(x, y, f):
+    t = tree_tile(x, y, TREE_JUNGLE)
+    if t is not None:
+        return t
+    if f >= 90:
+        return TILE_BRUSH             # heavy undergrowth / vines
+    return TILE_GRASS
+
+
+def _gen_graveyard(x, y, f):
+    t = tree_tile(x, y, TREE_GRAVE)
+    if t is not None:
+        return t
+    if f >= 235:
+        return TILE_GRAVE
+    if f >= 205:
+        return TILE_BRUSH             # dead weeds
+    return TILE_GRASS
+
+
+def _gen_desert(x, y, f):
+    if f >= 248:
+        return TILE_WALL              # the odd rock/mesa
+    if f >= 234:
+        return TILE_CACTUS
+    if f >= 216:
+        return TILE_BRUSH             # dry scrub
+    return TILE_SAND
+
+
+def _gen_mountains(x, y, f):
+    t = tree_tile(x, y, TREE_MTN)
+    if t is not None:
+        return t
+    if f >= 210:
+        return TILE_WALL              # rocky outcrop
+    if f >= 150:
+        return TILE_DIRT              # stony ground
+    if f >= 90:
+        return TILE_GRASS             # alpine meadow
+    return TILE_DIRT
+
+
+def _gen_tundra(x, y, f):
+    t = tree_tile(x, y, TREE_TUNDRA)
+    if t is not None:
+        return t
+    if water_field(x, y) < WATER_TUNDRA:
+        return TILE_ICE               # frozen pond
+    if f >= 240:
+        return TILE_WALL              # boulder
+    return TILE_SNOW
+
+
+_BIOME_GEN = {
+    BIOME_CITY: _gen_city, BIOME_PLAINS: _gen_plains, BIOME_FOREST: _gen_forest,
+    BIOME_MARSH: _gen_marsh, BIOME_RUINS: _gen_ruins, BIOME_FARM: _gen_farm,
+    BIOME_JUNGLE: _gen_jungle, BIOME_GRAVEYARD: _gen_graveyard,
+    BIOME_DESERT: _gen_desert, BIOME_MOUNTAINS: _gen_mountains,
+    BIOME_TUNDRA: _gen_tundra,
+}
+
+
 def gen_tile_type(x: int, y: int) -> int:
     """Mirror of GenTileType. x,y are 16-bit world tile coords.
 
     Multi-tile features are decided from a *consistent anchor* so they never get
-    clipped: houses gate on the 16x16 CHUNK's biome (whole footprint agrees),
+    clipped: buildings gate on the 16x16 CHUNK's biome (whole footprint agrees),
     terrain/trees use the 2x2 BLOCK's biome, and trees are placed *before* water
     so a pond can't bite a quadrant out of a tree.
     """
     x &= U16
     y &= U16
 
-    # 1) houses — a tile shows a house iff it is inside a footprint AND its
-    #    chunk's biome is city. Test the (cheap) footprint first so the costlier
-    #    chunk-biome lookup only runs for the ~3% of tiles inside a building.
+    # 1) buildings — a tile shows a building iff it is inside a footprint AND its
+    #    chunk's biome is city (a house) or graveyard (a church). Test the (cheap)
+    #    footprint first so the costlier chunk-biome lookup only runs inside one.
     ht = house_tile(x, y)
-    if ht is not None and biome((x & ~15) & U16, (y & ~15) & U16) == BIOME_CITY:
-        return ht
+    if ht is not None:
+        cb = biome((x & ~15) & U16, (y & ~15) & U16)
+        # A graveyard church always stands (no roads there). A city building
+        # yields to any avenue the jittered street grid runs through it, so the
+        # road network stays connected.
+        if cb == BIOME_GRAVEYARD or (cb == BIOME_CITY and not road_here(x, y)):
+            return ht
 
     # 2) terrain biome sampled at the 2x2 block anchor (imperceptibly coarser
     #    than per-cell at 64-tile biome scale, but keeps trees whole)
     bb = biome((x & ~1) & U16, (y & ~1) & U16)
-
-    if bb == BIOME_CITY:
-        if road_here(x, y):
-            return TILE_ROAD
-        f = _scatter(x, y)
-        if f >= 250:
-            return TILE_WALL          # rubble
-        if f >= 230:
-            return TILE_GRASS         # weed patch
-        if f >= 215:
-            return TILE_BRUSH
-        return TILE_DIRT
-
-    # 3) trees (before water), then water — both keyed on the block biome
-    t = tree_tile(x, y, _TREE_THRESH[bb])
-    if t is not None:
-        return t
-    if water_field(x, y) < _WATER_THRESH[bb]:
-        return TILE_WATER
-
-    # 4) per-biome ground scatter
-    f = _scatter(x, y)
-    if bb == BIOME_MARSH:
-        if f >= 205:
-            return TILE_BRUSH         # reeds
-        return TILE_MARSH
-    if bb == BIOME_FOREST:
-        if f >= 150:
-            return TILE_BRUSH
-        return TILE_GRASS
-    if f >= 246:
-        return TILE_FLOWER
-    if f >= 232:
-        return TILE_BRUSH
-    return TILE_GRASS
+    return _BIOME_GEN[bb](x, y, _scatter(x, y))
 
 
 def find_start():
@@ -234,9 +391,15 @@ def check_seed(seed: int) -> int:
              TILE_DIRT: "dirt ", TILE_WATER: "water", TILE_ROAD: "road ",
              TILE_WALL: "wall ", TILE_FLOOR: "floor", TILE_DOOR: "door ",
              TILE_MARSH: "marsh", TILE_TREE_TL: "treeTL", TILE_TREE_TR: "treeTR",
-             TILE_TREE_BL: "treeBL", TILE_TREE_BR: "treeBR"}
+             TILE_TREE_BL: "treeBL", TILE_TREE_BR: "treeBR",
+             TILE_SAND: "sand ", TILE_CACTUS: "cactus", TILE_SNOW: "snow ",
+             TILE_ICE: "ice  ", TILE_GRAVE: "grave", TILE_WHEAT: "wheat",
+             TILE_FENCE: "fence"}
     bnames = {BIOME_CITY: "city", BIOME_PLAINS: "plains",
-              BIOME_FOREST: "forest", BIOME_MARSH: "marsh"}
+              BIOME_FOREST: "forest", BIOME_MARSH: "marsh",
+              BIOME_RUINS: "ruins", BIOME_FARM: "farm", BIOME_JUNGLE: "jungle",
+              BIOME_GRAVEYARD: "grave", BIOME_DESERT: "desert",
+              BIOME_MOUNTAINS: "mtn", BIOME_TUNDRA: "tundra"}
     counts = {t: 0 for t in names}
     bcounts = {b: 0 for b in bnames}
     N = 256  # sample a 256x256 region

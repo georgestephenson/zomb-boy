@@ -26,9 +26,11 @@ def _run(poison):
         # 33+ must stay hidden.
         garbage = [s for s in range(33, 40) if g.sprite(s)["y"] != 0]
         # BG map is valid terrain (VRAM was sanitized, not showing poison).
-        # Valid BG tile ids are 0..13 (grass..tree quadrants); anything higher
-        # is a sprite tile or garbage leaking into the map.
-        bad_tiles = sum(1 for a in range(0x9800, 0x9C00) if g.r8(a) > 13)
+        # Valid BG tile ids are 0..13 (grass..tree quadrants) and 57..63 (the
+        # expansion-biome terrain: sand..fence); anything else is a sprite tile
+        # or garbage leaking into the map.
+        bad_tiles = sum(1 for a in range(0x9800, 0x9C00)
+                        if not (g.r8(a) <= 13 or 57 <= g.r8(a) <= 63))
         return lcd_on, x0, x1, garbage, bad_tiles
     finally:
         g.close()

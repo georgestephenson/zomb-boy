@@ -53,9 +53,17 @@ GenTileType::
     ld a, [wGenY+1]
     ld [wBiY+1], a
     call CalcBiome              ; chunk-anchor biome (wGen & $FFF0)
+    cp BIOME_GRAVEYARD          ; graveyards get a lone church (same wall/door art);
+    jr z, .houseStands          ;   no roads there, so it always stands
     cp BIOME_CITY
     jr nz, .terrain
-    ld a, e                     ; chunk is city -> the house tile stands
+    ; A city building yields to any avenue the (jittered) street grid runs through
+    ; it, so streets stay whole and the network stays connected (E is preserved
+    ; across RoadHere via Hash8). Otherwise the building stands.
+    call RoadHere
+    jr z, .terrain              ; on a street -> let GenCity draw the road
+.houseStands:
+    ld a, e                     ; the building stands
     ret
 .terrain:
     ; --- terrain biome at the block anchor (wGen & $FFFE): 2x2 trees stay whole ---
@@ -76,6 +84,20 @@ GenTileType::
     jp z, GenMarsh
     cp BIOME_FOREST
     jp z, GenForest
+    cp BIOME_RUINS
+    jp z, GenRuins
+    cp BIOME_FARM
+    jp z, GenFarm
+    cp BIOME_JUNGLE
+    jp z, GenJungle
+    cp BIOME_GRAVEYARD
+    jp z, GenGraveyard
+    cp BIOME_DESERT
+    jp z, GenDesert
+    cp BIOME_MOUNTAINS
+    jp z, GenMountains
+    cp BIOME_TUNDRA
+    jp z, GenTundra
     ; fall through: plains
 GenPlains:
     ld e, TREE_PLAINS
@@ -167,6 +189,168 @@ GenCity:                        ; house already handled in GenTileType
     ld a, TILE_BRUSH
     ret
 
+; --- Ruins: the same street grid as the city, but cracked and rubble-strewn ---
+GenRuins:
+    call RoadHere
+    jr z, .onRoad
+    call ScatterHash
+    cp 240
+    jr nc, .wall                ; scattered rubble
+    cp 215
+    jr nc, .brush               ; weeds through the cracks
+    cp 140
+    jr nc, .dirt
+    ld a, TILE_GRASS            ; ground reclaimed by nature
+    ret
+.onRoad:
+    call ScatterHash
+    cp 105
+    jr nc, .road                ; ~59% of the street still holds
+    cp 60
+    jr nc, .wall                ; collapsed into rubble
+    ld a, TILE_DIRT             ; cracked to bare dirt
+    ret
+.road:
+    ld a, TILE_ROAD
+    ret
+.wall:
+    ld a, TILE_WALL
+    ret
+.brush:
+    ld a, TILE_BRUSH
+    ret
+.dirt:
+    ld a, TILE_DIRT
+    ret
+
+; --- Farm: a regular 8-tile grid of fenced fields full of tall wheat ---
+GenFarm:
+    ld a, [wGenX]
+    and 7
+    jr z, .fenceLine
+    ld a, [wGenY]
+    and 7
+    jr z, .fenceLine
+    call ScatterHash            ; field interior
+    cp 128
+    jr nc, .wheat
+    ld a, TILE_DIRT             ; tilled soil
+    ret
+.fenceLine:
+    call ScatterHash
+    and 3
+    jr z, .gap                  ; 1-in-4 cells is a gate/gap -> fields stay crossable
+    ld a, TILE_FENCE
+    ret
+.gap:
+    ld a, TILE_DIRT
+    ret
+.wheat:
+    ld a, TILE_WHEAT
+    ret
+
+; --- Jungle: forest-dense trees over near-continuous undergrowth ---
+GenJungle:
+    ld e, TREE_JUNGLE
+    call TreeQuad
+    cp $FF
+    ret nz                      ; a 2x2 tree quadrant
+    call ScatterHash
+    cp 90
+    jr nc, .brush               ; heavy undergrowth / vines
+    ld a, TILE_GRASS
+    ret
+.brush:
+    ld a, TILE_BRUSH
+    ret
+
+; --- Graveyard: grass, scattered headstones, the odd dead tree (church above) ---
+GenGraveyard:
+    ld e, TREE_GRAVE
+    call TreeQuad
+    cp $FF
+    ret nz
+    call ScatterHash
+    cp 235
+    jr nc, .grave
+    cp 205
+    jr nc, .brush               ; dead weeds
+    ld a, TILE_GRASS
+    ret
+.grave:
+    ld a, TILE_GRAVE
+    ret
+.brush:
+    ld a, TILE_BRUSH
+    ret
+
+; --- Desert: sand, cactus, the occasional rock; no water, no trees ---
+GenDesert:
+    call ScatterHash
+    cp 248
+    jr nc, .rock                ; the odd rock/mesa
+    cp 234
+    jr nc, .cactus
+    cp 216
+    jr nc, .brush               ; dry scrub
+    ld a, TILE_SAND
+    ret
+.rock:
+    ld a, TILE_WALL
+    ret
+.cactus:
+    ld a, TILE_CACTUS
+    ret
+.brush:
+    ld a, TILE_BRUSH
+    ret
+
+; --- Mountains: stony ground with rocky outcrops and sparse pines ---
+GenMountains:
+    ld e, TREE_MTN
+    call TreeQuad
+    cp $FF
+    ret nz
+    call ScatterHash
+    cp 210
+    jr nc, .rock                ; rocky outcrop
+    cp 150
+    jr nc, .dirt                ; stony ground
+    cp 90
+    jr nc, .grass               ; alpine meadow
+    ld a, TILE_DIRT
+    ret
+.rock:
+    ld a, TILE_WALL
+    ret
+.dirt:
+    ld a, TILE_DIRT
+    ret
+.grass:
+    ld a, TILE_GRASS
+    ret
+
+; --- Tundra: snow, frozen ponds (solid ice), boulders, sparse frozen pines ---
+GenTundra:
+    ld e, TREE_TUNDRA
+    call TreeQuad
+    cp $FF
+    ret nz
+    call WaterField
+    cp WATER_TUNDRA
+    jr c, .ice                  ; a frozen pond (rare, like plains water)
+    call ScatterHash
+    cp 240
+    jr nc, .rock
+    ld a, TILE_SNOW
+    ret
+.ice:
+    ld a, TILE_ICE
+    ret
+.rock:
+    ld a, TILE_WALL
+    ret
+
 ; -----------------------------------------------------------------------------
 ; CalcBiome: A = BIOME_* for the anchor in (wBiX, wBiY). A coarse (~64-tile)
 ; value-noise field, domain-warped so region borders are organic not square.
@@ -246,10 +430,30 @@ CalcBiome::
     call ShiftH                 ; wH = wW >> 6 (64-tile biome cells)
     ld b, 70
     call Hash8
-    cp 64
+    ; Slice the 0..255 field into 11 bands. City/ruins sit at the low end (they
+    ; share the road grid); forest/jungle keep the high-but-below-marsh band so
+    ; the classic seed's spawn (field value 195) stays FOREST as it always was
+    ; — the reproducible test world, and a feature-rich start; marsh keeps the
+    ; wet top end so its water still dominates the world's water (the model's
+    ; clustering check). Mirror: worldgen_model.py:biome().
+    cp 24
     jr c, .city
-    cp 160
+    cp 44
+    jr c, .ruins
+    cp 76
     jr c, .plains
+    cp 96
+    jr c, .farm
+    cp 118
+    jr c, .desert
+    cp 138
+    jr c, .mtn
+    cp 156
+    jr c, .tundra
+    cp 174
+    jr c, .grave
+    cp 194
+    jr c, .jungle
     cp 212
     jr c, .forest
     ld a, BIOME_MARSH
@@ -257,11 +461,32 @@ CalcBiome::
 .city:
     ld a, BIOME_CITY
     jr .store
+.ruins:
+    ld a, BIOME_RUINS
+    jr .store
 .plains:
     ld a, BIOME_PLAINS
     jr .store
+.farm:
+    ld a, BIOME_FARM
+    jr .store
 .forest:
     ld a, BIOME_FOREST
+    jr .store
+.jungle:
+    ld a, BIOME_JUNGLE
+    jr .store
+.grave:
+    ld a, BIOME_GRAVEYARD
+    jr .store
+.desert:
+    ld a, BIOME_DESERT
+    jr .store
+.mtn:
+    ld a, BIOME_MOUNTAINS
+    jr .store
+.tundra:
+    ld a, BIOME_TUNDRA
     ; fall through
 .store:
     ld [wBioCacheVal], a        ; fill the memo entry (key stored at .miss)
@@ -332,46 +557,122 @@ TreeQuad:
     ret
 
 ; -----------------------------------------------------------------------------
-; RoadHere: Z set if (wGenX, wGenY) is a road cell — a 16-tile grid whose lines
-; wobble by a small (0..3) per-band offset so they meander.
+; RoadHere: Z set if (wGenX, wGenY) is a road cell.
+;
+; Avenues are full-length straight VERTICAL lines — one per 16-wide band, its
+; column jittered 0..7 by the band index alone — the connected backbone. Cross-
+; streets are HORIZONTAL but JOG: a street's row is jittered per avenue-INTERVAL
+; (the band of the avenue at/left of x), so it steps up/down each time it crosses
+; an avenue → bends and T-junctions. The jog lands exactly ON an avenue, and the
+; full-length avenue bridges the two different-row segments, so every street
+; segment has both ends on an avenue and the whole network stays connected.
+; Finally, some bands sprout a short dead-end/cul-de-sac SPUR branching right off
+; their avenue (entirely within the band, touching the avenue so it connects).
+; Mirror: worldgen_model.py:road_here. The ruins biome reuses this and cracks it.
+; Uses wHDX as a 1-byte scratch (free here — HouseTile's result is already in E).
 ; -----------------------------------------------------------------------------
 RoadHere:
+    ; --- avenue: band k = x>>4, jittered column jit_k = hash(k,0,21) & 7 ---
+    call LoadHfromGen
     xor a, a
+    ld [wHY], a
+    ld [wHY+1], a               ; wHY = 0 (jitter keyed on the band index only)
+    call ShiftH
+    call ShiftH
+    call ShiftH
+    call ShiftH                 ; wHX = wGenX >> 4 = k, wHY = 0
+    ld b, 21
+    call Hash8
+    and 7                       ; jit_k
+    ld c, a
+    ld a, [wGenX]
+    and $0F                     ; xlow
+    cp c
+    ret z                       ; on the avenue -> road (Z set)
+    jr nc, .eligible            ; xlow > jit_k -> kL = k, spur-eligible
+    ; xlow < jit_k -> interval kL = k-1 (16-bit decrement of wHX), no spur
+    ld a, [wHX]
+    sub 1
     ld [wHX], a
-    ld [wHX+1], a               ; wHX = 0
+    ld a, [wHX+1]
+    sbc 0
+    ld [wHX+1], a
+    call .loadWHYshifted        ; wHY = y >> 4
+    jr .street
+.eligible:                      ; A = xlow, C = jit_k, wHX = k, wHY = 0
+    sub c
+    ld [wHDX], a                ; d = xlow - jit_k (>= 1), saved
+    call .loadWHYshifted        ; wHY = y >> 4 (wHX = k intact)
+    ; --- spur presence/shape: h = hash(k, y>>4, 23) ---
+    ld b, 23
+    call Hash8
+    ld d, a                     ; D = h (Hash8 preserves D thereafter)
+    and 3
+    jr nz, .street              ; spur not present in this band -> just the street
+    ld a, d
+    srl a
+    srl a
+    and 7
+    add a, 3
+    ld c, a                     ; C = sr = 3 + ((h>>2)&7)
+    ld a, d
+    swap a
+    srl a
+    and 3
+    add a, 2
+    ld b, a                     ; B = length = 2 + ((h>>5)&3)
+    ld a, [wGenY]
+    and $0F                     ; ylow
+    cp c
+    jr nz, .spurHead            ; not the spur's own row -> maybe its cul-de-sac head
+    ld a, [wHDX]               ; d
+    cp b
+    jr z, .isRoad               ; d == length (tip)
+    jr c, .isRoad               ; d <  length (along the spur)
+    jr .street                  ; d >  length -> past the dead-end
+.spurHead:
+    ld a, d
+    and $80                     ; cul-de-sac bit (h>>7)
+    jr z, .street               ; plain dead-end, no turnaround head
+    ld a, [wHDX]               ; d
+    cp b
+    jr nz, .street              ; head only at the tip (d == length)
+    ld a, [wGenY]
+    and $0F                     ; ylow
+    inc a
+    cp c
+    jr z, .isRoad               ; ylow + 1 == sr  (head cell above)
+    dec a
+    dec a
+    cp c
+    jr z, .isRoad               ; ylow - 1 == sr  (head cell below)
+    jr .street
+.isRoad:
+    xor a, a                    ; Z set -> road
+    ret
+.street:
+    ; --- cross-street row jitter jit_s = hash(kL, y>>4, 22) & 7 ---
+    ld b, 22
+    call Hash8
+    and 7                       ; jit_s
+    ld c, a
+    ld a, [wGenY]
+    and $0F                     ; ylow
+    cp c
+    ret                         ; Z iff on the (jogging) cross-street
+; wHY = wGenY >> 4, shifted alone so wHX is left untouched.
+.loadWHYshifted:
     ld a, [wGenY]
     ld [wHY], a
     ld a, [wGenY+1]
-    ld [wHY+1], a               ; wHY = wGenY
-    call ShiftH
-    call ShiftH
-    call ShiftH                 ; wHY = wGenY >> 3
-    ld b, 21
-    call Hash8
-    and 3
-    ld c, a
-    ld a, [wGenX]
-    add a, c
-    and $0F
-    ret z                       ; vertical road (Z set)
-    ld a, [wGenX]
-    ld [wHX], a
-    ld a, [wGenX+1]
-    ld [wHX+1], a               ; wHX = wGenX
-    xor a, a
-    ld [wHY], a
-    ld [wHY+1], a               ; wHY = 0
-    call ShiftH
-    call ShiftH
-    call ShiftH                 ; wHX = wGenX >> 3
-    ld b, 22
-    call Hash8
-    and 3
-    ld c, a
-    ld a, [wGenY]
-    add a, c
-    and $0F
-    ret                         ; Z iff horizontal road
+    ld [wHY+1], a
+    REPT 4
+    ld hl, wHY+1
+    srl [hl]
+    dec hl
+    rr [hl]
+    ENDR
+    ret
 
 ; -----------------------------------------------------------------------------
 ; HouseTile: one optional building per 16x16 chunk. A = wall/floor/door tile if
@@ -852,9 +1153,19 @@ BlitStream::
 ; -----------------------------------------------------------------------------
 ; Tables (index by tile type). Keep PassTable in sync with the model.
 ; -----------------------------------------------------------------------------
+; Indexed by tile id. Ids 0..13 are the original terrain; 14..56 are OBJ/UI
+; tiles that never appear as a BG map cell (filler here); 57..63 are the
+; expansion-biome terrain (sand cactus snow ice grave wheat fence). Keep in
+; sync with the model (worldgen_model.py) and PassTable in lockstep.
 ;              grass brush flowr dirt water road wall floor door marsh  TL TR BL BR
-PassTable:  db   0,   0,    0,   0,   1,   0,   1,   0,   0,   0,   1, 1, 1, 1  ; 1=solid
-AttrTable:  db   0,   0,    0,   2,   1,   2,   2,   2,   2,   3,   0, 0, 0, 0  ; BG palette
+PassTable:  db   0,   0,    0,   0,   1,   0,   1,   0,   0,   0,   1, 1, 1, 1  ; 0..13 (1=solid)
+            ds  43, 0                                                          ; 14..56 (OBJ/UI, never BG)
+;              sand cactus snow ice grave wheat fence
+            db   0,   1,    0,   1,   1,    0,    1                            ; 57..63
+AttrTable:  db   0,   0,    0,   2,   1,   2,   2,   2,   2,   3,   0, 0, 0, 0  ; 0..13 BG palette
+            ds  43, 0                                                          ; 14..56 filler
+;              sand cactus snow ice grave wheat fence
+            db   2,   0,    1,   1,   2,    0,    2                            ; 57..63
 
 ; -----------------------------------------------------------------------------
 ; PermTable: the 256-byte permutation that drives the value-noise hash (Hash8).

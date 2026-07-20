@@ -83,7 +83,10 @@ def test_dmg_background_not_corrupted(dmg):
         for dx in range(VIEW_COLS):
             wx, wy = vtx + dx, vty + dy
             got = dmg.memory[SCRN0 + ((wy & 31) * 32) + (wx & 31)]
-            assert got <= 13, f"invalid BG tile {got} at ({wx},{wy})"
+            # Valid BG tile ids: 0..13 (original terrain) and 57..63 (the
+            # expansion-biome terrain). The DMG path writes ids into bank 0 the
+            # same way; only the bank-1 attribute plane is skipped.
+            assert got <= 13 or 57 <= got <= 63, f"invalid BG tile {got} at ({wx},{wy})"
             if got != gen_tile_type(wx, wy):
                 mismatches.append((wx, wy, gen_tile_type(wx, wy), got))
     assert not mismatches, f"BG differs from model on DMG path: {mismatches[:8]}"
