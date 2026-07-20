@@ -212,7 +212,7 @@ MainLoop:
     call UpdateAnim                 ; advance world animation (water/trees/brush/doors)
     jr .draw
 .alert:
-    call UpdateAlert                ; "!" countdown -> placeholder battle
+    call UpdateAlert                ; "!" beat -> zombie charges the player -> battle
 .draw:
     call ComputeCamLag              ; shared sub-tile camera offset (BG + sprites)
     call DrawEntities

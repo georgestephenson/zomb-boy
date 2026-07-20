@@ -128,7 +128,9 @@ DEF ZOMBIE_STEP_DELAY EQU 16       ; frames per shuffle step (also the smooth
 DEF ZOMBIE_RUN_MIN EQU 1           ; min steps in a run
 DEF ZOMBIE_RUN_MAX EQU 5           ; max steps in a run
 DEF SIGHT_RANGE    EQU 5           ; tiles a zombie can see straight ahead
-DEF ALERT_FRAMES   EQU 45          ; how long the "!" shows before the battle
+DEF ALERT_FRAMES   EQU 30          ; how long the "!" holds before the zombie charges
+DEF CHASE_MAX_FRAMES EQU 200       ; watchdog: force the battle if the charge stalls
+                                   ; (e.g. an entity parked on the terrain-clear line)
 
 ; --- Dynamic spawning / despawning (entity.asm UpdateSpawns) -----------------
 ; Zombies and survivors are spawned in a ring just OUTSIDE the visible window as

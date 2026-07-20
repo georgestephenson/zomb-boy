@@ -138,11 +138,17 @@ UpdateZombies::
     ld a, [wZombIdx]
     ld [wAlertZombie], a
     ld a, ALERT_FRAMES
-    ld [wEnt + EO_ALERT], a
+    ld [wEnt + EO_ALERT], a      ; hold the "!" for this many frames, then charge
     ld a, EDIR_IDLE
     ld [wEnt + EO_DIR], a
     xor a, a
     ld [wEnt + EO_STEPS], a
+    ld [wEnt + EO_SLIDE], a      ; drop any residual wander slide
+    ld [wEnt + EO_TIMER], a      ; first charge step fires the moment the "!" ends
+    ld a, CHASE_MAX_FRAMES
+    ld [wChaseTimer], a          ; arm the stall watchdog
+    ; EO_FACING already points straight at the player (that's how LOS resolved),
+    ; so the charge just walks that direction until it reaches the player's tile.
     ld a, [wZombIdx]
     call CopyEntityOut
     ret
@@ -322,30 +328,6 @@ CheckLOS:
     ret
 .no:
     xor a, a
-    ret
-
-; -----------------------------------------------------------------------------
-; UpdateAlert: count down the "!" on the alerting zombie; when it expires, run
-; the (placeholder) battle and return to the overworld.
-; -----------------------------------------------------------------------------
-UpdateAlert::
-    ld a, [wAlertZombie]
-    call CopyEntityIn
-    ld a, [wEnt + EO_ALERT]
-    dec a
-    ld [wEnt + EO_ALERT], a
-    jr z, .battle
-    ld a, [wAlertZombie]
-    call CopyEntityOut
-    ret
-.battle:
-    xor a, a
-    ld [wEnt + EO_ACTIVE], a    ; placeholder: zombie is "defeated" and removed
-    ld a, [wAlertZombie]
-    call CopyEntityOut
-    call BattleTransition       ; TODO: real combat replaces this flash
-    ld a, MODE_OVERWORLD
-    ld [wGameMode], a
     ret
 
 ; =============================================================================
@@ -738,31 +720,33 @@ GenEqualsPlayer:
     cp [hl]
     ret
 
-; SameCol / SameRow: Z if wEnt shares the player's X / Y.
+; SameCol / SameRow: Z if wEnt shares the player's SEEN X / Y. LOS uses the tile
+; the player has fully arrived on (wSeen), not the logical one — so the encounter
+; fires when the step finishes, not the frame it starts (see wSeen in ram.asm).
 SameCol:
     ld a, [wEnt + EO_WXLO]
-    ld hl, wPlayerWX
+    ld hl, wSeenWX
     cp [hl]
     ret nz
     ld a, [wEnt + EO_WXHI]
-    ld hl, wPlayerWX+1
+    ld hl, wSeenWX+1
     cp [hl]
     ret
 SameRow:
     ld a, [wEnt + EO_WYLO]
-    ld hl, wPlayerWY
+    ld hl, wSeenWY
     cp [hl]
     ret nz
     ld a, [wEnt + EO_WYHI]
-    ld hl, wPlayerWY+1
+    ld hl, wSeenWY+1
     cp [hl]
     ret
 
-; PXmEX / PYmEY: HL = player coord - entity coord (16-bit signed).
+; PXmEX / PYmEY: HL = player SEEN coord - entity coord (16-bit signed).
 PXmEX:
-    ld a, [wPlayerWX]
+    ld a, [wSeenWX]
     ld e, a
-    ld a, [wPlayerWX+1]
+    ld a, [wSeenWX+1]
     ld d, a
     ld a, [wEnt + EO_WXLO]
     ld c, a
@@ -770,9 +754,9 @@ PXmEX:
     ld b, a
     jr Sub16DE_BC
 PYmEY:
-    ld a, [wPlayerWY]
+    ld a, [wSeenWY]
     ld e, a
-    ld a, [wPlayerWY+1]
+    ld a, [wSeenWY+1]
     ld d, a
     ld a, [wEnt + EO_WYLO]
     ld c, a
@@ -1119,3 +1103,101 @@ SpawnZombie:
     ld a, [wPoolIdx]
     ld de, wZombies
     jp CopyPoolOut             ; write into the slot (tail call)
+
+; =============================================================================
+; Alert / charge sequence (MODE_ALERT)
+; -----------------------------------------------------------------------------
+; Lives in ROMX bank 1 (the always-mapped default bank) to keep the near-full
+; fixed ROM0 bank in budget. It only runs from the main overworld loop's alert
+; branch, where bank 1 is mapped (UpdateSound restores it every frame), and every
+; routine it calls is either exported ROM0 (GenTileType/IsSolid/CopyEntity*/...)
+; or ROM0 (BattleTransition) — both reachable regardless of the mapped ROMX bank.
+; =============================================================================
+SECTION "Alert Code", ROMX, BANK[1]
+
+; -----------------------------------------------------------------------------
+; UpdateAlert: the spotted-zombie sequence. Nothing else runs while this mode is
+; active — the player, the other zombies, the survivors and the spawner are all
+; frozen (their updaters only run in the overworld branch) — so this handler owns
+; the screen:
+;   phase 1  hold the "!" bubble for EO_ALERT frames (the classic spotted beat),
+;   phase 2  CHARGE: step straight at the player along the sight direction
+;            (EO_FACING, which LOS already aimed at them) at the shuffle cadence,
+;            animating the slide; when the tile ahead is the player's, fight.
+; A watchdog (wChaseTimer) forces the battle if the charge ever stalls, so a
+; stray entity parked on the (terrain-clear) sight line can't soft-lock it.
+; -----------------------------------------------------------------------------
+UpdateAlert::
+    ld a, [wAlertZombie]
+    call CopyEntityIn
+    ; ease the visual step slide toward 0 each frame (UpdateZombieAI, which does
+    ; this during normal wandering, isn't called in alert mode)
+    ld a, [wEnt + EO_SLIDE]
+    and a, a
+    jr z, .noSlide
+    dec a
+    ld [wEnt + EO_SLIDE], a
+.noSlide:
+    ; --- phase 1: hold the "!" ---
+    ld a, [wEnt + EO_ALERT]
+    and a, a
+    jr z, .chase
+    dec a
+    ld [wEnt + EO_ALERT], a
+    jr .save
+.chase:
+    ; --- phase 2: charge the player ---
+    ld hl, wChaseTimer
+    dec [hl]
+    jr z, .battle               ; watchdog: charge stalled -> just fight
+    ld a, [wEnt + EO_TIMER]     ; throttle steps to the shuffle cadence (= slide window)
+    and a, a
+    jr z, .step
+    dec a
+    ld [wEnt + EO_TIMER], a
+    jr .save
+.step:
+    ld a, ZOMBIE_STEP_DELAY
+    ld [wEnt + EO_TIMER], a
+    ; target = the tile one step ahead, along the sight direction
+    call GenFromEnt
+    ld a, [wEnt + EO_FACING]
+    call StepGen
+    call GenEqualsPlayer        ; ahead IS the player -> we're adjacent: fight
+    jr z, .battle
+    call GenTileType            ; else advance onto it if clear (the LOS line was
+    call IsSolid                ; terrain-clear, but an entity could be parked on it)
+    jr nz, .save
+    call CheckZombieAt
+    and a, a
+    jr nz, .save
+    call CheckNPCAt
+    and a, a
+    jr nz, .save
+    call CheckCarAt             ; a charging zombie still can't overlap the car...
+    and a, a
+    jr nz, .save
+    call CheckLootSolidAt       ; ...nor a crate/pot/chest (watchdog ends a stall)
+    and a, a
+    jr nz, .save
+    call EntFromGen             ; commit the step toward the player
+    ld a, [wEnt + EO_FACING]
+    ld [wEnt + EO_SLIDEDIR], a
+    ld a, ZOMBIE_STEP_DELAY
+    ld [wEnt + EO_SLIDE], a
+    ld a, [wEnt + EO_FRAME]
+    xor a, 1
+    ld [wEnt + EO_FRAME], a
+.save:
+    ld a, [wAlertZombie]
+    call CopyEntityOut
+    ret
+.battle:
+    xor a, a
+    ld [wEnt + EO_ACTIVE], a    ; placeholder: zombie is "defeated" and removed
+    ld a, [wAlertZombie]
+    call CopyEntityOut
+    call BattleTransition       ; TODO: real combat replaces this flash
+    ld a, MODE_OVERWORLD
+    ld [wGameMode], a
+    ret
