@@ -102,6 +102,13 @@ _TILES_PAL = (
     + [("BG", 4)] * 8        # 45-52 UI panel frame
     + [("OBJ", 0)] * 3       # 53-55 swim (player OBJ palette)
     + [("OBJ", 2)]           # 56 splash burst
+    + [("BG", 2)]            # 57 sand (desert)
+    + [("BG", 0)]            # 58 cactus
+    + [("BG", 1)]            # 59 snow (tundra)
+    + [("BG", 1)]            # 60 ice
+    + [("BG", 2)]            # 61 grave
+    + [("BG", 0)]            # 62 wheat
+    + [("BG", 2)]            # 63 fence
 )
 
 # personas: 3 tiles each (down/up/side) on their PO_PAL (dialogue_data.asm),
@@ -156,6 +163,7 @@ GROUPS = {
         + [_FRAME]            # 45-52 UI panel frame
         + [_grid(3, 1)]       # 53-55 swim frames
         + [_tile()]           # 56 splash
+        + [_tile()] * 7       # 57-63 sand, cactus, snow, ice, grave, wheat, fence
     ),
     "PersonaTiles": (
         [_grid(3, 1)] * 10    # 10 personas x (down, up, side) kept on one row
