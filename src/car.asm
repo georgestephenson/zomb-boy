@@ -377,8 +377,8 @@ StartBoardStep::
 ExitCar:
     xor a, a
     ld [wInCar], a
-    ld [wSmokeTimer], a        ; kill any lingering exhaust puff...
-    ld [wShadowOAM + OAM_SMOKE * 4], a   ; ...and hide its slot (DrawSmoke won't run on foot)
+    call ClearSmoke            ; kill lingering puffs + hide their OAM slots (no smoke
+                               ; on foot: DrawExhaust only runs from the driving branch)
     ld a, [wFacing]
     ld [wCarFacing], a         ; the parked car keeps the heading you left on
     ; pick an ejection direction for the player: face dir first, then a sweep
@@ -628,15 +628,15 @@ DrawCar::
     call CarRumbleY               ; A = engine wobble (-1/0/+1), advances wCarRumble
     add a, c
     ld [wScrY], a
-    ; stash the on-screen top-left so DrawSmoke can anchor the exhaust puff behind
-    ; the car (both slots sit on the same camera-locked cell block)
+    ; stash the on-screen top-left so EmitSmokeBurst can anchor the tailpipe on the
+    ; car (it is camera-locked, so this is a stable screen cell while driving)
     ld a, [wScrX]
     ld [wCarScrX], a
     ld a, [wScrY]
     ld [wCarScrY], a
     ld a, [wFacing]
     call DrawCar2x2               ; paint the 2x2 body...
-    jp DrawSmoke                  ; ...then the exhaust puff (driving only); tail call
+    jp DrawExhaust                ; ...then the exhaust particles (driving only); tail call
 .hide:
     xor a, a
     ld [wShadowOAM + (OAM_CAR + 0) * 4], a   ; Y = 0 -> off-screen
@@ -673,110 +673,8 @@ CarRumbleY:
     xor a, a
     ret
 
-; -----------------------------------------------------------------------------
-; TriggerCarSmoke: arm an exhaust puff for SMOKE_FRAMES frames. Called from the
-; driving-step commit (player.asm) when the car starts rolling or turns.
-; -----------------------------------------------------------------------------
-TriggerCarSmoke::
-    ld a, SMOKE_FRAMES
-    ld [wSmokeTimer], a
-    ret
-
-; -----------------------------------------------------------------------------
-; DrawSmoke: draw the exhaust puff in OAM_SMOKE while its timer runs, then hide
-; the slot. The puff sits one "car length" BEHIND the car (opposite wFacing) and
-; drifts a little further behind as it ages, so it reads as smoke peeling off the
-; tailpipe. Anchored to wCarScrX/WY (the car's camera-locked on-screen top-left,
-; stashed by DrawCar). Tail-called from DrawCar's driving branch ONLY, so the
-; on-foot loop never touches it (ExitCar hides the slot on the way out).
-; -----------------------------------------------------------------------------
-DrawSmoke::
-    ld a, [wSmokeTimer]
-    and a
-    jr z, .hide
-    ld b, a                       ; B = timer (before this frame's decrement)
-    dec a
-    ld [wSmokeTimer], a
-    ; dist = 8 + age, age = SMOKE_FRAMES - timer (0 on the first shown frame). The
-    ; puff centre is the car centre pushed "behind" by dist; so the further it ages
-    ; the further back it drifts. dist stays small (<= 8 + SMOKE_FRAMES-1).
-    ld a, SMOKE_FRAMES
-    sub b
-    add a, 8
-    ld c, a                       ; C = dist
-    ld a, [wFacing]
-    call SmokeBehindTable         ; DE -> (behindX, behindY) signed unit vector
-    ; --- puff Y = wCarScrY + 4 + behindY * dist ---
-    ld a, [wCarScrY]
-    add a, 4
-    ld b, a
-    inc de                        ; -> behindY
-    ld a, [de]
-    dec de                        ; leave DE at behindX for the X calc
-    call .applySign               ; B += sign(A) * C
-    ld a, b
-    push af                       ; save puff Y
-    ; --- puff X = wCarScrX + 4 + behindX * dist ---
-    ld a, [wCarScrX]
-    add a, 4
-    ld b, a
-    ld a, [de]                    ; behindX
-    call .applySign
-    ld d, b                       ; D = puff X
-    pop af                        ; A = puff Y
-    ld hl, wShadowOAM + OAM_SMOKE * 4
-    ld [hl+], a                   ; OAM Y
-    ld a, d
-    ld [hl+], a                   ; OAM X
-    ld a, TILE_SMOKE
-    ld [hl+], a
-    ld a, 6                       ; OBJ palette 6 (charcoal/black puff)
-    ld [hl], a
-    ret
-; .applySign: A = signed unit (0 / +1 / $FF); B += A * C. Preserves C and DE.
-.applySign:
-    and a
-    ret z
-    bit 7, a
-    jr nz, .neg
-    ld a, b
-    add a, c
-    ld b, a
-    ret
-.neg:
-    ld a, b
-    sub c
-    ld b, a
-    ret
-.hide:
-    xor a, a
-    ld [wShadowOAM + OAM_SMOKE * 4], a   ; no active puff this frame -> Y = 0 (hidden)
-    ret
-
-; SmokeBehindTable: A = facing -> DE = a 2-byte signed unit vector pointing from
-; the car toward its tail (opposite the heading), used to place/drift the puff.
-SmokeBehindTable:
-    cp EFACE_UP
-    jr z, .up
-    cp EFACE_LEFT
-    jr z, .left
-    cp EFACE_RIGHT
-    jr z, .right
-    ld de, SmokeBehindDown
-    ret
-.up:
-    ld de, SmokeBehindUp
-    ret
-.left:
-    ld de, SmokeBehindLeft
-    ret
-.right:
-    ld de, SmokeBehindRight
-    ret
-SmokeBehindDown:  db 0, -1          ; driving down -> exhaust trails up-screen
-SmokeBehindUp:    db 0, 1           ; driving up   -> exhaust trails down-screen
-SmokeBehindLeft:  db 1, 0           ; driving left -> exhaust trails to the right
-SmokeBehindRight: db -1, 0          ; driving right-> exhaust trails to the left
+; The exhaust-smoke particle system (EmitSmokeBurst / DrawExhaust / ClearSmoke)
+; lives in its own ROMX BANK[1] section at the end of this file — see "Smoke Code".
 
 ; DrawCar2x2: A = facing; wScrX/wScrY = the OAM position of the footprint's
 ; top-left tile. Paint the four quadrant tiles into OAM_CAR..OAM_CAR+3 aligned to
@@ -868,3 +766,290 @@ CarLeftTA:
     db TILE_CAR_SIDE_TL, OAMF_XFLIP
     db TILE_CAR_SIDE_BR, OAMF_XFLIP
     db TILE_CAR_SIDE_BL, OAMF_XFLIP
+
+; =============================================================================
+; Smoke Code — the exhaust particle system. ROMX BANK[1] (the always-mapped
+; default bank, like loot.asm/anim.asm) so ROM0 stays lean; every entry point runs
+; from the overworld loop (bank 1 mapped) and only calls ROM0 or bank-1 symbols.
+;
+; When the car starts rolling or turns, EmitSmokeBurst spawns SMOKE_BURST puffs at
+; the tailpipe, each with a velocity pulled from SmokeFan (a fixed table of
+; backward + lateral-spread vectors) indexed by a free-running counter — so
+; successive bursts fan out in varied, non-axis-aligned directions with NO Rand
+; (worldgen/spawn determinism is untouched, exactly like anim.asm). Each puff then
+; drifts by its own velocity for SMOKE_LIFE frames, stepping through the 4-frame
+; dither strip (dense -> sparse) as it ages, and despawns. DrawExhaust runs the
+; whole pool each driving frame; ClearSmoke wipes it when you leave the car.
+; =============================================================================
+SECTION "Smoke Code", ROMX, BANK[1]
+
+; -----------------------------------------------------------------------------
+; EmitSmokeBurst: spawn a fan of SMOKE_BURST puffs at the car's tailpipe. Called
+; from the driving-step commit (player.asm). Deterministic (SmokeFan + a counter,
+; never Rand). No-op for any puff if the pool is already full.
+; -----------------------------------------------------------------------------
+EmitSmokeBurst::
+    ; --- tailpipe = car centre pushed one tile "behind" (opposite facing) ---
+    ld a, [wFacing]
+    call SmokeDirPtr              ; DE -> (Bx, By) signed behind unit
+    ld a, [de]                    ; Bx
+    call SmokeMul8                ; A = Bx * 8 (signed)
+    ld hl, wCarScrX
+    add a, [hl]
+    add a, 4
+    ld [wSmokeEX], a              ; tailpipe screen X
+    inc de                        ; -> By
+    ld a, [de]
+    call SmokeMul8
+    ld hl, wCarScrY
+    add a, [hl]
+    add a, 4
+    ld [wSmokeEY], a              ; tailpipe screen Y
+    ; --- fan out SMOKE_BURST particles ---
+    ld b, SMOKE_BURST
+.loop:
+    push bc
+    ; fan entry = SmokeFan[wSmokeEmit & (SMOKE_FAN_N-1)]; bump the counter
+    ld a, [wSmokeEmit]
+    ld c, a
+    inc a
+    ld [wSmokeEmit], a
+    ld a, c
+    and SMOKE_FAN_N - 1
+    add a, a                      ; *2 (2 bytes/entry)
+    ld hl, SmokeFan
+    add a, l
+    ld l, a
+    jr nc, .nc
+    inc h
+.nc:
+    ld a, [hl+]                   ; b = backward magnitude
+    ld c, a
+    ld a, [hl]                    ; p = lateral spread (signed)
+    ld d, a
+    call EmitOne                  ; C = b, D = p
+    pop bc
+    dec b
+    jr nz, .loop
+    ret
+
+; -----------------------------------------------------------------------------
+; EmitOne: fill one free pool slot with a puff at (wSmokeEX, wSmokeEY). C = the
+; car-relative backward magnitude, D = the lateral spread (signed). The screen
+; velocity is those two mapped through the heading. No-op if the pool is full.
+; -----------------------------------------------------------------------------
+EmitOne:
+    call FindFreeSmoke            ; HL -> free slot's SP_LIFE; carry = pool full
+    ret c
+    ld a, SMOKE_LIFE
+    ld [hl+], a                   ; SP_LIFE ; hl -> SP_VX
+    ld a, [wFacing]
+    cp EFACE_LEFT
+    jr z, .horizL
+    cp EFACE_RIGHT
+    jr z, .horizR
+    ; vertical travel: vx = spread ; vy = (down ? -back : +back)
+    ld a, d
+    ld [hl+], a                   ; SP_VX = spread ; hl -> SP_VY
+    ld a, [wFacing]
+    cp EFACE_DOWN
+    ld a, c                       ; back
+    jr nz, .vy                    ; UP -> +back
+    cpl
+    inc a                         ; DOWN -> -back
+.vy:
+    ld [hl+], a                   ; SP_VY ; hl -> SP_X
+    jr .pos
+.horizL:                          ; LEFT: vx = +back ; vy = spread
+    ld a, c
+    ld [hl+], a                   ; SP_VX
+    ld a, d
+    ld [hl+], a                   ; SP_VY
+    jr .pos
+.horizR:                          ; RIGHT: vx = -back ; vy = spread
+    ld a, c
+    cpl
+    inc a
+    ld [hl+], a                   ; SP_VX = -back
+    ld a, d
+    ld [hl+], a                   ; SP_VY
+.pos:
+    ld a, [wSmokeEX]
+    ld [hl+], a                   ; SP_X
+    ld a, [wSmokeEY]
+    ld [hl], a                    ; SP_Y
+    ret
+
+; FindFreeSmoke: HL -> the first pool slot whose SP_LIFE is 0. Carry set (and HL
+; past the pool) if every slot is active.
+FindFreeSmoke:
+    ld hl, wSmoke
+    ld b, MAX_SMOKE
+.scan:
+    ld a, [hl]                    ; SP_LIFE
+    and a
+    jr z, .found
+    ld a, l
+    add a, SMOKE_STRIDE
+    ld l, a
+    jr nc, .nc
+    inc h
+.nc:
+    dec b
+    jr nz, .scan
+    scf                           ; none free
+    ret
+.found:
+    or a                          ; clear carry (A was 0 from the SP_LIFE read)
+    ret
+
+; SmokeMul8: A in {0, +1, -1} (a signed unit) -> A * 8. Clobbers nothing else.
+SmokeMul8:
+    and a
+    ret z
+    bit 7, a
+    jr nz, .neg
+    ld a, 8
+    ret
+.neg:
+    ld a, -8
+    ret
+
+; -----------------------------------------------------------------------------
+; DrawExhaust: advance every live puff (drift by its velocity, age its tile) into
+; OAM_SMOKE.., and hide the slots of dead ones. Tail-called from DrawCar's driving
+; branch ONLY, so on foot the pool is untouched (ClearSmoke hid the slots on exit).
+; Struct order LIFE,VX,VY,X,Y lets one [hl+] pass read each velocity just before
+; the position it updates.
+; -----------------------------------------------------------------------------
+DrawExhaust::
+    ld hl, wSmoke
+    ld de, wShadowOAM + OAM_SMOKE * 4
+.loop:
+    ld a, [hl]                    ; SP_LIFE
+    and a
+    jr z, .dead
+    dec a
+    ld [hl+], a                   ; life-- ; hl -> SP_VX ; A = new life (0..15)
+    ; tile = base + (age >> 2), age = (SMOKE_LIFE-1) - newlife
+    ld b, a
+    ld a, SMOKE_LIFE - 1
+    sub b
+    srl a
+    srl a
+    add a, TILE_SMOKE_BASE
+    ld c, a                       ; C = tile id
+    ld a, [hl+]                   ; VX ; hl -> SP_VY
+    ld b, a                       ; B = VX
+    ld a, [hl+]                   ; VY ; hl -> SP_X
+    push af                       ; save VY
+    ld a, [hl]                    ; X
+    add a, b                      ; X += VX (signed add works unsigned)
+    ld [hl+], a                   ; store X ; hl -> SP_Y
+    ld b, a                       ; B = new X
+    pop af                        ; A = VY
+    push bc                       ; save B = new X, C = tile
+    ld b, a                       ; B = VY
+    ld a, [hl]                    ; Y
+    add a, b                      ; Y += VY
+    ld [hl+], a                   ; store Y ; hl -> next slot
+    pop bc                        ; B = new X, C = tile
+    ; --- write OAM: Y, X, tile, attr ---
+    ld [de], a                    ; OAM Y = new Y
+    inc de
+    ld a, b
+    ld [de], a                    ; OAM X = new X
+    inc de
+    ld a, c
+    ld [de], a                    ; OAM tile
+    inc de
+    ld a, 6                       ; attr = OBJ palette 6 (charcoal)
+    ld [de], a
+    inc de
+    jr .next
+.dead:
+    xor a
+    ld [de], a                    ; OAM Y = 0 -> hidden
+    inc de
+    inc de
+    inc de
+    inc de
+    ld a, l
+    add a, SMOKE_STRIDE
+    ld l, a
+    jr nc, .next
+    inc h
+.next:
+    ld a, l
+    cp LOW(wSmoke + MAX_SMOKE * SMOKE_STRIDE)
+    jr nz, .loop
+    ld a, h
+    cp HIGH(wSmoke + MAX_SMOKE * SMOKE_STRIDE)
+    jr nz, .loop
+    ret
+
+; -----------------------------------------------------------------------------
+; ClearSmoke: free every particle and hide the OAM slots. Called by ExitCar so no
+; puff lingers once you are on foot (DrawExhaust won't run to clear them).
+; -----------------------------------------------------------------------------
+ClearSmoke::
+    ld hl, wShadowOAM + OAM_SMOKE * 4
+    ld c, MAX_SMOKE
+.hide:
+    xor a
+    ld [hl], a                    ; OAM Y = 0
+    ld a, l
+    add a, 4
+    ld l, a
+    jr nc, .hn
+    inc h
+.hn:
+    dec c
+    jr nz, .hide
+    ld hl, wSmoke
+    ld c, MAX_SMOKE * SMOKE_STRIDE
+    xor a
+.zero:
+    ld [hl+], a                   ; SP_LIFE (and the rest) = 0 -> free
+    dec c
+    jr nz, .zero
+    ret
+
+; SmokeDirPtr: A = facing -> DE = a 2-byte signed unit vector from the car toward
+; its tail (opposite the heading) — the tailpipe/emit direction.
+SmokeDirPtr:
+    cp EFACE_UP
+    jr z, .up
+    cp EFACE_LEFT
+    jr z, .left
+    cp EFACE_RIGHT
+    jr z, .right
+    ld de, SmokeDirDown
+    ret
+.up:
+    ld de, SmokeDirUp
+    ret
+.left:
+    ld de, SmokeDirLeft
+    ret
+.right:
+    ld de, SmokeDirRight
+    ret
+SmokeDirDown:  db 0, -1             ; driving down  -> tail points up-screen
+SmokeDirUp:    db 0, 1              ; driving up    -> tail points down-screen
+SmokeDirLeft:  db 1, 0              ; driving left  -> tail points right
+SmokeDirRight: db -1, 0             ; driving right -> tail points left
+
+; SmokeFan: car-relative velocity fan (backward magnitude, lateral spread). A puff
+; trails "backward" (mapped to screen by heading in EmitOne) while the signed
+; spread fans it sideways, so the burst spreads into a cone of diagonal drifts
+; rather than a single straight line. Cycled by wSmokeEmit; SMOKE_FAN_N entries.
+SmokeFan:
+    db 1, -1
+    db 1,  1
+    db 2,  0
+    db 1,  0
+    db 2, -1
+    db 2,  1
+    db 1, -1
+    db 1,  1

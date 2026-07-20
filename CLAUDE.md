@@ -434,6 +434,27 @@ scroll updates — so there's no seam or one-frame latency.
   glyph bumped `FONT_GLYPHS` 52→53, so `TILE_PSURV_BASE` is now 181 (persona
   world tiles 181..210; the car's **8** tiles `TILE_CAR_BASE` 211..218 — 2 each
   for down/up + 4 for side — are appended to `PersonaTiles`).
+- **Cosmetic feedback while driving (car.asm), all purely visual and RNG-free so
+  determinism/the poison tests are untouched:**
+  * **Engine rumble** — `DrawCar`'s driving branch adds a `CarRumbleY` wobble
+    (±1 px on the sprite's OAM Y for `RUMBLE_ON` frames of each `RUMBLE_PERIOD`,
+    then still), driven by the free-running `wCarRumble` counter.
+  * **Exhaust smoke particles** (the **Smoke Code** `BANK[1]` section) — on a
+    start or a turn (same `wCarLastDir` gate as the door-thunk logic in
+    player.asm, *not* on a straight chain step) `EmitSmokeBurst` spawns
+    `SMOKE_BURST` puffs at the tailpipe. Each is a 5-byte pool slot
+    (`wSmoke`, `{life,vx,vy,x,y}`) whose velocity comes from `SmokeFan`
+    (a fixed backward+lateral-spread table) indexed by the free-running
+    `wSmokeEmit` — so the burst fans into a cone of **varied diagonal**
+    directions with **no `Rand`**. `DrawExhaust` (tail-called from the driving
+    branch only, so the on-foot loop is byte-identical) drifts each puff and
+    steps it through the **4-frame dither strip** `TILE_SMOKE_BASE` 224..227
+    (dense→50%→25%→specks — the checkerboards read as translucency through the
+    real LCD's pixel blur, *not* on a sharp emulator/IPS panel) by age, then
+    despawns it. OAM slots `OAM_SMOKE`..(+`MAX_SMOKE`-1) = 33..38 (inside the
+    boot-hygiene 33..39 window); `ClearSmoke` (from `ExitCar`) hides them on
+    foot. Drift *feel* + the translucent dither look are a human check on
+    mGBA/hardware.
 
 ### Start menu (menu.asm / items.asm)
 - **Pokemon-style pause menu on MODE_MENU.** START in the overworld opens it

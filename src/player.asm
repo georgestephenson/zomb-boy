@@ -395,14 +395,14 @@ TryStartStep:
     call ComposeHUD
     ld a, 1
     ld [wHUDDirty], a
-    ; exhaust puff when the car starts rolling or changes heading — but not on a
+    ; exhaust burst when the car starts rolling or changes heading — but not on a
     ; straight-ahead chain step (same direction as the last drive step).
     ld a, [wStepDir]
     ld b, a
     ld a, [wCarLastDir]
     cp b
     jr z, .smokeDone
-    call TriggerCarSmoke
+    call EmitSmokeBurst
 .smokeDone:
     ld a, b
     ld [wCarLastDir], a

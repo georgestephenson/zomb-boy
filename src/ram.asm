@@ -145,12 +145,19 @@ wFuel::             ds 1               ; 0..METER_MAX, saturating (drives the HU
 wCarRumble::        ds 1               ; free-running frame counter for the driving
                                        ; engine-rumble sprite wobble (DrawCar); purely
                                        ; cosmetic, advanced only while wInCar
-wSmokeTimer::       ds 1               ; frames left to draw the exhaust puff (0 = none)
 wCarLastDir::       ds 1               ; last EFACE_* the car drove ($FF = stopped); a
                                        ; driving step puffs smoke when it differs (a
                                        ; fresh start or a turn), not on a straight chain
 wCarScrX::          ds 1               ; the driving car's on-screen top-left, stashed by
-wCarScrY::          ds 1               ; DrawCar so DrawSmoke can anchor the puff behind it
+wCarScrY::          ds 1               ; DrawCar so the smoke can anchor at the tailpipe
+; Exhaust smoke particle pool (car.asm Smoke Code). Each SMOKE_STRIDE-byte slot is
+; {life, X, Y, vx, vy}; life 0 = free. ClearRAM zeroes it (all free) at boot, and
+; DrawExhaust/ExitCar hide the OAM slots, so nothing shows on foot.
+wSmoke::            ds MAX_SMOKE * SMOKE_STRIDE
+wSmokeEmit::        ds 1               ; free-running burst counter -> fan-table index
+                                       ; (deterministic variety without touching Rand)
+wSmokeEX::          ds 1               ; scratch: tailpipe screen X/Y for the current
+wSmokeEY::          ds 1               ; burst (computed once by EmitSmokeBurst)
 ; InitCar road-spawn search scratch (boot only). wCarRngSave brackets the search
 ; so consuming Rand while probing doesn't perturb the dynamic-spawn stream.
 wCarRngSave::       ds 2               ; saved wRngState across the spawn search

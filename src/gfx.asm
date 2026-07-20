@@ -1013,15 +1013,46 @@ PersonaTiles::
     dw `32222223
     dw `32222223
     dw `03333330
-; --- 224: exhaust puff (OBJ pal 6: 1 = black rim, 3 = charcoal body) ---
-    dw `00011000
-    dw `00133110
-    dw `01333310
-    dw `13333331
-    dw `13333331
-    dw `01333311
-    dw `00133100
-    dw `00011000
+; Exhaust smoke — a 4-frame dissipation strip (OBJ pal 6, colour 3 = charcoal).
+; A puff steps through these as it ages: dense round core -> 50% checkerboard ->
+; 25% dither -> faint specks. The checkerboards read as translucency through the
+; real LCD's pixel blur (on a sharp emulator/IPS screen they look like a grid).
+; --- 224: frame 0 — dense round core (freshly ejected, nearly opaque) ---
+    dw `00000000
+    dw `00033000
+    dw `00333300
+    dw `03333330
+    dw `03333330
+    dw `00333300
+    dw `00033000
+    dw `00000000
+; --- 225: frame 1 — ~50% checkerboard body (billowing, half-transparent) ---
+    dw `00303000
+    dw `03030300
+    dw `30303030
+    dw `03030303
+    dw `30303030
+    dw `03030303
+    dw `00303030
+    dw `00030300
+; --- 226: frame 2 — ~25% dither (thinning out) ---
+    dw `00300030
+    dw `00000000
+    dw `30003000
+    dw `00300030
+    dw `00000000
+    dw `30003000
+    dw `00300030
+    dw `00000000
+; --- 227: frame 3 — faint specks (almost gone) ---
+    dw `00003000
+    dw `00000000
+    dw `00300000
+    dw `00000030
+    dw `30000000
+    dw `00003000
+    dw `00000000
+    dw `00300000
 PersonaTilesEnd::
 
 ; -----------------------------------------------------------------------------
