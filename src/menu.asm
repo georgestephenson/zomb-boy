@@ -1247,13 +1247,17 @@ PutNumDE:
 
 ; PutNum16DE: HL = 0..65535 -> decimal at DE (no leading zeros, at least one
 ; digit). Digits are divided out LSB-first onto the stack, then emitted MSB-first.
-; Clobbers A, B, HL; advances DE.
+; Clobbers A, B, C, HL; advances DE.
+; The digit count MUST live in C, not B: Div10HL clobbers B, so a B counter
+; reads back as 1 every iteration — the loop then pushes N digits but pops only
+; one, corrupting the return address (a latent bug that only stayed hidden while
+; the garbage return happened to land on benign code).
 PutNum16DE:
-    ld b, 0                    ; digit count
+    ld c, 0                    ; digit count (B is clobbered by Div10HL)
 .div:
     call Div10HL               ; HL /= 10, A = remainder (0..9)
     push af                    ; stash the digit
-    inc b
+    inc c
     ld a, h
     or a, l
     jr nz, .div                ; more significant digits remain
@@ -1262,7 +1266,7 @@ PutNum16DE:
     add a, TILE_DIGIT0
     ld [de], a
     inc de
-    dec b
+    dec c
     jr nz, .emit
     ret
 

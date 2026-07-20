@@ -101,31 +101,38 @@ def _plant_zombie_facing_player(game, dist=1):
 def test_los_detects_player_on_land():
     # Control for the swim test: a zombie staring at the adjacent player raises
     # the alert (switches to MODE_ALERT).
-    # Tick a couple frames, not one: a single PyBoy frame need not span the main
-    # loop's UpdateZombies (the loop is VBlank-locked, so where the frame boundary
-    # falls in it shifts with any code-size change), and MODE_ALERT persists for
-    # ALERT_FRAMES once set — so 2 frames reliably captures the detection.
+    # Re-pin the zombie on the sight line each frame (see the detailed note in
+    # test_los_keys_off_arrived_tile_not_step_start): an idle zombie re-plans
+    # within a tick, so a one-shot plant only lines up by frame-phase luck that
+    # shifts with any ROM code-size change. Re-pinning decouples the LOS check
+    # from that phase, so the detection is observed regardless of loop size.
     from harness import Game
     g = Game()
     try:
-        g.pyboy.memory[g.addr("wSwimming")] = 0
-        _plant_zombie_facing_player(g)
-        g.tick(2)
+        for _ in range(6):
+            g.pyboy.memory[g.addr("wSwimming")] = 0
+            _plant_zombie_facing_player(g)
+            g.tick(1)
+            if g.r8("wGameMode") == MODE_ALERT:
+                break
         assert g.r8("wGameMode") == MODE_ALERT, "zombie should spot the player"
     finally:
         g.close()
 
 
 def test_los_blind_while_player_swims():
-    # In the water the player is hidden: the same staring zombie must not detect
-    # (over the same 2-frame window the land control uses).
+    # In the water the player is hidden: the same staring zombie must not detect.
+    # Mirror the land control's re-pin loop so the two are true opposites: pin the
+    # zombie in line every frame and assert it STILL never alerts across the whole
+    # window (a false positive would show up on any frame).
     from harness import Game
     g = Game()
     try:
-        g.pyboy.memory[g.addr("wSwimming")] = 1
-        _plant_zombie_facing_player(g)
-        g.tick(2)
-        assert g.r8("wGameMode") == MODE_OVERWORLD, "swimming player was detected"
+        for _ in range(6):
+            g.pyboy.memory[g.addr("wSwimming")] = 1
+            _plant_zombie_facing_player(g)
+            g.tick(1)
+            assert g.r8("wGameMode") == MODE_OVERWORLD, "swimming player was detected"
     finally:
         g.close()
 
@@ -194,10 +201,18 @@ def test_zombie_charges_the_player_then_battles():
         # hold off the respawner so slot 0 stays empty right after the battle
         # (else a fresh zombie refills it before we can observe the removal)
         g.pyboy.memory[g.addr("wZombSpawnTimer")] = 200
-        _plant_zombie_facing_player(g, dist=3)
-        zx0 = _ent16(g, 0, EO_WXLO)
         px0, py0 = g.r16("wPlayerWX"), g.r16("wPlayerWY")
-        g.tick(2)
+        # Re-pin on the sight line each frame until detection (an idle zombie
+        # re-plans within a tick, so a one-shot plant only lines up by frame-phase
+        # luck that shifts with ROM size — see test_los_keys_off_...). zx0 is the
+        # planted x (px0 + 3), stable across re-plants; the charge closes from there.
+        zx0 = None
+        for _ in range(6):
+            _plant_zombie_facing_player(g, dist=3)
+            zx0 = _ent16(g, 0, EO_WXLO)
+            g.tick(1)
+            if g.r8("wGameMode") == MODE_ALERT:
+                break
         assert g.r8("wGameMode") == MODE_ALERT, "zombie should spot the player"
         # through the "!" beat and a couple of charge steps
         g.tick(60)

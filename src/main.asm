@@ -153,6 +153,7 @@ Start::                             ; exported: the menu's EXIT soft-resets here
     call InitLoot                   ; scatter starting pickups + arm loot respawns
     call InitAnim                   ; arm the world-animation timers (water/trees/...)
     call InitHUD                    ; meters/clock + the window row (LCD is off)
+    call InitDayNight               ; arm the time-of-day palette tint (CGB only)
     call InitInventory              ; party (just the player) + starting bag + options
 
     call UpdateWorldMusic           ; APU is already on from the title; swap the
@@ -197,6 +198,7 @@ MainLoop:
     jp MainLoop
 .noMenu:
     call UpdateSurvival             ; clock + meter drains (time flows only here)
+    call UpdateDayNight             ; re-shade terrain palettes on a time-of-day change
     call UpdatePlayer
     call UpdateView
     ld a, [wMoveDir]
@@ -229,6 +231,7 @@ MainLoop:
     call SetScroll
     call PushHUD                    ; HUD row if dirty (skipped on strip frames;
                                     ; must run BEFORE BlitStream eats wStrKind)
+    call PushDayNight               ; time-of-day palette re-shade if pending (rare)
     ld a, [wStrKind]                ; is a world strip being blitted this frame?
     push af
     call BlitStream                 ; push the queued strip into VRAM
@@ -237,7 +240,7 @@ MainLoop:
     call z, PushAnim                ; animated tile art — skip on the (single) strip
                                     ; frame to keep the DMG VBlank budget (an effect
                                     ; frame is ~invisibly late; water cycles slowly)
-    jr MainLoop
+    jp MainLoop                     ; (JP: the added day/night calls push this >127)
 
 ; --- talk mode: dialogue logic, then a lighter VBlank (no scroll/stream) ---
 .talk:
