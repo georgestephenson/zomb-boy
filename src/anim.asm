@@ -73,11 +73,22 @@ MaybeTreeBump::
     ret nc                      ; > 13 -> not a tree
     ; fall through
 TriggerTreeSway::
+    ld a, [wTreeTimer]
+    and a, a
+    ret nz                      ; already swaying -> let it play out, don't restack
+                                ; (else holding INTO a tree would re-arm every frame
+                                ; and freeze the canopy on sub-frame 0 = rest). When
+                                ; it finishes, the next held bump starts a fresh
+                                ; sway -> a continuous wobble while you push in.
     ld a, TREE_SWAY_DUR
     ld [wTreeTimer], a
     ret
 
 TriggerBrushRustle::
+    ld a, [wBrushTimer]
+    and a, a
+    ret nz                      ; same: don't re-arm mid-rustle (walking through a
+                                ; brush run would otherwise freeze it on sub-frame 0)
     ld a, BRUSH_RUSTLE_DUR
     ld [wBrushTimer], a
     ret
@@ -145,7 +156,7 @@ UpdateAnim::
     ld [wTreeTimer], a
 .breeze_done:
 
-    ; --- tree sway frame: index = (timer >> 2) into TreeSwayPattern, rest at 0 ---
+    ; --- tree sway frame: index = (timer >> LOG) into TreeSwayPattern, rest at 0 ---
     ld a, [wTreeTimer]
     and a, a
     jr z, .tree_rest
@@ -153,8 +164,9 @@ UpdateAnim::
     ld [wTreeTimer], a
     and a, a
     jr z, .tree_rest
-    srl a
-    srl a                       ; index (0..TREE_PAT_LEN-1)
+    REPT TREE_SWAY_LOG
+    srl a                       ; / (1 << TREE_SWAY_LOG) -> index (0..TREE_PAT_LEN-1)
+    ENDR
     cp TREE_PAT_LEN
     jr c, .tree_idx
     ld a, TREE_PAT_LEN - 1
@@ -179,8 +191,9 @@ UpdateAnim::
     ld [wBrushTimer], a
     and a, a
     jr z, .brush_rest
-    srl a
-    srl a
+    REPT BRUSH_RUSTLE_LOG
+    srl a                       ; / (1 << BRUSH_RUSTLE_LOG) -> pattern index
+    ENDR
     cp BRUSH_PAT_LEN
     jr c, .brush_idx
     ld a, BRUSH_PAT_LEN - 1
@@ -380,7 +393,10 @@ BrushF2:
     dw `00100010
     dw `10001000
 
-; --- tree canopy top-left (TILE_TREE_TL, BG pal 0): sways R (F1) / L (F2) ---
+; --- tree canopy: TILE_TREE_TL | TILE_TREE_TR are two halves of ONE 16x8 image,
+; so each sway frame must be the base shifted as a single 16-wide unit — the pixel
+; leaving one tile's edge has to ENTER the other's, or a 1px gap opens at the seam
+; while swaying. F1 = whole canopy 1px right, F2 = 1px left (test_anim guards this).
 TreeTL0:
     dw `00000333
     dw `00033311
@@ -400,14 +416,14 @@ TreeTL1:
     dw `00311110
     dw `00311111
 TreeTL2:
-    dw `00003330
-    dw `00333110
-    dw `03311110
-    dw `03110110
-    dw `33111010
-    dw `31101100
-    dw `31111010
-    dw `31111110
+    dw `00003333
+    dw `00333111
+    dw `03311111
+    dw `03110111
+    dw `33111011
+    dw `31101101
+    dw `31111011
+    dw `31111111
 
 ; --- tree canopy top-right (TILE_TREE_TR, BG pal 0) ---
 TreeTR0:
@@ -420,14 +436,14 @@ TreeTR0:
     dw `11111130
     dw `11111130
 TreeTR1:
-    dw `03330000
-    dw `01133300
-    dw `01111330
-    dw `01111130
-    dw `01111133
+    dw `33330000
+    dw `11133300
+    dw `11111330
+    dw `11111130
+    dw `11111133
     dw `01111113
-    dw `01111113
-    dw `01111113
+    dw `11111113
+    dw `11111113
 TreeTR2:
     dw `33000000
     dw `13330000

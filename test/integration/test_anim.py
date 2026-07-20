@@ -13,7 +13,30 @@ def _art(g, tile_id):
     return bytes(g.pyboy.memory[base + i] for i in range(16))
 
 
-TILE_WATER, TILE_BRUSH, TILE_DOOR, TILE_TREE_TL = 4, 1, 8, 10
+TILE_WATER, TILE_BRUSH, TILE_DOOR = 4, 1, 8
+TILE_TREE_TL, TILE_TREE_TR = 10, 11
+
+
+def _canopy16(tl_art, tr_art):
+    """Decode the TL|TR canopy tiles into 8 rows of 16 colour values (0..3).
+    2bpp planar: row r is bytes[2r] (low plane) + bytes[2r+1] (high plane)."""
+    rows = []
+    for r in range(8):
+        row = []
+        for art in (tl_art, tr_art):
+            lo, hi = art[2 * r], art[2 * r + 1]
+            for c in range(8):
+                b = 7 - c
+                row.append(((lo >> b) & 1) | (((hi >> b) & 1) << 1))
+        rows.append(tuple(row))
+    return tuple(rows)
+
+
+def _shift16(rows, d):
+    """Shift each 16-wide row by d (+1 right / -1 left), zero-filling the edge."""
+    if d > 0:
+        return tuple((0,) + row[:-1] for row in rows)
+    return tuple(row[1:] + (0,) for row in rows)
 
 
 def test_water_shimmer_is_ambient(game):
@@ -58,6 +81,24 @@ def test_bumping_a_tree_sways_it(game):
     # bumped: blocked by the tree at (2,0), so the player rests at x=1
     assert game.s16("wPlayerWX") == 1, "player should be stopped against the tree"
     assert swayed, "bumping the tree did not sway it"
+
+
+def test_tree_canopy_halves_stay_seam_synced(game):
+    # The two canopy tiles (TL|TR) must sway as one 16px image — every swaying
+    # frame has to be the resting canopy shifted a whole pixel left or right, or a
+    # gap opens at the tile seam. Bump the tree at (2,0) and check each distinct
+    # canopy frame that appears is exactly a +/-1px shift of the base.
+    base = _canopy16(_art(game, TILE_TREE_TL), _art(game, TILE_TREE_TR))
+    allowed = {base, _shift16(base, +1), _shift16(base, -1)}
+    game.hold("right")                          # bump -> sway through its frames
+    seen = set()
+    for _ in range(120):
+        game.tick(1)
+        seen.add(_canopy16(_art(game, TILE_TREE_TL), _art(game, TILE_TREE_TR)))
+    game.release("right")
+    assert len(seen) >= 2, "canopy never left its resting frame while swaying"
+    bad = seen - allowed
+    assert not bad, "a swaying canopy frame is not a clean +/-1px shift (seam gap)"
 
 
 def test_walking_through_brush_rustles_it(game):

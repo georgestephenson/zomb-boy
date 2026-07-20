@@ -225,6 +225,19 @@ scroll updates — so there's no seam or one-frame latency.
   and **house doors** (`TILE_DOOR` swaps to an open leaf while `wOnDoor`, with a
   short `DOOR_LINGER` so it visibly shuts behind you — reusing the car door SFX
   `PlayCarDoor` on each open/close, as the design asked).
+- **Sway/rustle speed is one knob per effect: `TREE_SWAY_LOG` / `BRUSH_RUSTLE_LOG`**
+  (constants.inc) — each sub-frame is held `1 << LOG` frames and `*_DUR` is derived
+  as `PAT_LEN << LOG`, so raising the LOG slows the motion (currently 4 = 16
+  frames/sub-frame, a gentle sway). `TriggerTreeSway`/`TriggerBrushRustle`
+  **don't restack an in-progress sway** — otherwise holding a direction INTO a
+  tree (or walking a long brush run) re-arms the timer every frame and freezes it
+  on sub-frame 0; instead each cycle plays out, then the next held bump starts a
+  fresh one → a continuous wobble.
+- **The two canopy tiles (`TL|TR`) are one 16×8 image, so a sway frame must shift
+  the whole 16-px row as a unit** — the pixel leaving one tile's edge has to enter
+  the other's, or a 1-px gap opens at the seam. `F1` = base 1-px right, `F2` = 1-px
+  left; `test_anim.py` decodes the canopy and asserts every swaying frame is a
+  clean ±1-px shift (this guards the seam-gap regression).
 - `UpdateAnim` (logic phase) advances the timers and picks each group's current
   frame; `PushAnim` (VBlank) copies only the 16-byte frames that changed, and is
   **skipped on the single strip-blit frame per step** (captured `wStrKind` before
