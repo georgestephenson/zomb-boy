@@ -557,48 +557,63 @@ TreeQuad:
     ret
 
 ; -----------------------------------------------------------------------------
-; RoadHere: Z set if (wGenX, wGenY) is a road cell. One straight avenue per
-; 16-wide band, but its column WITHIN the band is jittered 0..7 by the band
-; index alone (NOT by y) — so every avenue stays a full-length straight column
-; (guaranteeing the whole network is connected: straight lines always cross all
-; perpendicular lines) while the SPACING between avenues varies 9..23 tiles, so
-; the city reads as irregular blocks rather than a rigid lattice. Horizontal
-; streets work the same on y. The ruins biome reuses this and breaks it up.
-; Mirror: worldgen_model.py:road_here.
+; RoadHere: Z set if (wGenX, wGenY) is a road cell.
+;
+; Avenues are full-length straight VERTICAL lines — one per 16-wide band, its
+; column jittered 0..7 by the band index alone — the connected backbone. Cross-
+; streets are HORIZONTAL but JOG: a street's row is jittered per avenue-INTERVAL
+; (the band of the avenue at/left of x), so it steps up/down each time it crosses
+; an avenue → bends and T-junctions. The jog lands exactly ON an avenue, and the
+; full-length avenue bridges the two different-row segments, so every street
+; segment has both ends on an avenue and the whole network stays connected.
+; Mirror: worldgen_model.py:road_here. The ruins biome reuses this and cracks it.
 ; -----------------------------------------------------------------------------
 RoadHere:
+    ; --- avenue: band k = x>>4, jittered column jit_k = hash(k,0,21) & 7 ---
     call LoadHfromGen
     xor a, a
     ld [wHY], a
-    ld [wHY+1], a               ; key the jitter on the avenue index only
+    ld [wHY+1], a               ; wHY = 0 (jitter keyed on the band index only)
     call ShiftH
     call ShiftH
     call ShiftH
-    call ShiftH                 ; wHX = wGenX >> 4 (band index), wHY = 0
+    call ShiftH                 ; wHX = wGenX >> 4 = k, wHY = 0
     ld b, 21
     call Hash8
-    and 7                       ; jitter 0..7 within the band
+    and 7                       ; jit_k
     ld c, a
     ld a, [wGenX]
-    and $0F                     ; column within the band
+    and $0F                     ; xlow
     cp c
-    ret z                       ; on this band's vertical avenue (Z set)
-    call LoadHfromGen
-    xor a, a
+    ret z                       ; on the avenue -> road (Z set)
+    ; interval index kL = k (if xlow > jit_k) else k-1. wHX still holds k.
+    jr nc, .haveInterval
+    ld a, [wHX]                 ; kL = k - 1 (16-bit decrement of wHX)
+    sub 1
     ld [wHX], a
+    ld a, [wHX+1]
+    sbc 0
     ld [wHX+1], a
-    call ShiftH
-    call ShiftH
-    call ShiftH
-    call ShiftH                 ; wHX = 0, wHY = wGenY >> 4
+.haveInterval:
+    ; --- cross-street row jitter jit_s = hash(kL, y>>4, 22) & 7 ---
+    ld a, [wGenY]
+    ld [wHY], a
+    ld a, [wGenY+1]
+    ld [wHY+1], a               ; wHY = y (wHX = kL, must not be shifted)
+    REPT 4
+    ld hl, wHY+1
+    srl [hl]
+    dec hl
+    rr [hl]
+    ENDR                        ; wHY = y >> 4 (shifted alone; wHX untouched)
     ld b, 22
     call Hash8
-    and 7
+    and 7                       ; jit_s
     ld c, a
     ld a, [wGenY]
-    and $0F
+    and $0F                     ; ylow
     cp c
-    ret                         ; Z iff on this band's horizontal street
+    ret                         ; Z iff on the (jogging) cross-street
 
 ; -----------------------------------------------------------------------------
 ; HouseTile: one optional building per 16x16 chunk. A = wall/floor/door tile if

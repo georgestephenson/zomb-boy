@@ -139,15 +139,23 @@ def tree_tile(x: int, y: int, thresh: int):
 
 
 def road_here(x: int, y: int) -> bool:
-    """Mirror of RoadHere: one straight avenue per 16-wide band, its column
-    jittered 0..7 by the band index alone (not by y) so avenues stay full-length
-    straight lines (network always connected) while their spacing varies 9..23.
-    The ruins biome reuses this grid and cracks it."""
-    if (x & 0x0F) == (hash8((x >> 4) & U16, 0, 21) & 7):
-        return True
-    if (y & 0x0F) == (hash8(0, (y >> 4) & U16, 22) & 7):
-        return True
-    return False
+    """Mirror of RoadHere. Avenues are full-length straight vertical lines (one
+    per 16-wide band, column jittered 0..7 by the band index) — the connected
+    backbone. Cross-streets are horizontal but JOG: a street's row is jittered
+    per *avenue-interval*, so it steps up/down each time it crosses an avenue,
+    producing bends and T-junctions. Crucially the jog happens exactly AT an
+    avenue, and the full-length avenue bridges the two different-row segments —
+    so every street segment has both ends on an avenue and the whole network
+    stays connected. The ruins biome reuses this and cracks it."""
+    k = (x >> 4) & U16
+    jit_k = hash8(k, 0, 21) & 7
+    xlow = x & 0x0F
+    if xlow == jit_k:
+        return True                                   # on the vertical avenue
+    # which avenue-interval is x in? (the avenue at/left of x identifies it)
+    kL = k if xlow > jit_k else (k - 1) & U16
+    jit_s = hash8(kL, (y >> 4) & U16, 22) & 7
+    return (y & 0x0F) == jit_s                         # on the jogging cross-street
 
 
 def house_tile(x: int, y: int):

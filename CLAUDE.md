@@ -574,16 +574,20 @@ scroll updates — so there's no seam or one-frame latency.
   features from shared noise fields (`WaterField`, `TreeQuad`, `ScatterHash`), so
   water clusters in marsh, straight roads+houses in city, trees in forest,
   cactus in desert, cracked roads+rubble in ruins, fenced wheat fields in farm,
-  headstones+a church in graveyard, etc. **City streets (`RoadHere`) are one
-  straight avenue per 16-wide band, but each avenue's column is jittered 0..7 by
-  the band index *alone* (not by position along it)** — so every avenue stays a
-  full-length straight line (the network is therefore always connected: straight
-  lines cross every perpendicular line) while the *spacing* between avenues
-  varies 9..23 tiles, reading as irregular blocks rather than a rigid lattice.
-  **A city building yields to any avenue that runs through it** (`GenTileType`
-  checks `RoadHere` before letting a house stand) so streets stay whole; a
-  graveyard church always stands (no roads there). Ruins reuse the same avenues
-  and crack them.
+  headstones+a church in graveyard, etc. **City streets (`RoadHere`):** vertical
+  **avenues** are full-length straight lines (one per 16-wide band, column
+  jittered 0..7 by the band index alone) — the connected backbone. Horizontal
+  **cross-streets JOG**: a street's row is jittered per avenue-*interval*, so it
+  steps up/down each time it crosses an avenue → bends and T-junctions. The jog
+  lands exactly ON an avenue and the full-length avenue bridges the two
+  different-row segments, so every street segment has both ends on an avenue and
+  the whole network stays connected (verified 100% within a city by flood fill;
+  a straight-only grid was the earlier, blander version). Avenue spacing varies
+  9..23 tiles too, so blocks are irregular in both axes.
+  **A city building yields to any avenue/street that runs through it**
+  (`GenTileType` checks `RoadHere` before letting a house stand) so streets stay
+  whole; a graveyard church always stands (no roads there). Ruins reuse the same
+  street network and crack it.
   The **band order is deliberate**: forest sits just below the marsh band so the
   classic seed ($A5, field value 195) keeps its forest spawn (the reproducible
   test world), and marsh keeps the wet top end so its water still dominates the
