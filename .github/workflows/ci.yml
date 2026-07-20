@@ -60,7 +60,7 @@ jobs:
           make play SCRIPT='shot boot.png; walk down 36; walk right 60; state; shot world.png; press start; wait 10; shot menu.png'
 
       - name: Upload screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots
           path: |
@@ -72,7 +72,7 @@ jobs:
       # .sym/.map ride along so any artifact ROM is debuggable (mGBA/Emulicious
       # load the .sym next to the ROM; romstats reads the .map).
       - name: Upload ROM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zombboy.gbc
           path: |
