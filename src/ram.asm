@@ -349,9 +349,10 @@ wEnemyHP::          ds 1
 wEnemyATK::         ds 1
 wEnemyDEF::         ds 1
 wEnemyName::        ds 2               ; ptr to the enemy's name string
-; Crosshair minigame
-wCrossX::           ds 1               ; 0..CROSS_MAX
-wCrossDir::         ds 1               ; 0 = moving +, 1 = moving -
+; Free-moving crosshair (slice 2). wCrossX/Y are its SCREEN pixel position, set
+; each frame from wCrossPhase along the chosen orbit path (see wBattlePattern in
+; the Battle Foes section below).
+wCrossX::           ds 1               ; crosshair screen X (0..159)
 wBattleWeapon::     ds 1               ; weapon index chosen for the current lock
 wSkillCd::          ds SKILL_COUNT     ; per-skill cooldown counters
 wBattleMsgNext::    ds 1               ; BS_* to enter when the message is A'd
@@ -363,6 +364,32 @@ wBattleGuard::      ds 1               ; $C5 canary (see above)
 ; VRAM write queue: logic fills (bounded), the battle VBlank path drains fully.
 wBattleQN::         ds 1
 wBattleQ::          ds BATTLEQ_CAP * 3 ; {addrHi, addrLo, value}
+
+; --- slice 2: the approaching-zombie arena (battle.asm) ---------------------
+; Up to MAX_FOES foes as one interleaved struct array (index 0 = the spotter /
+; lead). A zombie foe grows a TIER each enemy turn and only bites at
+; FOE_TIER_MAX; a survivor foe (drawn as the persona portrait) is always in
+; melee. wEnemy* above mirror the TARGETED foe for the shared HP-bar/tests.
+SECTION "Battle Foes", WRAM0
+wFoes::             ds MAX_FOES * FOE_STRUCT
+wFoeCount::         ds 1
+wFoeTarget::        ds 1               ; foe the last shot resolved against
+wCrossY::           ds 1               ; crosshair screen Y (wCrossX = screen X now)
+wCrossPhase::       ds 1               ; orbit phase (indexes the sine LUT)
+wBattlePattern::    ds 1               ; PAT_CIRCLE / PAT_FIGURE8 (chosen on entry)
+wFoeFlip::          ds 1               ; 0/1 walk-shuffle mirror frame
+wFoeFlipTimer::     ds 1               ; frames until the next mirror flip
+wArenaDirty::       ds 1               ; nonzero: repaint the arena this VBlank
+; FoeBox scratch — the on-screen tile rectangle of the foe being drawn/tested.
+wFoeBC::            ds 1               ; block col base (SCRN1 column)
+wFoeBR::            ds 1               ; block row base
+wFoeBW::            ds 1               ; width in tiles
+wFoeBH::            ds 1               ; height in tiles
+wFoeBHead::         ds 1               ; head rows (top band = crit on a hit)
+wFoeBOff::          ds 1               ; tier's first atlas tile (offset from FOE_ATLAS_BASE)
+wFoePalTmp::        ds 1               ; scratch: the foe's BG palette while painting
+wFoePipLvl::        ds 1               ; scratch: the foe's HP pip level (0..8)
+wBiteAcc::          ds 1               ; scratch: melee damage summed over the enemy turn
 
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ

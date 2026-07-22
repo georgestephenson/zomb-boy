@@ -2,30 +2,26 @@
 """Host-side reference model of the combat math (src/battle.asm + battle_data.asm).
 
 Mirrors the pure, testable parts of the battle engine — the damage formula, the
-crosshair zone mapping, and saturating HP — so we can prove the invariants the
+crosshair HIT ZONES, and saturating HP — so we can prove the invariants the
 design calls out (docs/design/04 §4/§6) without an emulator:
 
   * damage saturates: never < 1 on a landed hit, never > 255, never wraps.
-  * the red/amber/green target bar's zones line up with the tiles drawn on
-    screen (ZoneBarTiles in battle.asm) — a lock in cell N does what cell N looks
-    like it does.
+  * the crosshair's three outcomes are ordered: a head shot (crit) beats a body
+    shot (hit) beats empty air (miss = 0). Slice 2 replaced the horizontal
+    red/amber/green zone bar with a free crosshair that hit-tests the drawn
+    zombies — a body cell is a hit, the head band a crit — so the position ->
+    outcome mapping is now geometric (verified against the renderer in
+    test_battle.py); only the outcome -> damage math is modelled here.
   * a fight actually terminates (HP monotonically falls to 0).
 
-Keep in lockstep with battle.asm / battle_data.asm — change both together. The
-crosshair *timing feel* is interactive and human-verified (no headless input);
-only the position->outcome mapping is modelled here.
+Keep in lockstep with battle.asm / battle_data.asm — change both together.
 """
 
 # --- constants (constants.inc) ----------------------------------------------
 DMG_SHIFT = 2
 PLAYER_ATK = 12
 PLAYER_DEF = 6
-CROSS_CENTRE = 64
-CROSS_MAX = 127
-GREEN_HALF = 8
-AMBER_HALF = 40
-ZONE_MISS, ZONE_HIT, ZONE_CRIT = 0, 1, 2
-ZONE_COL0, ZONE_CELLS = 2, 16   # bar geometry on SCRN1 (cols 2..17)
+ZONE_MISS, ZONE_HIT, ZONE_CRIT = 0, 1, 2   # air / body / head
 
 # --- data rows (battle_data.asm) --------------------------------------------
 WEAPONS = {            # name: (WO_DMG, WO_CRIT)
@@ -41,25 +37,11 @@ ZOMBIES = {            # name: (maxHP, ATK, DEF)
     "BLUE": (30, 8, 2),
 }
 
-# The tiles battle.asm lays across the bar, left to right (R=miss, A=hit, G=crit).
-ZONE_BAR = "RRRAAAAGGAAAARRR"
-ZONE_OF_LETTER = {"R": ZONE_MISS, "A": ZONE_HIT, "G": ZONE_CRIT}
-
 
 # --- pure model (mirror the asm exactly) ------------------------------------
 def clampmin1(x):
     """clamp(x, 1, 255) — the design's `min 1` landed-hit floor + no overflow."""
     return max(1, min(255, x))
-
-
-def zone_of(x):
-    """Crosshair position (0..CROSS_MAX) -> ZONE_* (see CrossZone)."""
-    d = abs(x - CROSS_CENTRE)
-    if d < GREEN_HALF:
-        return ZONE_CRIT
-    if d < AMBER_HALF:
-        return ZONE_HIT
-    return ZONE_MISS
 
 
 def player_damage(base, enemy_def):
@@ -79,7 +61,7 @@ def weapon_lock(weapon, enemy_def, zone):
 
 
 def enemy_attack(atk):
-    """clampmin1(enemyATK - PLAYER_DEF>>2) — EnemyTurn."""
+    """clampmin1(enemyATK - PLAYER_DEF>>2) — a melee foe's bite (BattleFoesTurn)."""
     return clampmin1(atk - (PLAYER_DEF >> DMG_SHIFT))
 
 
@@ -92,20 +74,16 @@ def sat_add(hp, amt, cap=100):
 
 
 # --- checks ------------------------------------------------------------------
-def check_zone_layout():
-    """Every bar cell's centre pixel must resolve to the zone its tile depicts —
-    the minigame is honest: cell N does what cell N looks like."""
-    assert len(ZONE_BAR) == ZONE_CELLS
-    for cell, letter in enumerate(ZONE_BAR):
-        centre = cell * 8 + 4              # pixel at the cell's middle
-        want = ZONE_OF_LETTER[letter]
-        got = zone_of(centre)
-        assert got == want, (
-            f"cell {cell} shows {letter} (zone {want}) but position {centre} "
-            f"resolves to zone {got}")
-    # green only dead-centre, red only at the edges
-    assert zone_of(CROSS_CENTRE) == ZONE_CRIT
-    assert zone_of(0) == ZONE_MISS and zone_of(CROSS_MAX) == ZONE_MISS
+def check_hit_zones_ordered():
+    """head shot (crit) > body shot (hit) > empty air (miss = 0), for every
+    weapon against every foe — the crosshair is honest about what it rewards."""
+    for wname in WEAPONS:
+        for zname, (_, _, edef) in ZOMBIES.items():
+            miss = weapon_lock(wname, edef, ZONE_MISS)
+            hit = weapon_lock(wname, edef, ZONE_HIT)
+            crit = weapon_lock(wname, edef, ZONE_CRIT)
+            assert miss == 0, f"{wname} vs {zname}: a miss must deal 0, got {miss}"
+            assert crit > hit > 0, f"{wname} vs {zname}: {miss} {hit} {crit} order"
     return 0
 
 
@@ -116,19 +94,10 @@ def check_damage_saturates():
             for zone in (ZONE_MISS, ZONE_HIT, ZONE_CRIT):
                 d = weapon_lock(wname, edef, zone)
                 assert 0 <= d <= 255, f"{wname} vs {zname} zone {zone}: {d} OOR"
-                if zone == ZONE_MISS:
-                    assert d == 0, f"a miss must deal 0, got {d}"
-                else:
+                if zone != ZONE_MISS:
                     assert d >= 1, f"{wname} landed hit floored below 1: {d}"
     # a landed hit against absurd defence still deals at least 1
     assert player_damage(1, 255) == 1
-    # crit >= hit > miss for every weapon/enemy
-    for wname in WEAPONS:
-        for _, _, edef in ZOMBIES.values():
-            miss = weapon_lock(wname, edef, ZONE_MISS)
-            hit = weapon_lock(wname, edef, ZONE_HIT)
-            crit = weapon_lock(wname, edef, ZONE_CRIT)
-            assert crit >= hit > miss == 0, f"{wname}: {miss} {hit} {crit} ordering"
     # enemy attacks also floor at 1 and never wrap
     for zname, (_, atk, _) in ZOMBIES.items():
         e = enemy_attack(atk)
@@ -137,8 +106,8 @@ def check_damage_saturates():
 
 
 def check_fight_terminates():
-    """A perfect-crit run with the BAT must drop each zombie to exactly 0 in a
-    finite number of turns (monotone, saturating — no underflow wrap to 255)."""
+    """A perfect-crit run with the BAT drops each zombie to exactly 0 in a finite
+    number of turns (monotone, saturating — no underflow wrap to 255)."""
     for zname, (maxhp, _, edef) in ZOMBIES.items():
         hp = maxhp
         turns = 0
@@ -155,11 +124,12 @@ def check_fight_terminates():
 
 def main():
     rc = 0
-    for check in (check_zone_layout, check_damage_saturates, check_fight_terminates):
+    for check in (check_hit_zones_ordered, check_damage_saturates,
+                  check_fight_terminates):
         rc |= check()
         print(f"ok  {check.__name__}")
     # a quick readout of the modelled numbers, for eyeballing balance
-    print("\nweapon damage (hit / crit) vs each zombie:")
+    print("\nweapon damage (body / head) vs each zombie:")
     for wname in WEAPONS:
         row = []
         for zname, (_, _, edef) in ZOMBIES.items():

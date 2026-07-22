@@ -68,24 +68,28 @@ EnterBattleSurvivor::
 SECTION FRAGMENT "Battle", ROMX
 
 bEnterBattleZombie:
-    call LoadZombieRow          ; type -> cache stats + name + portrait idx
+    ld [wFoes + FO_TYPE], a      ; the spotter's ZTYPE (foe 0)
+    call SetupZombieFoes         ; foe count + per-foe stats/tiers; mirrors foe 0
     ld a, EPK_ZOMBIE
     ld [wBattleEKind], a
     jr bEnterBattleScreen
 
 bEnterBattleSurvivor:
-    ld [wBattleEIdx], a
+    push af                     ; save the persona index
     ld a, EPK_PERSONA
     ld [wBattleEKind], a
     ld a, ZTYPE_RED
-    call LoadZombieRow          ; borrow RED's stats...
+    call LoadZombieRow          ; borrow RED's stats (this clobbers wBattleEIdx)...
+    pop af
+    ld [wBattleEIdx], a         ; ...so set the persona's portrait index AFTER it
     ld a, $FF
-    ld [wBattleFoe], a          ; ...but there's no pool zombie to remove
+    ld [wBattleFoe], a          ; there's no pool zombie to remove
     ld hl, NameSurvivor
     ld a, l
     ld [wEnemyName], a
     ld a, h
     ld [wEnemyName + 1], a
+    call SetupSurvivorFoe       ; a single foe drawn as the persona portrait
     ; fall through
 bEnterBattleScreen:
     call BattleTransition       ; the white-flash intro (LCD on, current screen)
@@ -103,8 +107,26 @@ bEnterBattleScreen:
     xor a, a
     ldh [rLCDC], a              ; LCD off (safe: inside VBlank)
     call BuildBattleScreen
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    jr nz, .zombieArena
+    ; survivor: the persona portrait + a single enemy HP bar (as slice 1)
     call ShowEnemyPortrait
-    call EnqEnemyHP             ; both HP bars into the queue...
+    call EnqEnemyHP
+    jr .playerHP
+.zombieArena:
+    ; zombies: load the scale atlas + tints, then paint the crowd (LCD still off)
+    call LoadFoeAtlas
+    call LoadFoePalettes
+    xor a, a
+    ld [wFoeFlip], a
+    ld a, FOE_FLIP_FRAMES
+    ld [wFoeFlipTimer], a
+    ld a, 1
+    ld [wArenaDirty], a
+    call DrawArena
+.playerHP:
+    call InitCrosshair
     call EnqPlayerHP
     call DrainBattleQ           ; ...painted now, LCD still off
     ; sprites: clear all 40, then compose + fully paint the first menu
@@ -146,10 +168,16 @@ ResetBattleState:
     ld [wBattleOutcome], a      ; BO_ONGOING
     ld [wBattleQN], a
     ld [wCrossX], a
-    ld [wCrossDir], a
+    ld [wCrossY], a
+    ld [wCrossPhase], a
     ld [wBattleWeapon], a
+    ld [wFoeFlip], a
+    ld [wArenaDirty], a
+    ld [wFoeTarget], a
     ld [wSkillCd + 0], a
     ld [wSkillCd + 1], a
+    ld a, FOE_FLIP_FRAMES
+    ld [wFoeFlipTimer], a
     ld a, BATTLE_BOX_CELLS
     ld [wBoxPos], a             ; box idle (nothing to paint yet)
     ld a, $C5
@@ -187,6 +215,7 @@ LoadZombieRow:
 ; Per-frame update (logic phase; the matching VBlank does hOAMDMA + DrainBattleQ)
 ; =============================================================================
 UpdateBattle::
+    call TickArenaAnim          ; walk-shuffle mirror (marks the arena dirty)
     call BattlePaintBox
     call DrawBattleSprites
     ld a, [wBattleState]
@@ -195,7 +224,7 @@ UpdateBattle::
     cp BS_MSG
     jp z, .msg
     cp BS_ENEMY
-    jp z, EnemyTurn
+    jp z, BattleFoesTurn
     cp BS_END
     jp z, ExitBattle
     ; --- BS_MENU ---
@@ -259,24 +288,26 @@ UpdateBattle::
     jp z, GotoMainMenu
     ld [wBattleState], a
     ret
-; --- BS_AIM: sweep the crosshair; A locks and resolves ---
+; --- BS_AIM: the crosshair orbits the arena; A locks and hit-tests the foes.
+; A is checked BEFORE the step so the lock uses exactly the crosshair the player
+; sees (and so a test can pin the position, then press A). ---
 .aim:
-    call SweepCrosshair
     ld a, [wNewKeys]
     and PAD_A
-    ret z
-    jp ResolveAim
+    jp nz, ResolveAimZombie
+    call MoveCrosshair
+    ret
 
 ; PickFight: A-press on the Fight submenu. Cursor 0/1 = weapon (aim), 2/3 = skill.
 PickFight:
     ld a, [wBattleCursor]
     cp 2
     jr nc, .skill
-    ; weapon: start the crosshair minigame
+    ; weapon: start the crosshair minigame at the orbit's start point
     ld [wBattleWeapon], a
     xor a, a
-    ld [wCrossX], a
-    ld [wCrossDir], a
+    ld [wCrossPhase], a
+    call CrossPos
     ld hl, MsgFire
     call ComposeLine
     ld a, BS_AIM
@@ -286,89 +317,9 @@ PickFight:
     sub 2
     jp UseSkill
 
-; ResolveAim: the crosshair is locked. Zone -> damage -> enemy (or win).
-ResolveAim:
-    call CrossZone
-    ld b, a                     ; B = zone
-    cp ZONE_MISS
-    jr z, .miss
-    call WeaponRecord           ; HL = weapon record
-    ld a, [hl]                  ; WO_DMG
-    push hl
-    push bc
-    call CalcPlayerDamage       ; A = formula damage (clobbers B,C)
-    pop bc                      ; B = zone
-    pop hl                      ; HL = record
-    ld c, a                     ; C = damage
-    ld a, b
-    cp ZONE_CRIT
-    jr nz, .msgpick
-    inc hl                      ; WO_CRIT
-    ld a, [hl]
-    add a, c                    ; crit bonus, clamped to 255
-    jr nc, .critok
-    ld a, 255
-.critok:
-    ld c, a
-.msgpick:
-    ld a, b
-    cp ZONE_CRIT
-    ld hl, MsgCrit
-    jr z, .apply
-    ld hl, MsgHit
-.apply:
-    push hl                     ; save the hit message
-    ld a, c
-    call HurtEnemy              ; Z if the enemy is down
-    pop hl
-    jr nz, .enemyTurn
-    ; enemy defeated -> win (override the message)
-    ld a, BO_WIN
-    ld [wBattleOutcome], a
-    ld hl, MsgWin
-    ld a, BS_END
-    ld [wBattleMsgNext], a
-    jp SetMessage
-.enemyTurn:
-    ld a, BS_ENEMY
-    ld [wBattleMsgNext], a
-    jp SetMessage
-.miss:
-    ld hl, MsgMiss
-    ld a, BS_ENEMY
-    ld [wBattleMsgNext], a
-    jp SetMessage
-
-; EnemyTurn: the enemy attacks (transient state; sets BS_MSG immediately).
-EnemyTurn:
-    ld a, [wEnemyATK]
-    ld b, a
-    ld a, PLAYER_DEF
-    srl a
-    srl a                       ; PLAYER_DEF >> DMG_SHIFT (=2)
-    ld c, a
-    ld a, b
-    sub c
-    jr nc, .ok
-    xor a, a
-.ok:
-    and a, a
-    jr nz, .go
-    inc a                       ; min 1
-.go:
-    call HurtPlayer             ; Z if the player is down
-    jr nz, .alive
-    ld a, BO_LOSE
-    ld [wBattleOutcome], a
-    ld hl, MsgDied
-    ld a, BS_END
-    ld [wBattleMsgNext], a
-    jp SetMessage
-.alive:
-    ld hl, MsgEnemyHit
-    ld a, BS_MENU
-    ld [wBattleMsgNext], a
-    jp SetMessage
+; Aim resolution + the enemy turn now live with the multi-foe arena code at the
+; end of the file (ResolveAimZombie / BattleFoesTurn) — one screen for one or
+; many foes.
 
 ; TryFlee: chance-based escape; a failed attempt gives the enemy a free turn.
 TryFlee:
@@ -424,11 +375,26 @@ UseSkill:
     pop af
     cp SK_HEAL
     jr z, .heal
-    ; SK_AIMED — guaranteed hit of crit strength
+    ; SK_AIMED — a guaranteed hit of crit strength on the lead living foe
+    push bc                     ; B = power
+    call FindTargetFoe          ; -> wFoeTarget (lead living foe)
+    ld a, [wFoeTarget]
+    call FoePtr
+    ld de, FO_DEF
+    add hl, de
+    ld a, [hl]
+    ld [wEnemyDEF], a           ; CalcPlayerDamage reads wEnemyDEF
+    pop bc
     ld a, b
-    call CalcPlayerDamage
-    call HurtEnemy
-    jr nz, .aimAlive
+    call CalcPlayerDamage       ; A = damage
+    ld c, a
+    ld a, [wFoeTarget]
+    ld b, a
+    ld a, c
+    call HurtFoe                ; index B, damage A
+    call AllFoesDead
+    and a, a
+    jr z, .aimAlive
     ld a, BO_WIN
     ld [wBattleOutcome], a
     ld hl, MsgWin
@@ -504,20 +470,6 @@ CalcPlayerDamage:
     inc a
     ret
 
-; HurtEnemy: A = damage -> enemy HP saturating-sub; redraw bar; Z if HP == 0.
-HurtEnemy:
-    ld b, a
-    ld a, [wEnemyHP]
-    sub b
-    jr nc, .ok
-    xor a, a
-.ok:
-    ld [wEnemyHP], a
-    call EnqEnemyHP
-    ld a, [wEnemyHP]
-    and a, a
-    ret
-
 ; HurtPlayer: A = damage -> wHP saturating-sub; redraw bar; Z if HP == 0.
 HurtPlayer:
     ld b, a
@@ -532,58 +484,9 @@ HurtPlayer:
     and a, a
     ret
 
-; =============================================================================
-; Crosshair minigame
-; =============================================================================
-; SweepCrosshair: bounce wCrossX between 0 and CROSS_MAX at CROSS_SPEED px/frame.
-SweepCrosshair:
-    ld a, [wCrossDir]
-    and a, a
-    jr nz, .minus
-    ld a, [wCrossX]
-    add a, CROSS_SPEED
-    cp CROSS_MAX
-    jr c, .store
-    ld a, CROSS_MAX
-    ld [wCrossX], a
-    ld a, 1
-    ld [wCrossDir], a
-    ret
-.minus:
-    ld a, [wCrossX]
-    sub CROSS_SPEED
-    jr c, .zero
-    ld [wCrossX], a
-    ret
-.zero:
-    xor a, a
-    ld [wCrossX], a
-    ld [wCrossDir], a
-    ret
-.store:
-    ld [wCrossX], a
-    ret
-
-; CrossZone: -> A = ZONE_* for the current wCrossX (matches the ZoneBar layout).
-CrossZone:
-    ld a, [wCrossX]
-    sub CROSS_CENTRE
-    jr nc, .pos
-    cpl
-    inc a                       ; A = |x - centre|
-.pos:
-    cp GREEN_HALF
-    jr c, .crit
-    cp AMBER_HALF
-    jr c, .hit
-    ld a, ZONE_MISS
-    ret
-.crit:
-    ld a, ZONE_CRIT
-    ret
-.hit:
-    ld a, ZONE_HIT
-    ret
+; The crosshair now orbits the arena (MoveCrosshair) and hit-tests the drawn
+; foes (HitTestCrosshair) instead of sweeping a red/amber/green bar — both at the
+; end of the file with the arena code.
 
 ; =============================================================================
 ; Menu / message composition (into wBattleBox; revealed by BattlePaintBox)
@@ -880,10 +783,11 @@ DrawBattleSprites:
     ld [wShadowOAM + 4], a      ; hide the crosshair
     ret
 .drawcross:
-    ld a, CROSS_OAM_Y
+    ld a, [wCrossY]
+    add a, 16                   ; OAM Y offset (screen px -> OAM)
     ld [wShadowOAM + 4], a
     ld a, [wCrossX]
-    add a, CROSS_OAM_X0
+    add a, 8                    ; OAM X offset
     ld [wShadowOAM + 5], a
     ld a, TILE_CROSSHAIR
     ld [wShadowOAM + 6], a
@@ -979,17 +883,22 @@ BuildBattleScreen:
     ld a, b
     or a, c
     jr nz, .fill
-    ; enemy name plate (row 0)
+    ; player HP glyph (both screens); the enemy name plate + HP glyph belong to
+    ; the single-enemy survivor screen — zombies show per-foe pips in the arena.
+    ld a, TILE_HUD_HP
+    ld [_SCRN1 + PL_HP_ROW * 32 + BHP_GLYPH_COL], a
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    jr nz, .noPlate
     ld hl, wEnemyName
     ld a, [hl+]
     ld e, a
     ld d, [hl]                  ; DE = name string
     ld hl, _SCRN1 + EN_NAME_ROW * 32
     call PutsHL
-    ; HP glyphs
     ld a, TILE_HUD_HP
     ld [_SCRN1 + EN_HP_ROW * 32 + BHP_GLYPH_COL], a
-    ld [_SCRN1 + PL_HP_ROW * 32 + BHP_GLYPH_COL], a
+.noPlate:
     ; message box panel (rows BOX_ROW_TOP..BOX_ROW_BOT) — like the talk box
     ld hl, _SCRN1 + BOX_ROW_TOP * 32
     ld a, TILE_PANEL_TL
@@ -1026,17 +935,12 @@ BuildBattleScreen:
     add hl, de
     dec c
     jr nz, .sides
-    ; enemy portrait frame + zone bar
+    ; enemy portrait frame — survivor only (zombies fill the arena band instead)
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    jr nz, .noFrame
     call DrawEnemyFrame
-    ld hl, _SCRN1 + ZONE_ROW * 32 + ZONE_COL0
-    ld de, ZoneBarTiles
-    ld b, ZONE_CELLS
-.zone:
-    ld a, [de]
-    ld [hl+], a
-    inc de
-    dec b
-    jr nz, .zone
+.noFrame:
     ; attributes (CGB only — on DMG rVBK is a no-op and this would hit the map)
     ldh a, [hIsCGB]
     and a, a
@@ -1053,25 +957,8 @@ BuildBattleScreen:
     ld a, b
     or a, c
     jr nz, .attr
-    ld hl, _SCRN1 + ZONE_ROW * 32 + ZONE_COL0
-    ld a, PAL_BG_ZONE
-    ld b, ZONE_CELLS
-.zattr:
-    ld [hl+], a
-    dec b
-    jr nz, .zattr
     xor a, a
     ldh [rVBK], a
-    ; zone bar palette -> slot PAL_BG_ZONE
-    ld a, BCPSF_AUTOINC | (PAL_BG_ZONE * 8)
-    ldh [rBCPS], a
-    ld hl, ZonePalette
-    ld b, 8
-.zpal:
-    ld a, [hl+]
-    ldh [rBCPD], a
-    dec b
-    jr nz, .zpal
     ret
 
 ; PutsHL: DE = 0-terminated (charmap'd) string, HL = dest. Clobbers A, DE, HL.
@@ -1124,23 +1011,17 @@ DrawEnemyFrame:
     jr nz, .side
     ret
 
-; ShowEnemyPortrait: load the enemy's 56x56 portrait exactly like talk's
-; ShowPortrait, choosing ZombiePortraitTable or PortraitTable by wBattleEKind.
-; Both tables share BANK[2]; bank 1 is restored before returning. This is the one
+; ShowEnemyPortrait: load a hostile SURVIVOR's 56x56 persona portrait, exactly
+; like talk's ShowPortrait. Zombie foes are now drawn as the approaching-sprite
+; arena (DrawArena) and never call this, so there is only the one table.
+; PortraitTable is BANK[2]; bank 1 is restored before returning. This is the one
 ; battle routine that maps another bank INLINE, so it lives in ROM0 (always
 ; mapped) — a banked copy would unmap its own code the moment it switched.
 SECTION "Battle Portrait", ROM0
 ShowEnemyPortrait:
-    ld a, BANK(ZombiePortraitTable)
+    ld a, BANK(PortraitTable)
     ld [rROMB0], a
-    ld a, [wBattleEKind]
-    and a, a
-    jr nz, .persona
-    ld hl, ZombiePortraitTable
-    jr .idx
-.persona:
     ld hl, PortraitTable
-.idx:
     ld a, [wBattleEIdx]
     add a, a
     ld e, a
@@ -1345,20 +1226,6 @@ WaitHold:
 ; Data (battle bank — read by the engine that shares this bank)
 ; =============================================================================
 SECTION FRAGMENT "Battle", ROMX
-; Target bar: 16 cells, symmetric — red edges (miss), amber band (hit), a tiny
-; green centre (crit). Matches CrossZone's GREEN_HALF/AMBER_HALF thresholds.
-ZoneBarTiles:
-    db TILE_ZONE_RED,   TILE_ZONE_RED,   TILE_ZONE_RED,   TILE_ZONE_AMBER
-    db TILE_ZONE_AMBER, TILE_ZONE_AMBER, TILE_ZONE_AMBER, TILE_ZONE_GREEN
-    db TILE_ZONE_GREEN, TILE_ZONE_AMBER, TILE_ZONE_AMBER, TILE_ZONE_AMBER
-    db TILE_ZONE_AMBER, TILE_ZONE_RED,   TILE_ZONE_RED,   TILE_ZONE_RED
-
-ZonePalette:                    ; slot PAL_BG_ZONE: {rail, red, amber, green}
-    dw ( 4 << 10) | ( 4 << 5) |  4
-    dw ( 4 << 10) | ( 4 << 5) | 28
-    dw ( 2 << 10) | (18 << 5) | 31
-    dw ( 4 << 10) | (28 << 5) |  6
-
 LblFight:    db "FIGHT", 0
 LblParty:    db "PARTY", 0
 LblItem:     db "ITEM", 0
@@ -1377,3 +1244,855 @@ MsgNoItems:  db "NO ITEMS YET", 0
 MsgNotReady: db "NOT READY", 0
 MsgHealed:   db "PATCHED UP", 0
 MsgAimed:    db "AIMED HIT", 0
+MsgApproach: db "THEY CLOSE IN", 0
+
+; =============================================================================
+; slice 2 — the approaching-zombie arena (docs task): up to MAX_FOES zombies
+; shuffle toward the player as scaled BG sprites, and a free-moving crosshair
+; (circle / figure-eight) replaces the horizontal red/amber/green zone bar.
+; =============================================================================
+SECTION FRAGMENT "Battle", ROMX
+
+; Lane centre column per foe and the tier each starts at, so the crowd closes in
+; from staggered depths (a faux-3D pack, not a rank). Index 0 leads.
+FoeLaneCol:   db 10, 4, 15, 7
+FoeStartTier: db 2, 1, 1, 0
+
+; FoePtr: A = foe index -> HL = &wFoes[A]. Preserves BC (callers rely on it).
+FoePtr:
+    add a, a
+    add a, a
+    add a, a                    ; * FOE_STRUCT (8)
+    ld l, a
+    ld h, 0
+    ld de, wFoes
+    add hl, de
+    ret
+
+; FoeSeed: A = ZTYPE_*, HL = &foe (at FO_TYPE). Fills TYPE/MAXHP/HP/ATK/DEF from
+; ZombieTable[A]; leaves HL at FO_TIER. Clobbers A-E, saved HL restored via stack.
+FoeSeed:
+    ld [hl], a                  ; FO_TYPE
+    inc hl                      ; -> FO_MAXHP
+    push hl
+    add a, a
+    ld e, a
+    ld d, 0
+    ld hl, ZombieTable
+    add hl, de
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a                     ; HL = row
+    ld a, [hl+]                 ; ZO_MAXHP
+    ld b, a
+    ld a, [hl+]                 ; ZO_ATK
+    ld c, a
+    ld a, [hl]                  ; ZO_DEF
+    ld d, a
+    pop hl                      ; -> FO_MAXHP
+    ld [hl], b                  ; MAXHP
+    inc hl
+    ld [hl], b                  ; HP = MAXHP
+    inc hl
+    ld [hl], c                  ; ATK
+    inc hl
+    ld [hl], d                  ; DEF
+    inc hl                      ; -> FO_TIER
+    ret
+
+; SetupZombieFoes: wFoes[0].FO_TYPE holds the spotter's ZTYPE. Count nearby active
+; pool zombies (>=1, capped MAX_FOES), seed each foe's stats/tier/type, and mirror
+; foe 0 into the wEnemy* the HP-bar/tests read.
+SetupZombieFoes:
+    ld hl, wZombies + EO_ACTIVE
+    ld de, ENT_SIZE
+    ld b, MAX_ZOMBIES
+    ld c, 0                     ; active count
+.cnt:
+    ld a, [hl]
+    and a, a
+    jr z, .cnext
+    inc c
+.cnext:
+    add hl, de
+    dec b
+    jr nz, .cnt
+    ld a, c
+    and a, a
+    jr nz, .have
+    inc a                       ; at least the spotter
+.have:
+    cp MAX_FOES + 1
+    jr c, .cap
+    ld a, MAX_FOES
+.cap:
+    ld [wFoeCount], a
+    ld c, a                     ; C = count (loop guard)
+    ld b, 0                     ; B = index
+.seed:
+    ld a, b
+    call FoePtr                 ; HL = &foe[B] (preserves BC)
+    ld a, [wFoes + FO_TYPE]     ; foe 0's type is the unchanging base
+    add a, b
+    and 1                       ; type = (base + index) & 1
+    push bc                     ; FoeSeed clobbers BC
+    call FoeSeed                ; fills struct, HL -> FO_TIER
+    pop bc
+    push hl                     ; save the FO_TIER destination
+    ld a, b
+    ld e, a
+    ld d, 0
+    ld hl, FoeStartTier
+    add hl, de
+    ld a, [hl]                  ; start tier for this foe
+    pop hl
+    ld [hl], a                  ; FO_TIER
+    inc b
+    ld a, b
+    cp c
+    jr c, .seed
+    xor a, a
+    ld [wFoeTarget], a
+    jp MirrorFoe                ; A = 0 -> wEnemy* mirrors foe 0 (tail call)
+
+; SetupSurvivorFoe: one foe built from the RED stats LoadZombieRow left in wEnemy*
+; (a hostile survivor). Drawn as the persona portrait, always in melee.
+SetupSurvivorFoe:
+    ld a, 1
+    ld [wFoeCount], a
+    xor a, a
+    ld [wFoeTarget], a
+    ld hl, wFoes
+    ld a, ZTYPE_RED
+    ld [hl+], a                 ; FO_TYPE (unused for tint; drawn as a portrait)
+    ld a, [wEnemyMaxHP]
+    ld [hl+], a                 ; FO_MAXHP
+    ld [hl], a                  ; FO_HP = MAXHP
+    inc hl
+    ld a, [wEnemyATK]
+    ld [hl+], a                 ; FO_ATK
+    ld a, [wEnemyDEF]
+    ld [hl+], a                 ; FO_DEF
+    ld a, FOE_TIER_MAX
+    ld [hl], a                  ; FO_TIER (always melee)
+    ret
+
+; MirrorFoe: A = index -> copy its MAXHP/HP/ATK/DEF into wEnemy* (the HP bar +
+; integration tests read these). Clobbers A, DE, HL.
+MirrorFoe:
+    call FoePtr
+    inc hl                      ; FO_MAXHP
+    ld a, [hl+]
+    ld [wEnemyMaxHP], a
+    ld a, [hl+]                 ; FO_HP
+    ld [wEnemyHP], a
+    ld a, [hl+]                 ; FO_ATK
+    ld [wEnemyATK], a
+    ld a, [hl]                  ; FO_DEF
+    ld [wEnemyDEF], a
+    ret
+
+; FindTargetFoe: -> A = lowest-index living foe (the lead), $FF if none. Sets
+; wFoeTarget when found. Used by the AIMED skill (guaranteed hit, no crosshair).
+FindTargetFoe:
+    ld a, [wFoeCount]
+    ld c, a
+    ld b, 0
+.lp:
+    ld a, b
+    call FoePtr
+    inc hl
+    inc hl                      ; FO_HP
+    ld a, [hl]
+    and a, a
+    jr nz, .found
+    inc b
+    dec c
+    jr nz, .lp
+    ld a, $FF
+    ret
+.found:
+    ld a, b
+    ld [wFoeTarget], a
+    ret
+
+; ComputeFoeBox: A = index -> wFoeB{C,R,W,H,Head,Off}, the on-screen tile
+; rectangle (and atlas offset) of the foe. Persona -> the fixed portrait block.
+ComputeFoeBox:
+    ld c, a                     ; C = index
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    jr nz, .zombie
+    ld a, PORTRAIT_COL0
+    ld [wFoeBC], a
+    ld a, PORTRAIT_ROW0
+    ld [wFoeBR], a
+    ld a, PORTRAIT_COLS
+    ld [wFoeBW], a
+    ld a, PORTRAIT_ROWS
+    ld [wFoeBH], a
+    ld a, 2
+    ld [wFoeBHead], a
+    xor a, a
+    ld [wFoeBOff], a
+    ret
+.zombie:
+    ld a, c
+    call FoePtr
+    ld de, FO_TIER
+    add hl, de
+    ld a, [hl]                  ; tier
+    add a, a
+    add a, a                    ; tier * 4 (BattleZombieTiers row stride)
+    ld e, a
+    ld d, 0
+    ld hl, BattleZombieTiers
+    add hl, de
+    ld a, [hl+]                 ; wtiles
+    ld [wFoeBW], a
+    ld b, a                     ; B = wt
+    ld a, [hl+]                 ; htiles
+    ld [wFoeBH], a
+    ld d, a                     ; D = ht
+    ld a, [hl+]                 ; headrows
+    ld [wFoeBHead], a
+    ld a, [hl]                  ; tileoff
+    ld [wFoeBOff], a
+    ; rowBase = FOE_GROUND_ROW + 1 - ht (feet on the ground row)
+    ld a, FOE_GROUND_ROW + 1
+    sub d
+    ld [wFoeBR], a
+    ; colBase = clamp(laneCol[index] - wt/2, 0, VIEW_COLS - wt)
+    ld a, c
+    ld e, a
+    ld d, 0
+    ld hl, FoeLaneCol
+    add hl, de
+    ld a, [hl]                  ; centre col
+    ld e, a
+    ld a, b                     ; wt
+    srl a                       ; wt / 2
+    ld d, a
+    ld a, e
+    sub d                       ; centre - wt/2
+    jr nc, .cok
+    xor a, a                    ; clamp low to 0
+.cok:
+    ld d, a                     ; D = candidate colBase
+    ld a, VIEW_COLS
+    sub b                       ; A = max colBase (VIEW_COLS - wt)
+    cp d                        ; A - D
+    jr c, .clampHi              ; A < D -> too far right, use max
+    ld a, d                     ; else keep candidate
+.clampHi:
+    ld [wFoeBC], a
+    ret
+
+; =============================================================================
+; VRAM setup (LCD off at entry; DrawArena runs in VBlank)
+; =============================================================================
+; LoadFoeAtlas: copy the scale atlas into the VRAM gap the portrait vacated.
+LoadFoeAtlas:
+    xor a, a
+    ldh [rVBK], a
+    ld hl, BattleZombieTiles
+    ld de, _VRAM + FOE_ATLAS_BASE * 16
+    ld bc, BattleZombieTilesEnd - BattleZombieTiles
+.cp:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .cp
+    ret
+
+; LoadFoePalettes: the two zombie tints -> BG slots 5/6 (CGB only; DMG uses rBGP).
+LoadFoePalettes:
+    ldh a, [hIsCGB]
+    and a, a
+    ret z
+    ld a, BCPSF_AUTOINC | (PAL_BG_FOE0 * 8)
+    ldh [rBCPS], a
+    ld hl, FoePalettes
+    ld b, 16                    ; 2 palettes x 4 colours x 2 bytes
+.l:
+    ld a, [hl+]
+    ldh [rBCPD], a
+    dec b
+    jr nz, .l
+    ret
+
+; InitCrosshair: pick a motion (circle/fig-8) and place it at phase 0.
+InitCrosshair:
+    call Rand
+    and 1
+    ld [wBattlePattern], a
+    xor a, a
+    ld [wCrossPhase], a
+    ; fall through
+; CrossPos: wCrossX/Y <- the current phase point of the chosen orbit path.
+CrossPos:
+    ld a, [wBattlePattern]
+    and a, a
+    ld hl, CrossPathCircle
+    jr z, .have
+    ld hl, CrossPathFig8
+.have:
+    ld a, [wCrossPhase]
+    add a, a                    ; * 2 (db x, y)
+    ld e, a
+    ld d, 0
+    add hl, de
+    ld a, [hl+]
+    ld [wCrossX], a
+    ld a, [hl]
+    ld [wCrossY], a
+    ret
+
+; MoveCrosshair: advance the orbit one step and reposition (BS_AIM, each frame).
+MoveCrosshair::
+    ld a, [wCrossPhase]
+    add a, CROSS_PSTEP
+    and CROSS_SINLEN - 1
+    ld [wCrossPhase], a
+    jr CrossPos
+
+; =============================================================================
+; Aim resolution: the locked crosshair hit-tests the on-screen foes.
+; =============================================================================
+; ResolveAimZombie: A locked. Hit a foe -> damage it (head = crit); miss -> the
+; enemy turn. On the kill of the last foe -> win.
+ResolveAimZombie::
+    call HitTestCrosshair       ; A = ZONE_*; wFoeTarget set on a hit
+    cp ZONE_MISS
+    jr z, .miss
+    push af                     ; save the zone
+    ld a, [wFoeTarget]
+    call FoePtr
+    ld de, FO_DEF
+    add hl, de
+    ld a, [hl]
+    ld [wEnemyDEF], a           ; CalcPlayerDamage reads wEnemyDEF
+    call WeaponRecord           ; HL = record
+    ld a, [hl]                  ; WO_DMG
+    call CalcPlayerDamage       ; A = base damage
+    ld c, a
+    pop af                      ; zone
+    push af
+    cp ZONE_CRIT
+    jr nz, .noCrit
+    call WeaponRecord
+    inc hl                      ; WO_CRIT
+    ld a, [hl]
+    add a, c
+    jr nc, .cok
+    ld a, 255
+.cok:
+    ld c, a
+.noCrit:
+    ld a, [wFoeTarget]
+    ld b, a
+    ld a, c
+    call HurtFoe                ; index B, damage A
+    call AllFoesDead
+    and a, a
+    jr nz, .win
+    pop af                      ; zone -> message
+    cp ZONE_CRIT
+    ld hl, MsgCrit
+    jr z, .msg
+    ld hl, MsgHit
+.msg:
+    ld a, BS_ENEMY
+    ld [wBattleMsgNext], a
+    jp SetMessage
+.win:
+    pop af                      ; drop the zone
+    ld a, BO_WIN
+    ld [wBattleOutcome], a
+    ld hl, MsgWin
+    ld a, BS_END
+    ld [wBattleMsgNext], a
+    jp SetMessage
+.miss:
+    ld hl, MsgMiss
+    ld a, BS_ENEMY
+    ld [wBattleMsgNext], a
+    jp SetMessage
+
+; HitTestCrosshair: -> A = ZONE_* under the crosshair; wFoeTarget set on a hit.
+HitTestCrosshair:
+    ld a, [wFoeCount]
+    ld c, a                     ; C = count
+    ld b, 0                     ; B = index
+.lp:
+    ld a, b
+    call FoePtr
+    inc hl
+    inc hl                      ; FO_HP
+    ld a, [hl]
+    and a, a
+    jr z, .next                 ; dead slot
+    ld a, b
+    push bc
+    call ComputeFoeBox
+    call PointInBox             ; -> A = ZONE_*
+    pop bc
+    cp ZONE_MISS
+    jr nz, .hit
+.next:
+    inc b
+    dec c
+    jr nz, .lp
+    ld a, ZONE_MISS
+    ret
+.hit:
+    ld d, a                     ; save zone
+    ld a, b
+    ld [wFoeTarget], a
+    ld a, d
+    ret
+
+; PointInBox: crosshair centre vs wFoeB* -> A = ZONE_MISS/HIT/CRIT. Clobbers B-E.
+PointInBox:
+    ld a, [wCrossX]
+    add a, 3
+    ld b, a                     ; px
+    ld a, [wCrossY]
+    add a, 3
+    ld c, a                     ; py
+    ld a, [wFoeBC]
+    add a, a
+    add a, a
+    add a, a
+    ld d, a                     ; left px
+    ld a, b
+    cp d
+    jr c, .out                  ; px < left
+    ld a, [wFoeBW]
+    add a, a
+    add a, a
+    add a, a
+    add a, d                    ; right px
+    ld e, a
+    ld a, b
+    cp e
+    jr nc, .out                 ; px >= right
+    ld a, [wFoeBR]
+    add a, a
+    add a, a
+    add a, a
+    ld d, a                     ; top px
+    ld a, c
+    cp d
+    jr c, .out                  ; py < top
+    ld a, [wFoeBH]
+    add a, a
+    add a, a
+    add a, a
+    add a, d                    ; bottom px
+    ld e, a
+    ld a, c
+    cp e
+    jr nc, .out                 ; py >= bottom
+    ld a, [wFoeBHead]
+    add a, a
+    add a, a
+    add a, a
+    add a, d                    ; top + head*8 (D = top)
+    ld e, a
+    ld a, c
+    cp e
+    jr c, .crit                 ; py in the head band
+    ld a, ZONE_HIT
+    ret
+.crit:
+    ld a, ZONE_CRIT
+    ret
+.out:
+    ld a, ZONE_MISS
+    ret
+
+; HurtFoe: B = index, A = damage -> saturating HP sub; mirror to wEnemy*; mark the
+; arena dirty. (Death is HP == 0: the slot draws blank next repaint.)
+HurtFoe:
+    ld c, a                     ; C = damage
+    ld a, b
+    call FoePtr
+    inc hl
+    inc hl                      ; FO_HP
+    ld a, [hl]
+    sub c
+    jr nc, .ok
+    xor a, a
+.ok:
+    ld [hl], a
+    ld a, b
+    ld [wFoeTarget], a
+    call MirrorFoe
+    ld a, 1
+    ld [wArenaDirty], a
+    ; a survivor foe has a single enemy HP bar (no arena pips) — refresh it
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    ret nz
+    jp EnqEnemyHP
+
+; TickArenaAnim: advance the walk-shuffle. Every FOE_FLIP_FRAMES the whole crowd
+; mirrors (reversed columns + XFLIP), reading as a shuffling gait. Zombie only.
+TickArenaAnim::
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    ret z
+    ld hl, wFoeFlipTimer
+    dec [hl]
+    ret nz
+    ld a, FOE_FLIP_FRAMES
+    ld [hl], a
+    ld a, [wFoeFlip]
+    xor 1
+    ld [wFoeFlip], a
+    ld a, 1
+    ld [wArenaDirty], a
+    ret
+
+; AllFoesDead: -> A = 1 if every foe HP == 0, else 0.
+AllFoesDead::
+    ld a, [wFoeCount]
+    ld c, a
+    ld b, 0
+.lp:
+    ld a, b
+    call FoePtr
+    inc hl
+    inc hl                      ; FO_HP
+    ld a, [hl]
+    and a, a
+    jr nz, .alive
+    inc b
+    dec c
+    jr nz, .lp
+    ld a, 1
+    ret
+.alive:
+    xor a, a
+    ret
+
+; =============================================================================
+; Enemy turn: each living foe either shuffles a tier closer or (in melee) bites.
+; =============================================================================
+BattleFoesTurn::
+    xor a, a
+    ld [wBiteAcc], a            ; accumulate bite damage in RAM (FoePtr clobbers DE)
+    ld a, [wFoeCount]
+    ld c, a                     ; C = count
+    ld b, 0                     ; B = index
+.lp:
+    ld a, b
+    call FoePtr                 ; HL = &foe (preserves BC)
+    push hl                     ; save &foe
+    inc hl
+    inc hl                      ; FO_HP
+    ld a, [hl]
+    and a, a
+    jr z, .skip                 ; dead
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    jr z, .bite                 ; a survivor is always in melee
+    pop hl
+    push hl
+    ld de, FO_TIER
+    add hl, de
+    ld a, [hl]
+    cp FOE_TIER_MAX
+    jr z, .bite
+    inc [hl]                    ; shuffle one size/step closer
+    jr .skip
+.bite:
+    pop hl
+    push hl
+    ld de, FO_ATK
+    add hl, de
+    ld a, [hl]                  ; FO_ATK
+    sub PLAYER_DEF >> 2         ; DMG_SHIFT = 2 (assemble-time constant)
+    jr nc, .nz
+    xor a, a
+.nz:
+    and a, a
+    jr nz, .add
+    inc a                       ; min 1
+.add:
+    ld hl, wBiteAcc
+    add a, [hl]
+    jr nc, .noSat
+    ld a, 255
+.noSat:
+    ld [wBiteAcc], a
+.skip:
+    pop hl
+    inc b
+    dec c
+    jr nz, .lp
+    ld a, 1
+    ld [wArenaDirty], a         ; tiers advanced / a foe may have moved -> repaint
+    ld a, [wBiteAcc]
+    and a, a
+    jr z, .noDmg
+    call HurtPlayer             ; Z if the player is down
+    jr nz, .alive
+    ld a, BO_LOSE
+    ld [wBattleOutcome], a
+    ld hl, MsgDied
+    ld a, BS_END
+    ld [wBattleMsgNext], a
+    jp SetMessage
+.alive:
+    ld hl, MsgEnemyHit
+    ld a, BS_MENU
+    ld [wBattleMsgNext], a
+    jp SetMessage
+.noDmg:
+    ld hl, MsgApproach
+    ld a, BS_MENU
+    ld [wBattleMsgNext], a
+    jp SetMessage
+
+; =============================================================================
+; Arena paint (VBlank). Clears the arena band and repaints living foes far->near
+; so the nearer (bigger) ones occlude the rest. Only fires when wArenaDirty.
+; =============================================================================
+DrawArena::
+    ld a, [wArenaDirty]
+    and a, a
+    ret z
+    ld a, [wBattleEKind]
+    cp EPK_PERSONA
+    ret z                       ; a survivor keeps its portrait, not the arena
+    xor a, a
+    ld [wArenaDirty], a
+    ldh [rVBK], a               ; bank 0 (tile ids)
+    ld hl, _SCRN1 + FOE_ARENA_TOP * 32
+    ld c, FOE_GROUND_ROW - FOE_ARENA_TOP + 1
+.crow:
+    ld b, VIEW_COLS
+    push hl
+    ld a, FONT_BASE             ; paper
+.ccol:
+    ld [hl+], a
+    dec b
+    jr nz, .ccol
+    pop hl
+    ld de, 32
+    add hl, de
+    dec c
+    jr nz, .crow
+    ld a, [wFoeCount]
+    ld b, a
+.pf:
+    dec b                       ; index = count-1 .. 0 (draw the lead last, on top)
+    ld a, b
+    call FoePtr
+    inc hl
+    inc hl                      ; FO_HP
+    ld a, [hl]
+    and a, a
+    jr z, .pafter               ; dead -> its slot stays blank
+    ld a, b
+    push bc
+    call PaintFoe
+    pop bc
+.pafter:
+    ld a, b
+    and a, a
+    jr nz, .pf
+    xor a, a
+    ldh [rVBK], a
+    ret
+
+; PaintFoe: A = foe index. Writes its scaled tile block into the tilemap (bank 0),
+; the palette+flip attributes (bank 1, CGB), and a 1-cell HP pip above its head.
+; The walk shuffle mirrors the block on wFoeFlip (reversed columns + XFLIP).
+PaintFoe:
+    push af                     ; index
+    call FoePtr
+    ld a, [hl]                  ; FO_TYPE
+    and 1
+    add a, PAL_BG_FOE0
+    ld [wFoePalTmp], a          ; foe palette (5 or 6)
+    ; HP pip level = HP * 8 / MAXHP (0..8) via the shared HP-bar helper >> 3
+    inc hl                      ; FO_MAXHP
+    ld a, [hl+]
+    ld c, a                     ; C = MAXHP
+    ld a, [hl]                  ; FO_HP
+    call BarSub                 ; A = HP * 64 / MAXHP
+    srl a
+    srl a
+    srl a                       ; >> 3 -> 0..8
+    ld [wFoePipLvl], a
+    pop af
+    call ComputeFoeBox          ; wFoeB* + wFoeBOff
+
+    ; --- tile ids (bank 0) ---
+    xor a, a
+    ldh [rVBK], a
+    ld a, [wFoeBR]              ; dest = _SCRN1 + BR*32 + BC
+    ld l, a
+    ld h, 0
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl                  ; BR * 32
+    ld a, [wFoeBC]
+    ld e, a
+    ld d, 0
+    add hl, de
+    ld de, _SCRN1
+    add hl, de                  ; HL = top-left dest cell
+    ld a, [wFoeBOff]
+    add a, FOE_ATLAS_BASE
+    ld c, a                     ; C = current source tile id (row-major)
+    ld a, [wFoeBH]
+    ld b, a                     ; B = rows left
+.trow:
+    push hl
+    push bc
+    ld a, [wFoeFlip]
+    and a, a
+    jr z, .fwd
+    ; mirrored: fill columns right-to-left
+    ld a, [wFoeBW]
+    ld e, a
+    dec a
+    add a, l                    ; HL += (W-1) : write from the right end
+    ld l, a
+    ld a, h
+    adc a, 0
+    ld h, a
+.mloop:
+    ld a, c
+    ld [hl-], a
+    inc c
+    dec e
+    jr nz, .mloop
+    jr .rowdone
+.fwd:
+    ld a, [wFoeBW]
+    ld e, a
+.floop:
+    ld a, c
+    ld [hl+], a
+    inc c
+    dec e
+    jr nz, .floop
+.rowdone:
+    pop bc
+    ld a, [wFoeBW]
+    add a, c
+    ld c, a                     ; advance source tile id one row
+    pop hl
+    ld de, 32
+    add hl, de
+    dec b
+    jr nz, .trow
+
+    ; --- attributes (bank 1, CGB) : palette (+ XFLIP when mirrored) ---
+    ldh a, [hIsCGB]
+    and a, a
+    jr z, .pip
+    ld a, 1
+    ldh [rVBK], a
+    ld a, [wFoePalTmp]
+    ld c, a                     ; C = palette
+    ld a, [wFoeFlip]
+    and a, a
+    jr z, .noflip
+    ld a, c
+    or OAMF_XFLIP               ; attr bit 5 = X flip (BG attr uses the same bit)
+    ld c, a
+.noflip:
+    ld a, [wFoeBR]
+    ld l, a
+    ld h, 0
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl                  ; BR * 32
+    ld a, [wFoeBC]
+    ld e, a
+    ld d, 0
+    add hl, de
+    ld de, _SCRN1
+    add hl, de
+    ld a, [wFoeBH]
+    ld b, a
+.arow:
+    push hl
+    ld a, [wFoeBW]
+    ld e, a
+.acol:
+    ld [hl], c
+    inc hl
+    dec e
+    jr nz, .acol
+    pop hl
+    ld de, 32
+    add hl, de
+    dec b
+    jr nz, .arow
+    xor a, a
+    ldh [rVBK], a
+
+.pip:
+    ; HP pip: a 1-cell bar (TILE_BAR_BASE + level) in the row above the foe, at
+    ; its centre column. Tile ids -> bank 0; the pip keeps the arena's UI palette.
+    xor a, a
+    ldh [rVBK], a
+    ld a, [wFoeBR]             ; row above the block
+    dec a
+    ld l, a
+    ld h, 0
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl                  ; (BR-1) * 32
+    ld a, [wFoeBW]
+    srl a                       ; W / 2
+    ld d, 0
+    ld e, a
+    add hl, de
+    ld a, [wFoeBC]
+    ld e, a
+    add hl, de                  ; + BC + W/2 (centre column)
+    ld de, _SCRN1
+    add hl, de
+    ld a, [wFoePipLvl]
+    add a, TILE_BAR_BASE
+    ld [hl], a
+    ; pip attribute -> the UI palette (CGB), so it reads as the grey meter tile
+    ldh a, [hIsCGB]
+    and a, a
+    ret z
+    ld a, 1
+    ldh [rVBK], a
+    ld a, PAL_BG_UI
+    ld [hl], a
+    xor a, a
+    ldh [rVBK], a
+    ret
+
+FoePalettes:                    ; slots 5/6, index 0 = arena paper (no halo)
+    ; RED zombie (slot 5)
+    dw (26 << 10) | (30 << 5) | 31   ; 0 paper
+    dw ( 2 << 10) | ( 2 << 5) |  9   ; 1 dark red (outline)
+    dw ( 6 << 10) | ( 7 << 5) | 21   ; 2 rotten red (flesh)
+    dw (20 << 10) | (24 << 5) | 30   ; 3 pale (teeth/eye glint)
+    ; BLUE zombie (slot 6)
+    dw (26 << 10) | (30 << 5) | 31   ; 0 paper
+    dw (10 << 10) | ( 3 << 5) |  3   ; 1 dark blue
+    dw (20 << 10) | (14 << 5) |  8   ; 2 blue-grey flesh
+    dw (26 << 10) | (26 << 5) | 28   ; 3 pale

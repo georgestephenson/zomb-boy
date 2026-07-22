@@ -709,27 +709,16 @@ DEF BO_WIN         EQU 1
 DEF BO_LOSE        EQU 2
 DEF BO_FLEE        EQU 3
 
-; Enemy portrait source kind (wBattleEKind): reuse either portrait table.
-DEF EPK_ZOMBIE     EQU 0           ; ZombiePortraitTable[idx] (+ ZombieTable stats)
+; Enemy kind (wBattleEKind): a zombie pack (drawn as the approaching-sprite
+; arena) or a lone hostile survivor (drawn as its persona portrait).
+DEF EPK_ZOMBIE     EQU 0           ; ZombieTable stats + the scaled-sprite arena
 DEF EPK_PERSONA    EQU 1           ; PortraitTable[idx] (hostile survivor)
 
-; Crosshair minigame: wCrossX sweeps 0..CROSS_MAX over the 16-cell (128 px)
-; target bar. Zones by distance from centre (matches the ZoneBar tile layout):
-;   |x-64| <  GREEN_HALF -> green (crit), <  AMBER_HALF -> amber (hit), else red.
-DEF CROSS_MAX      EQU 127         ; bar is 128 px wide (16 cells * 8)
-DEF CROSS_CENTRE   EQU 64
-DEF GREEN_HALF     EQU 8           ; 16 px crit zone (cells 7-8)
-DEF AMBER_HALF     EQU 40          ; 80 px hit band (cells 3-12)
-DEF CROSS_SPEED    EQU 3           ; px/frame sweep (higher = harder)
-DEF ZONE_MISS      EQU 0
-DEF ZONE_HIT       EQU 1
-DEF ZONE_CRIT      EQU 2
-; Bar geometry on SCRN1: 16 cells centred on row 16, cols 2..17.
-DEF ZONE_ROW       EQU 16
-DEF ZONE_COL0      EQU 2
-DEF ZONE_CELLS     EQU 16
-DEF CROSS_OAM_X0   EQU ZONE_COL0 * 8 + 8   ; OAM X at wCrossX=0 (BG px + 8 offset)
-DEF CROSS_OAM_Y    EQU ZONE_ROW * 8 + 12   ; hovers just over the bar
+; The crosshair (slice 2) hit-tests the drawn foes; a shot lands in one of three
+; zones (see PointInBox / ResolveAimZombie): empty air, a body cell, a head cell.
+DEF ZONE_MISS      EQU 0           ; crosshair over no foe
+DEF ZONE_HIT       EQU 1           ; over a foe's body -> a plain hit
+DEF ZONE_CRIT      EQU 2           ; over a foe's head band -> a critical
 
 ; Player combat stats (fixed in v0; the equip/loadout menu is LATER). HP is the
 ; persistent survival meter wHP (0..METER_MAX). ATK/DEF scale the damage formula.
@@ -766,7 +755,7 @@ DEF ZO_MAXHP       EQU 0
 DEF ZO_ATK         EQU 1
 DEF ZO_DEF         EQU 2
 DEF ZO_SPD         EQU 3
-DEF ZO_PORT        EQU 4           ; portrait index (into ZombiePortraitTable)
+DEF ZO_PORT        EQU 4           ; vestigial (zombie portraits scrapped for the arena)
 DEF ZO_NAME        EQU 5           ; dw -> 0-terminated name string
 ; Zombie type ids (docs/design/04 §5). v0 ships art+stats for RED/BLUE; the six
 ; others (GREEN/FIRE/POISON/SPEEDER/GIANT/BEHEMOTH) are LATER data rows.
@@ -791,5 +780,43 @@ DEF SK_HEAL        EQU 0           ; restore HP (Bandage)
 DEF SK_AIMED       EQU 1           ; guaranteed crit-strength hit (Aimed Shot)
 
 DEF BATTLEQ_CAP    EQU 24          ; battle VRAM write queue (3 bytes each)
+
+; --- Battle slice 2: approaching-zombie arena + free-moving crosshair --------
+; Up to MAX_FOES zombies shuffle toward the player through the battle HUD, drawn
+; as BACKGROUND tiles — four 28x56-px sprites would need ~112 hardware sprites,
+; far past the 40-OAM / 10-per-scanline limit (exactly why the scrapped enemy
+; portrait was a BG block too). One silhouette is downscaled to FOE_TIER_COUNT
+; size tiers (battle_zombie_data.asm); a foe grows a tier each enemy turn until
+; it reaches melee (FOE_TIER_MAX), then bites the player each turn like before.
+DEF MAX_FOES        EQU 4
+; Per-foe record (wFoes[]): interleaved so one index scales the whole row.
+DEF FOE_STRUCT      EQU 8
+DEF FO_TYPE         EQU 0          ; ZTYPE_* (BG palette tint)
+DEF FO_MAXHP        EQU 1
+DEF FO_HP           EQU 2          ; 0 = dead (its slot goes blank)
+DEF FO_ATK          EQU 3
+DEF FO_DEF          EQU 4
+DEF FO_TIER         EQU 5          ; 0..FOE_TIER_MAX (size + distance)
+DEF FOE_TIER_COUNT  EQU 6
+DEF FOE_TIER_MAX    EQU FOE_TIER_COUNT - 1     ; 5: at full size a zombie attacks
+DEF FOE_ATLAS_BASE  EQU PORTRAIT_TILE_BASE     ; 64: the VRAM ids the portrait freed
+DEF FOE_ATLAS_TILES EQU 60                      ; atlas size (gen-battle-zombies.py)
+DEF FOE_GROUND_ROW  EQU 8                       ; SCRN1 row the zombies' feet rest on
+DEF FOE_ARENA_TOP   EQU 1                       ; arena = rows 1..8 (cleared on redraw)
+DEF FOE_FLIP_FRAMES EQU 20                      ; frames between walk-shuffle mirrors
+DEF PAL_BG_FOE0     EQU 5                        ; foe BG tints: RED -> 5, BLUE -> 6
+DEF PAL_BG_FOE1     EQU 6                        ; (index 0 = arena paper -> no halo)
+; The free crosshair replaces the horizontal red/amber/green zone bar: it orbits
+; the arena in a circle or figure-eight; A locks and hit-tests the on-screen
+; foes — a body cell is a HIT, a head cell (the tier's top band) a CRIT, empty
+; air a MISS (ZONE_MISS/HIT/CRIT reused).
+DEF CROSS_CX        EQU 76                       ; orbit centre, screen px
+DEF CROSS_CY        EQU 34
+DEF CROSS_RX        EQU 52                       ; orbit radii
+DEF CROSS_RY        EQU 24
+DEF CROSS_PSTEP     EQU 3                         ; phase advance/frame (orbit speed)
+DEF CROSS_SINLEN    EQU 64                        ; sine LUT length (power of 2)
+DEF PAT_CIRCLE      EQU 0
+DEF PAT_FIGURE8     EQU 1
 
 ENDC

@@ -2,9 +2,10 @@
 ; battle_data.asm — weapon / skill / zombie-type tables (docs/design/04).
 ;
 ; Small, additive data rows: a new weapon, skill or zombie type is one more
-; record here (and, for a zombie, a portrait + a ZombiePortraitTable entry) —
-; the combat engine in battle.asm never changes. Each table is a list of `dw`
-; pointers to fixed-layout records (offsets in constants.inc: WO_*/SO_*/ZO_*).
+; record here — the combat engine in battle.asm never changes. Each table is a
+; list of `dw` pointers to fixed-layout records (offsets in constants.inc:
+; WO_*/SO_*/ZO_*). Zombie foes are drawn as the shared approaching-sprite arena
+; (battle_zombie_data.asm), tinted by type, so a type is just stats now.
 ;
 ; ROMX BANK[1] — the default-mapped bank (shared with song + dialogue data),
 ; read only while battle.asm runs. The enemy-portrait load (battle.asm) switches
@@ -57,9 +58,9 @@ SklName_Bandage: db "BANDAGE", 0
 SklName_Aimed:   db "AIMED", 0
 
 ; --- Zombie types ------------------------------------------------------------
-; v0 ships RED (slow bruiser) and BLUE (fast, fragile). ZO_PORT indexes
-; ZombiePortraitTable (portrait_data.asm). The other six design types are LATER
-; rows — each just stats + art, no engine change.
+; v0 ships RED (slow bruiser) and BLUE (fast, fragile). ZO_PORT is vestigial (the
+; portrait was scrapped for the arena sprites); the arena tints a foe by type via
+; its BG palette. The other six design types are LATER rows — just stats.
 ZombieTable::
     dw Zmb_Red
     dw Zmb_Blue
@@ -68,14 +69,14 @@ Zmb_Red:                            ; tanky, hits hard, slow
     db 11                           ; ZO_ATK
     db 6                            ; ZO_DEF
     db 3                            ; ZO_SPD
-    db 0                            ; ZO_PORT (ZombiePortraitTable[0] = red)
+    db 0                            ; ZO_PORT (vestigial)
     dw ZmbName_Red                  ; ZO_NAME
 Zmb_Blue:                           ; quick, light, low defence
     db 30
     db 8
     db 2
     db 7
-    db 1                            ; ZombiePortraitTable[1] = blue
+    db 1                            ; ZO_PORT (vestigial)
     dw ZmbName_Blue
 ZmbName_Red:  db "RED ZOMBIE", 0
 ZmbName_Blue: db "BLUE ZOMBIE", 0

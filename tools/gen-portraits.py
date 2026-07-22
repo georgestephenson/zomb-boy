@@ -40,14 +40,9 @@ PERSONA_ART = {
 }
 PERSONA_COUNT = 10
 
-# zombie type id (constants.inc ZTYPE_*) -> img/portrait/<name>.png. Shown as the
-# enemy portrait on the battle screen (battle.asm) via the SAME descriptor format
-# and VRAM path as a persona portrait. Only the types with art are listed; the
-# other design types (Green/Fire/Poison/Speeder/Giant/Behemoth) are LATER.
-ZOMBIE_ART = {
-    0: "red",   # ZTYPE_RED
-    1: "blue",  # ZTYPE_BLUE
-}
+# Zombie battle foes no longer use portraits — battle slice 2 draws them as the
+# approaching-sprite arena (src/battle_zombie_data.asm, gen-battle-zombies.py),
+# so only survivor personas have portrait art here.
 
 NUM_PALS = 3          # BG palette slots 5/6/7
 TILES = 7             # 7x7 tiles = 56x56 px
@@ -196,10 +191,7 @@ def emit(f, name, pals, labels, tile_idx):
 def main():
     missing = [i for i in range(PERSONA_COUNT) if i not in PERSONA_ART]
     assert not missing, f"personas without art (no fallback exists): {missing}"
-    ZOMBIE_COUNT = len(ZOMBIE_ART)
-    zmissing = [i for i in range(ZOMBIE_COUNT) if i not in ZOMBIE_ART]
-    assert not zmissing, f"zombie types without art (no fallback exists): {zmissing}"
-    names = sorted(set(PERSONA_ART.values()) | set(ZOMBIE_ART.values()))
+    names = sorted(set(PERSONA_ART.values()))
     portraits = {n: build_portrait(n) for n in names}
     with open(OUT, "w") as f:
         f.write("; =============================================================================\n")
@@ -219,11 +211,6 @@ def main():
         f.write("PortraitTable::\n")
         for i in range(PERSONA_COUNT):
             f.write(f"    dw Portrait_{PERSONA_ART[i]}\n")
-        f.write("\n")
-        f.write("; ZombiePortraitTable[ztype] -> descriptor (battle.asm enemy art).\n")
-        f.write("ZombiePortraitTable::\n")
-        for i in range(ZOMBIE_COUNT):
-            f.write(f"    dw Portrait_{ZOMBIE_ART[i]}\n")
         f.write("\n")
         for name, (pals, labels, tile_idx) in portraits.items():
             emit(f, name, pals, labels, tile_idx)

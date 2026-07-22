@@ -282,6 +282,7 @@ MainLoop:
     ld a, HIGH(wShadowOAM)
     call hOAMDMA
     call DrainBattleQ
+    call DrawArena                  ; repaint the approaching foes if dirty (VBlank)
 .battleDone:
     ld a, 1                         ; restore the default bank for the next frame
     ld [rROMB0], a

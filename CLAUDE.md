@@ -30,6 +30,7 @@ make shot       # boot headless + screenshot to build/play/
 make clean      # remove build/ ; make distclean also removes .tools/
 python3 test/model/worldgen_model.py   # reference-model check for the generator
 python3 tools/export-tiles.py          # src/gfx.asm tile art -> img/tiles.png (edit in a pixel editor)
+python3 tools/gen-battle-zombies.py    # regen the battle scale-sprite atlas + crosshair paths -> src/battle_zombie_data.asm
 python3 tools/import-tiles.py          # img/tiles.png -> src/gfx.asm (round-trips losslessly)
 ```
 
@@ -101,7 +102,9 @@ Modules (all `.asm` under `src/` are separately assembled, then linked — there
 | `anim.asm` | Living-world tile-art animation: water shimmer, tree sway, brush rustle, house-door open/close (shared-tile-art swaps; no map/OAM changes) |
 | `hud.asm` | Window-layer status bar (HP/food/energy/clock) + the survival tick |
 | `daynight.asm` | Time-of-day palette tint: re-shades the four terrain BG palettes to the clock (CGB only), rewriting palette RAM in VBlank on a bucket change |
-| `battle.asm` | Placeholder battle transition (flash) |
+| `battle.asm` | Turn-based combat (MODE_BATTLE): up to four zombies approach as scaled BG sprites + a free crosshair; menu/turn engine, damage, win/lose/flee |
+| `battle_data.asm` | Weapon / skill / zombie-type stat tables (ROMX, in the battle bank) |
+| `battle_zombie_data.asm` | GENERATED: the approaching-zombie scale-tier atlas + crosshair orbit paths (`tools/gen-battle-zombies.py`) |
 | `menu.asm` | START pause menu (MODE_MENU): party/equip/bag/status/save/options/exit |
 | `items.asm` | Item database (type + name tables) + inventory helpers (party/bag init) |
 | `loot.asm` | World loot: dynamic pickup/container pool (reuses the entity struct + spawn manager); biome-flavoured kinds, food-eat + breakable-container interaction |
@@ -177,6 +180,54 @@ scroll updates — so there's no seam or one-frame latency.
   branch, where bank 1 is mapped (`UpdateSound` restores it every frame), and every
   routine it calls is exported ROM0 or ROM0, reachable regardless of the mapped
   ROMX bank. New alert/combat code should go here, not ROM0.
+
+### Battle (battle.asm, MODE_BATTLE, docs/design/04)
+- **A zombie's LOS charge (or a hostile-survivor talk outcome) enters MODE_BATTLE**:
+  a full-screen UI on SCRN1 (like talk/menu — the overworld map on SCRN0 is
+  untouched, so exit is an LCDC flip). Two entry points, one engine:
+  `EnterBattleZombie` (a pool zombie; `wBattleFoe` = its index, despawned on a
+  win) and `EnterBattleSurvivor` (a persona; `wBattleFoe` = `$FF`). Both are ROM0
+  trampolines that map the floating **battle bank** (ROM0 and bank 1 are full) and
+  restore bank 1 for the caller; the engine + its data + `battle_zombie_data.asm`
+  all share that one `FRAGMENT "Battle"` bank so it reads its tables without
+  switching.
+- **Up to `MAX_FOES` (4) zombies approach as scaled BG sprites — NOT OBJ sprites.**
+  Four 28×56-px zombies would need ~112 hardware sprites (past the 40-OAM /
+  10-per-scanline limit), so foes are drawn into the SCRN1 tilemap arena (rows
+  1..8), exactly like the scrapped enemy portrait was a BG block. One silhouette
+  is downscaled to `FOE_TIER_COUNT` (6) size tiers by `tools/gen-battle-zombies.py`
+  → `BattleZombieTiles` (a 60-tile atlas that fits the VRAM gap the portrait
+  vacated, `FOE_ATLAS_BASE` = 64) + `BattleZombieTiers` (per-tier {w,h,headrows,
+  offset}). All foes (and both types) share the ONE atlas, tinted by BG palette
+  (`PAL_BG_FOE0/1`, index 0 = arena paper so partial tiles have no halo). A foe is
+  a `FOE_STRUCT` (8-byte) record in `wFoes[]` ({type,maxhp,hp,atk,def,tier}); the
+  wEnemy* scratch mirrors the TARGETED foe for the HP bar + the poison test.
+- **Foes are drawn by `DrawArena` (VBlank, when `wArenaDirty`)**: it clears the
+  arena band to paper (bank 0 tile ids) then paints living foes far→near
+  (`PaintFoe`) so nearer/bigger ones occlude — plus a 1-cell HP pip above each and
+  the palette+flip attributes (bank 1, CGB). The **walk shuffle** is a whole-block
+  horizontal mirror (reversed columns + `OAMF_XFLIP` in the BG attribute) toggled
+  by `TickArenaAnim` every `FOE_FLIP_FRAMES`; DMG (no BG flip / per-cell palette)
+  shows static grey foes — that's inherent, like the rest of the engine.
+- **The free crosshair replaces the red/amber/green zone bar** (scrapped). It
+  orbits the arena in a circle or figure-eight (`CrossPathCircle`/`CrossPathFig8`,
+  precomputed by the tool so there's no runtime trig), advanced by `MoveCrosshair`.
+  A locks and `ResolveAimZombie` → `HitTestCrosshair`/`PointInBox` tests the
+  crosshair against each foe's on-screen box: a **body cell = HIT**, a **head-band
+  cell (`headrows`) = CRIT**, empty air = MISS (`ZONE_*` reused). `.aim` checks A
+  **before** stepping the crosshair, so the lock uses exactly the shown position
+  (and a test can pin `wCrossX/Y`, press A).
+- **Turn flow (mostly the slice-1 engine, kept):** BS_MENU → Fight → weapon
+  (crosshair) / skill; `BattleFoesTurn` is the enemy turn — each living foe below
+  `FOE_TIER_MAX` shuffles **one tier closer**, and any at melee (`FOE_TIER_MAX`,
+  or ANY survivor foe) **bites** (`enemy_attack`, summed in `wBiteAcc` because
+  `FoePtr` clobbers DE). Win = all foes dead (despawn the spotter + a grace
+  period); lose = `wHP` 0; flee = chance-based. `test/model/combat_model.py`
+  models the damage/zone math; `test/integration/test_battle.py` drives the whole
+  loop (pinning the crosshair onto a foe's body/head via a lockstep tier table).
+- **Zombie portraits were scrapped** (the old `ZombiePortraitTable` + red/blue
+  portrait art): `ShowEnemyPortrait` now only serves the survivor (persona) path;
+  `ZO_PORT` in the zombie table is vestigial.
 
 ### Dynamic spawning (entity.asm `UpdateSpawns` / npc.asm `SpawnNPC`)
 - **Encounters are procedural, not fixed.** `InitZombies`/`InitNPCs` still seed a
