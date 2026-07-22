@@ -108,6 +108,12 @@ InitZombies::
 ; On the first detection, switches to MODE_ALERT and stops.
 ; -----------------------------------------------------------------------------
 UpdateZombies::
+    ld a, [wAlertGrace]         ; a fresh battle exit suppresses re-alerts briefly
+    and a, a
+    jr z, .noGrace
+    dec a
+    ld [wAlertGrace], a
+.noGrace:
     xor a, a
     ld [wZombIdx], a
 .loop:
@@ -121,7 +127,11 @@ UpdateZombies::
     call UpdateZombieAI
     call CheckLOS
     and a, a
-    jr nz, .detected
+    jr z, .store
+    ld a, [wAlertGrace]         ; seen — but honour the post-battle grace period
+    and a, a
+    jr z, .detected
+.store:
     ld a, [wZombIdx]
     call CopyEntityOut
 .next:
@@ -1219,11 +1229,9 @@ UpdateAlert::
     ld a, [wAlertZombie]
     jp CopyEntityOut            ; tail call
 .battle:
-    xor a, a
-    ld [wEnt + EO_ACTIVE], a    ; placeholder: zombie is "defeated" and removed
     ld a, [wAlertZombie]
-    call CopyEntityOut
-    call BattleTransition       ; TODO: real combat replaces this flash
-    ld a, MODE_OVERWORLD
-    ld [wGameMode], a
-    ret
+    call CopyEntityOut          ; persist the zombie — a win despawns it, not sight
+    ld a, [wAlertZombie]
+    ld [wBattleFoe], a          ; battle.asm removes it from the pool only on a win
+    and 1                       ; v0 enemy type: RED/BLUE alternate by pool index
+    jp EnterBattleZombie        ; ROM0; sets MODE_BATTLE and presents its own frame

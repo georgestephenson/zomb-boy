@@ -29,6 +29,7 @@ fi
 echo "== reference-model checks =="
 "$PY" "$ROOT/test/model/worldgen_model.py"
 "$PY" "$ROOT/test/model/dialogue_bounds.py"
+"$PY" "$ROOT/test/model/combat_model.py"
 
 # SameBoy accuracy smoke (CGB + true DMG mode), when the tester is installed.
 # Opportunistic here so plain `make test` stays light on a fresh clone; CI and

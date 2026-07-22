@@ -1,4 +1,4 @@
-"""Start menu (menu.asm) — the Pokemon-style pause menu.
+"""Start menu (menu.asm) — the monster-battler-style pause menu.
 
 Opening it (START) pauses the game and shows a full-screen panel on SCRN1; the
 root list navigates to Party/Equip/Bag/Status/Save/Options and EXIT soft-resets

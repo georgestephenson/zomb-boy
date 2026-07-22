@@ -189,6 +189,7 @@ DEF OAM_BUBBLE     EQU 9           ; the alert bubble
 DEF MODE_OVERWORLD EQU 0
 DEF MODE_ALERT     EQU 1           ; "!" showing, about to battle
 DEF MODE_TALK      EQU 2           ; survivor dialogue screen (talk.asm)
+DEF MODE_BATTLE    EQU 4           ; turn-based combat screen (battle.asm)
 
 ; --- Survivor NPCs (docs/design/05) -----------------------------------------
 DEF MAX_NPCS       EQU 10          ; one of each persona, placed near the start
@@ -563,7 +564,7 @@ DEF CAR_MIN_DIST    EQU 6          ; nearest a road-spawn can land (Chebyshev)
 DEF CAR_DIST_MASK   EQU 15         ; primary-axis spread (magnitude 6..21)
 DEF CAR_SPAWN_TRIES EQU 48         ; random anchors tried before the fallback
 
-; --- Start menu (menu.asm, Pokemon-style pause menu) ------------------------
+; --- Start menu (menu.asm, monster-battler-style pause menu) ------------------------
 ; START in the overworld opens a full-screen menu on SCRN1 (like the talk
 ; screen). The game is paused: the menu is its own main-loop branch, so the
 ; survival clock/meters (which only tick in the overworld branch) freeze while
@@ -673,7 +674,7 @@ DEF TRK_COUNT      EQU TRK_TALK_0 + PERSONA_COUNT      ; title + 8 world + N tal
 ; writes, triggered instantly. The music driver re-owns the channel on its next
 ; tick, so an SFX is a brief attack over the music (the same channel-borrowing
 ; trick as PlaySplash). Ids index SFXTable.
-DEF SFX_BUMP       EQU 0           ; walked into a wall / solid object (Pokemon-style)
+DEF SFX_BUMP       EQU 0           ; walked into a wall / solid object (monster-battler-style)
 DEF SFX_MOVE       EQU 1           ; menu / dialogue cursor moved
 DEF SFX_CONFIRM    EQU 2           ; selected a menu / dialogue option (A)
 DEF SFX_CANCEL     EQU 3           ; backed out (B) — reserved, see MenuSFX
@@ -685,5 +686,110 @@ DEF SFX_COUNT      EQU 8
 ; While the player holds a direction into a wall the bump SFX repeats on this
 ; cadence (frames) instead of every frame; a fresh bump (counter at 0) is instant.
 DEF BUMP_COOLDOWN  EQU 20
+
+; --- Combat (battle.asm / battle_data.asm, docs/design/04) -------------------
+; Turn-based encounter on SCRN1, built like the talk screen. Reached from a
+; zombie's line-of-sight (entity.asm) OR a hostile-survivor talk outcome
+; (talk.asm) — the SAME engine, differing only in the enemy descriptor.
+
+; Battle state machine (wBattleState)
+DEF BS_MENU        EQU 0           ; picking Fight/Party/Item/Flee (or a submenu)
+DEF BS_AIM         EQU 1           ; crosshair sweeping the target bar
+DEF BS_MSG         EQU 2           ; a line is up, waiting for A
+DEF BS_ENEMY       EQU 3           ; transient: enemy takes its turn
+DEF BS_END         EQU 4           ; leaving (win/lose/flee)
+
+; Which menu is on screen (wBattleMenu)
+DEF BM_MAIN        EQU 0           ; Fight | Party | Item | Flee
+DEF BM_FIGHT       EQU 1           ; Weapon1 | Weapon2 | Skill1 | Skill2
+
+; Battle outcomes (wBattleOutcome)
+DEF BO_ONGOING     EQU 0
+DEF BO_WIN         EQU 1
+DEF BO_LOSE        EQU 2
+DEF BO_FLEE        EQU 3
+
+; Enemy portrait source kind (wBattleEKind): reuse either portrait table.
+DEF EPK_ZOMBIE     EQU 0           ; ZombiePortraitTable[idx] (+ ZombieTable stats)
+DEF EPK_PERSONA    EQU 1           ; PortraitTable[idx] (hostile survivor)
+
+; Crosshair minigame: wCrossX sweeps 0..CROSS_MAX over the 16-cell (128 px)
+; target bar. Zones by distance from centre (matches the ZoneBar tile layout):
+;   |x-64| <  GREEN_HALF -> green (crit), <  AMBER_HALF -> amber (hit), else red.
+DEF CROSS_MAX      EQU 127         ; bar is 128 px wide (16 cells * 8)
+DEF CROSS_CENTRE   EQU 64
+DEF GREEN_HALF     EQU 8           ; 16 px crit zone (cells 7-8)
+DEF AMBER_HALF     EQU 40          ; 80 px hit band (cells 3-12)
+DEF CROSS_SPEED    EQU 3           ; px/frame sweep (higher = harder)
+DEF ZONE_MISS      EQU 0
+DEF ZONE_HIT       EQU 1
+DEF ZONE_CRIT      EQU 2
+; Bar geometry on SCRN1: 16 cells centred on row 16, cols 2..17.
+DEF ZONE_ROW       EQU 16
+DEF ZONE_COL0      EQU 2
+DEF ZONE_CELLS     EQU 16
+DEF CROSS_OAM_X0   EQU ZONE_COL0 * 8 + 8   ; OAM X at wCrossX=0 (BG px + 8 offset)
+DEF CROSS_OAM_Y    EQU ZONE_ROW * 8 + 12   ; hovers just over the bar
+
+; Player combat stats (fixed in v0; the equip/loadout menu is LATER). HP is the
+; persistent survival meter wHP (0..METER_MAX). ATK/DEF scale the damage formula.
+DEF PLAYER_ATK     EQU 12
+DEF PLAYER_DEF     EQU 6
+DEF DMG_SHIFT      EQU 2           ; ATK/DEF divided by 4 (>>2) in the formula
+DEF FLEE_CHANCE    EQU 128         ; Rand&255 < this -> escape (~50%)
+
+; Battle UI tiles: appended to PersonaTiles after the loot/smoke block (LoadTiles
+; streams them too), so ids continue past TILE_SMOKE (car = CAR_BASE+0..7, loot =
+; +8..12, smoke = +13), landing at CAR_BASE+14.. (= 225.. with 10 personas).
+DEF TILE_ZONE_RED   EQU TILE_SMOKE + 1      ; solid crit-bar red (miss zone)
+DEF TILE_ZONE_AMBER EQU TILE_SMOKE + 2      ; amber (hit zone)
+DEF TILE_ZONE_GREEN EQU TILE_SMOKE + 3      ; green (crit zone)
+DEF TILE_CROSSHAIR  EQU TILE_SMOKE + 4      ; OBJ crosshair marker
+DEF TILE_BATTLE_END EQU TILE_SMOKE + 5      ; one past the last battle tile
+
+DEF PAL_BG_ZONE    EQU 3           ; terrain slot borrowed for the zone bar
+                                   ; (LoadPalettes restores it on exit)
+DEF PAL_OBJ_CROSS  EQU 2           ; the bright bubble/cursor OBJ palette
+
+; Battle screen layout on SCRN1 (enemy on top, message box on the bottom).
+DEF EN_NAME_ROW    EQU 0           ; enemy name plate
+DEF EN_HP_ROW      EQU 1           ; enemy HP: glyph + 8-cell bar (cols 0..8)
+DEF PL_HP_ROW      EQU 9           ; player HP bar, same shape, bottom-left
+DEF BHP_GLYPH_COL  EQU 0
+DEF BHP_BAR_COL    EQU 1           ; 8 cells 1..8 (portrait frame starts col 11)
+DEF BOX_TXT_ROW0   EQU 12          ; message / menu text rows 12 & 14 (as talk)
+DEF BOX_TXT_COL0   EQU 1
+DEF BATTLE_BOX_CELLS EQU TALK_COLS * 2   ; 2 rows x 18 paint buffer
+
+; Enemy descriptor row (ZombieTable in battle_data.asm), 7 bytes:
+DEF ZO_MAXHP       EQU 0
+DEF ZO_ATK         EQU 1
+DEF ZO_DEF         EQU 2
+DEF ZO_SPD         EQU 3
+DEF ZO_PORT        EQU 4           ; portrait index (into ZombiePortraitTable)
+DEF ZO_NAME        EQU 5           ; dw -> 0-terminated name string
+; Zombie type ids (docs/design/04 §5). v0 ships art+stats for RED/BLUE; the six
+; others (GREEN/FIRE/POISON/SPEEDER/GIANT/BEHEMOTH) are LATER data rows.
+DEF ZTYPE_RED      EQU 0
+DEF ZTYPE_BLUE     EQU 1
+DEF ZTYPE_COUNT    EQU 2
+
+; Weapon record (WeaponTable, pointer table -> records), fixed offsets:
+DEF WO_DMG         EQU 0           ; base damage
+DEF WO_CRIT        EQU 1           ; extra damage on a green (crit) lock
+DEF WO_SPD         EQU 2           ; priority (LATER: turn order); v0 unused
+DEF WO_NAME        EQU 3           ; dw -> name
+DEF WEAPON_COUNT   EQU 2
+
+; Skill record (SkillTable), fixed offsets:
+DEF SO_KIND        EQU 0           ; SK_*
+DEF SO_POWER       EQU 1           ; heal amount / bonus damage
+DEF SO_CD          EQU 2           ; cooldown in player turns
+DEF SO_NAME        EQU 3           ; dw -> name
+DEF SKILL_COUNT    EQU 2
+DEF SK_HEAL        EQU 0           ; restore HP (Bandage)
+DEF SK_AIMED       EQU 1           ; guaranteed crit-strength hit (Aimed Shot)
+
+DEF BATTLEQ_CAP    EQU 24          ; battle VRAM write queue (3 bytes each)
 
 ENDC

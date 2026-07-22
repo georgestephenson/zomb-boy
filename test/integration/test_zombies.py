@@ -8,7 +8,7 @@ EO_ACTIVE, EO_WXLO, EO_WYLO, EO_FACING, EO_DIR, EO_TIMER = 0, 1, 3, 5, 6, 8
 EO_SLIDE, EO_SLIDEDIR = 11, 12
 MAX_ZOMBIES, MAX_NPCS, MAX_LOOT = 8, 10, 8
 EFACE_LEFT = 2
-MODE_OVERWORLD, MODE_ALERT = 0, 1
+MODE_OVERWORLD, MODE_ALERT, MODE_BATTLE = 0, 1, 4
 
 
 def _ent(game, i, off):
@@ -220,13 +220,15 @@ def test_zombie_charges_the_player_then_battles():
         assert zx_mid < zx0, "zombie did not advance toward the player"
         assert g.r16("wPlayerWX") == px0 and g.r16("wPlayerWY") == py0, \
             "player moved during the charge (should be frozen)"
-        # let it reach the player and run the (placeholder) battle; the charge
-        # exits alert mode only via the battle, so OVERWORLD again == it resolved
+        # let it reach the player; the charge exits alert mode only INTO combat
+        # (MODE_BATTLE now — real combat, not the old flash). The zombie stays in
+        # the pool as the battle foe and is removed only on a win (see test_battle).
         resolved = False
         for _ in range(240):
             g.tick(1)
-            if g.r8("wGameMode") == MODE_OVERWORLD:
-                assert _ent(g, 0, EO_ACTIVE) == 0, "battle should remove the zombie"
+            if g.r8("wGameMode") == MODE_BATTLE:
+                assert g.r8("wBattleFoe") == 0, "the charging zombie should be the foe"
+                assert _ent(g, 0, EO_ACTIVE) == 1, "foe stays in the pool until a win"
                 resolved = True
                 break
         assert resolved, "charge never reached the player / resolved into a battle"
@@ -302,7 +304,7 @@ def test_no_walk_through_when_spotted_mid_step():
             g.tick(1)
             z = (_ent16(g, 0, EO_WXLO), _ent16(g, 0, EO_WYLO))
             assert z != seen, "zombie walked onto/through the player's tile"
-            if g.r8("wGameMode") == MODE_OVERWORLD:
+            if g.r8("wGameMode") == MODE_BATTLE:
                 resolved = True
                 break
         assert resolved, "charge never resolved into a battle"

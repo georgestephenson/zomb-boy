@@ -145,7 +145,7 @@ scroll updates — so there's no seam or one-frame latency.
   * the player's **`wSeenWX/WY`** — its arrived tile, updated only when a step
     **completes** (`SyncSeen` in player.asm, on the spawn tile and each step's
     end). Mid-step `wSeen` still names the tile you're leaving, so the encounter
-    fires when you've actually *arrived* on the line tile (Pokemon-style), not the
+    fires when you've actually *arrived* on the line tile (monster-battler-style), not the
     frame you've moved a pixel toward it.
   * the zombie's **`LosAnchor`** (entity.asm) — its visual tile: `EO_WX` stepped
     one back along `EO_SLIDEDIR` while `EO_SLIDE` is non-zero (else `EO_WX`). It
@@ -436,7 +436,7 @@ scroll updates — so there's no seam or one-frame latency.
   for down/up + 4 for side — are appended to `PersonaTiles`).
 
 ### Start menu (menu.asm / items.asm)
-- **Pokemon-style pause menu on MODE_MENU.** START in the overworld opens it
+- **monster-battler-style pause menu on MODE_MENU.** START in the overworld opens it
   (`EnterMenu`); it lives on **SCRN1** exactly like the talk screen (window HUD
   off, BG9C00, SCX/SCY=0), so the world map on SCRN0 is untouched and `ExitMenu`
   is a cheap LCDC flip + `SetScroll` + `DrawHUDRow` (which restores the row-0 HUD

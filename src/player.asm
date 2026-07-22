@@ -340,7 +340,7 @@ TryStartStep:
     call GenPlayerStep         ; wGen = the new top-left anchor, for the commit
     jr .ok
 .blocked:
-    ; bump — stay idle, keep facing; blip a Pokemon-style bump the first frame,
+    ; bump — stay idle, keep facing; blip a monster-battler-style bump the first frame,
     ; then only every BUMP_COOLDOWN frames while the direction stays held.
     ld a, [wBumpCd]
     and a

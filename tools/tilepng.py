@@ -120,6 +120,11 @@ _PERSONA_PAL = (
     + [("OBJ", 0), ("OBJ", 2), ("OBJ", 1),                  # apple, beans, crate
        ("OBJ", 1), ("OBJ", 2)]                              # pot, chest
     + [("OBJ", 6)]                                          # exhaust puff (charcoal)
+    # battle target-bar cells + crosshair. The zone tiles are drawn in-game on a
+    # DYNAMIC palette (battle.asm ZonePalette), not a gfx.asm one — the round-trip
+    # just needs SOME 4-distinct-colour palette to be lossless, so pin them to BG3
+    # (a terrain palette). The crosshair uses its real OBJ palette (bubble/cursor).
+    + [("BG", 3), ("BG", 3), ("BG", 3), ("OBJ", 2)]        # zone R/A/G, crosshair
 )
 
 TILE_PALETTES = {
@@ -173,6 +178,7 @@ GROUPS = {
         + [_grid(2, 2)]       # car side: TL TR / BL BR (full 2x2)
         + [_tile()] * 5       # loot: apple, beans, crate, pot, chest
         + [_tile()]           # exhaust puff
+        + [_tile()] * 4       # battle: zone red/amber/green + crosshair
     ),
     "Font1bpp": [_tile()] * 53,   # glyphs flow COLS per row
 }

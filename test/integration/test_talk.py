@@ -14,7 +14,7 @@ from harness import Game
 
 ENT_SIZE = 16
 EO_AFFIN = 14
-MODE_OVERWORLD, MODE_ALERT, MODE_TALK = 0, 1, 2
+MODE_OVERWORLD, MODE_ALERT, MODE_TALK, MODE_BATTLE = 0, 1, 2, 4
 TS_REVEAL, TS_WAIT, TS_MENU = 0, 1, 2
 TPH_GREET, TPH_REACT, TPH_OUTCOME, TPH_PROMPT, TPH_OBS, TPH_QUEST = range(6)
 OUTCOME_FIGHT, OUTCOME_PART, OUTCOME_REWARD = 0, 1, 2
@@ -163,9 +163,13 @@ def run_conversation(g, tone_ids):
     outcome = g.r8("wTalkOutcome")
     assert_text_sane(g)
     press(g, "a")
-    assert wait_for(g, lambda: g.r8("wGameMode") == MODE_OVERWORLD, 120), \
-        "conversation didn't resolve back to the overworld"
-    g.tick(100)  # a FIGHT outcome's placeholder flash ignores input while it runs
+    if outcome == OUTCOME_FIGHT:
+        # a FIGHT now drops straight into real combat against the survivor
+        assert wait_for(g, lambda: g.r8("wGameMode") == MODE_BATTLE, 180), \
+            "fight outcome didn't start combat"
+    else:
+        assert wait_for(g, lambda: g.r8("wGameMode") == MODE_OVERWORLD, 120), \
+            "conversation didn't resolve back to the overworld"
     return outcome
 
 
@@ -452,8 +456,11 @@ def test_three_flirt_rounds_pick_a_fight(game):
     outcome = run_conversation(game, [T_FLIRT] * 3)
     assert outcome == OUTCOME_FIGHT
     assert npc_affin(game) == 128 + 3 * expected_delta(T_FLIRT)  # 80
-    # placeholder scuffle flash ran; the survivor stays (real combat LATER)
-    assert game.r8(game.addr("wNPCs")) == 1, "NPC should survive the flash"
+    # the fight now enters real combat (MODE_BATTLE) against this survivor,
+    # using the persona portrait; the NPC persists (removed only on a win).
+    assert game.r8("wGameMode") == MODE_BATTLE
+    assert game.r8("wBattleEKind") == 1, "survivor fight should use the persona portrait"
+    assert game.r8(game.addr("wNPCs")) == 1, "survivor persists into the fight"
 
 
 def test_mixed_rounds_part_ways(game):
