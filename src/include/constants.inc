@@ -702,6 +702,7 @@ DEF BS_END         EQU 4           ; leaving (win/lose/flee)
 ; Which menu is on screen (wBattleMenu)
 DEF BM_MAIN        EQU 0           ; Fight | Party | Item | Flee
 DEF BM_FIGHT       EQU 1           ; Weapon1 | Weapon2 | Skill1 | Skill2
+DEF BM_ITEM        EQU 2           ; up to 4 usable bag consumables
 
 ; Battle outcomes (wBattleOutcome)
 DEF BO_ONGOING     EQU 0
@@ -740,13 +741,18 @@ DEF PAL_BG_ZONE    EQU 3           ; terrain slot borrowed for the zone bar
                                    ; (LoadPalettes restores it on exit)
 DEF PAL_OBJ_CROSS  EQU 2           ; the bright bubble/cursor OBJ palette
 
-; Battle screen layout on SCRN1 (enemy on top, message box on the bottom).
-DEF EN_NAME_ROW    EQU 0           ; enemy name plate
-DEF EN_HP_ROW      EQU 1           ; enemy HP: glyph + 8-cell bar (cols 0..8)
-DEF PL_HP_ROW      EQU 9           ; player HP bar, same shape, bottom-left
+; Battle screen layout on SCRN1: enemies + their name/HP up top (rows 0..8), the
+; player's HP + name/level below the arena (rows 9..10), a short menu box at the
+; bottom (rows 13..17). The arena itself is rows FOE_ARENA_TOP..FOE_GROUND_ROW.
+DEF EN_NAME_ROW    EQU 0           ; enemy name/level plate ("RED LV3 BLUE LV2")
+DEF EN_HP_ROW      EQU 1           ; enemy OVERALL HP bar: glyph + 8 cells (sum of foes)
+DEF PL_HP_ROW      EQU 9           ; player HP bar (glyph + 8 cells)
+DEF PL_NAME_ROW    EQU 10          ; player name + level ("ZOMB BOY LV n")
 DEF BHP_GLYPH_COL  EQU 0
-DEF BHP_BAR_COL    EQU 1           ; 8 cells 1..8 (portrait frame starts col 11)
-DEF BOX_TXT_ROW0   EQU 12          ; message / menu text rows 12 & 14 (as talk)
+DEF BHP_BAR_COL    EQU 1           ; 8 cells at cols 1..8
+DEF BAT_BOX_TOP    EQU 13          ; menu/message box border rows (was 8 tall; now 5)
+DEF BAT_BOX_BOT    EQU 17
+DEF BOX_TXT_ROW0   EQU 14          ; message / menu text rows 14 & 16
 DEF BOX_TXT_COL0   EQU 1
 DEF BATTLE_BOX_CELLS EQU TALK_COLS * 2   ; 2 rows x 18 paint buffer
 
@@ -779,6 +785,33 @@ DEF SKILL_COUNT    EQU 2
 DEF SK_HEAL        EQU 0           ; restore HP (Bandage)
 DEF SK_AIMED       EQU 1           ; guaranteed crit-strength hit (Aimed Shot)
 
+; The Fight menu now uses the player's REAL equipped weapons (wPartyEquip), so a
+; weapon's combat numbers are keyed by ITEM_* (WeaponStats in battle.asm). An
+; empty weapon slot falls back to FISTS. WSF_RANGED weapons scale off DEX, melee
+; off STR (see the player-stat scaling below).
+DEF WS_DMG         EQU 0
+DEF WS_CRIT        EQU 1
+DEF WS_FLAGS       EQU 2
+DEF WS_SIZE        EQU 3
+DEF WSF_RANGED     EQU 1           ; bit 0: ranged (uses DEX); else melee (STR)
+
+; Player combat scaling: the equipped-weapon base damage is boosted by the
+; relevant offence stat, incoming zombie damage reduced by IMMunity, and crit
+; damage boosted by ACCuracy — each stat shifted down so a level-1 hero adds a
+; little and a maxed one adds a lot. Cached at battle entry (bank-1 GetStat).
+DEF PLY_ATK_SHIFT  EQU 2           ; +(STR or DEX) >> 2 to weapon damage
+DEF PLY_DEF_SHIFT  EQU 2           ; -(IMM) >> 2 from an incoming bite (min 1)
+DEF PLY_CRIT_SHIFT EQU 3           ; +(ACC) >> 3 to a headshot's crit damage
+DEF FISTS_DMG      EQU 5           ; unarmed fallback when no weapon is equipped
+DEF FISTS_CRIT     EQU 3
+
+; XP a defeated foe grants (per its level): AddPlayerXP gets XP_PER_LEVEL*level.
+DEF XP_PER_LEVEL   EQU 6
+
+; Battle-usable consumables (Item menu). MEDKIT heals; GRENADE hits every foe.
+DEF MEDKIT_HEAL    EQU 40
+DEF GRENADE_DMG    EQU 25
+
 DEF BATTLEQ_CAP    EQU 24          ; battle VRAM write queue (3 bytes each)
 
 ; --- Battle slice 2: approaching-zombie arena + free-moving crosshair --------
@@ -788,24 +821,49 @@ DEF BATTLEQ_CAP    EQU 24          ; battle VRAM write queue (3 bytes each)
 ; portrait was a BG block too). One silhouette is downscaled to FOE_TIER_COUNT
 ; size tiers (battle_zombie_data.asm); a foe grows a tier each enemy turn until
 ; it reaches melee (FOE_TIER_MAX), then bites the player each turn like before.
-DEF MAX_FOES        EQU 4
-; Per-foe record (wFoes[]): interleaved so one index scales the whole row.
-DEF FOE_STRUCT      EQU 8
-DEF FO_TYPE         EQU 0          ; ZTYPE_* (BG palette tint)
-DEF FO_MAXHP        EQU 1
-DEF FO_HP           EQU 2          ; 0 = dead (its slot goes blank)
-DEF FO_ATK          EQU 3
-DEF FO_DEF          EQU 4
-DEF FO_TIER         EQU 5          ; 0..FOE_TIER_MAX (size + distance)
+DEF MAX_FOES        EQU 4          ; on-screen "slots"; more can wait in reserve
+; Per-foe record (wFoes[]): interleaved so one index scales the whole row. 16-byte
+; stride (power of 2 -> a cheap shift index, like the overworld entity struct).
+DEF FOE_STRUCT      EQU 16
+DEF FO_TYPE         EQU 0          ; ZTYPE_* (BG palette tint + name)
+DEF FO_LEVEL        EQU 1          ; 1..MAX_LEVEL (scales the stats, shown on the plate)
+DEF FO_MAXHP        EQU 2
+DEF FO_HP           EQU 3          ; 0 = dead (its slot goes blank or a reserve fills it)
+DEF FO_ATK          EQU 4
+DEF FO_DEF          EQU 5
+DEF FO_TIER         EQU 6          ; 0..FOE_TIER_MAX (size + distance)
+DEF FO_SPD          EQU 7          ; approach speed (FOE_SPD_MIN..MAX; higher = faster)
+DEF FO_STEP         EQU 8          ; approach accumulator (advances a tier at APPROACH_STEP)
+DEF FO_LANE         EQU 9          ; lane centre column (randomised per foe)
 DEF FOE_TIER_COUNT  EQU 6
+; Encounter shape (randomised per fight): 2..MAX_FOES appear at once, with 0..3
+; more waiting in reserve — when a visible foe drops, a reserve one shuffles in
+; behind it. Approach speed varies per foe (FO_SPD), so the pack staggers in.
+DEF FOE_MIN         EQU 2
+DEF FOE_RESERVE_MAX EQU 3
+DEF FOE_SPD_MIN     EQU 1
+DEF FOE_SPD_MAX     EQU 4
+DEF APPROACH_STEP   EQU 4          ; FO_STEP crosses this -> shuffle one tier closer
+; Zombie stats are randomised, weighted by the foe's level: base (ZombieTable) +
+; (level-1)*grow + a small jitter, saturating. Level is picked near the player's.
+DEF ZHP_GROW        EQU 3
+DEF ZATK_GROW       EQU 1
+DEF ZDEF_GROW       EQU 1
+DEF ZHP_JIT_MASK    EQU 7          ; + Rand & mask
+DEF ZATK_JIT_MASK   EQU 1
+DEF ZDEF_JIT_MASK   EQU 1
+DEF ZLVL_SPREAD     EQU 3          ; level = playerLevel + (Rand%(SPREAD+1)) - 1
 DEF FOE_TIER_MAX    EQU FOE_TIER_COUNT - 1     ; 5: at full size a zombie attacks
 DEF FOE_ATLAS_BASE  EQU PORTRAIT_TILE_BASE     ; 64: the VRAM ids the portrait freed
 DEF FOE_ATLAS_TILES EQU 60                      ; atlas size (gen-battle-zombies.py)
 DEF FOE_GROUND_ROW  EQU 8                       ; SCRN1 row the zombies' feet rest on
-DEF FOE_ARENA_TOP   EQU 1                       ; arena = rows 1..8 (cleared on redraw)
+DEF FOE_ARENA_TOP   EQU 2                       ; arena = rows 2..8 (row 1 is the HP bar)
 DEF FOE_FLIP_FRAMES EQU 20                      ; frames between walk-shuffle mirrors
 DEF PAL_BG_FOE0     EQU 5                        ; foe BG tints: RED -> 5, BLUE -> 6
-DEF PAL_BG_FOE1     EQU 6                        ; (index 0 = arena paper -> no halo)
+DEF PAL_BG_FOE1     EQU 6                        ; (index 0 = the arena sky -> no halo)
+DEF PAL_BG_ARENA    EQU 7                        ; the arena backdrop (sky + ground);
+                                                 ; index 0 = sky, matched by the foes
+DEF ARENA_GROUND_TOP EQU 8                       ; arena row 8 is the ground line
 ; The free crosshair replaces the horizontal red/amber/green zone bar: it orbits
 ; the arena in a circle or figure-eight; A locks and hit-tests the on-screen
 ; foes — a body cell is a HIT, a head cell (the tier's top band) a CRIT, empty

@@ -20,24 +20,25 @@ INCLUDE "include/charmap.inc"
 ; bank is full and the engine no longer lives there.)
 SECTION FRAGMENT "Battle", ROMX
 
-; --- Weapons (2 equipped in v0; the equip menu is LATER) ---------------------
-; A fast/weak vs slow/strong pair — the crosshair supplies accuracy, so the
-; trade-off here is damage vs crit potential.
-WeaponTable::
-    dw Wpn_Knife
-    dw Wpn_Bat
-Wpn_Knife:                          ; fast, low base, modest crit
-    db 9                            ; WO_DMG
-    db 6                            ; WO_CRIT (extra on a green lock)
-    db 3                            ; WO_SPD
-    dw WpnName_Knife                ; WO_NAME
-Wpn_Bat:                            ; slow, heavy, big crit
-    db 15                           ; WO_DMG
-    db 12                           ; WO_CRIT
-    db 1                            ; WO_SPD
-    dw WpnName_Bat
-WpnName_Knife: db "KNIFE", 0
-WpnName_Bat:   db "BAT", 0
+; --- Weapons -----------------------------------------------------------------
+; Battle stats keyed by ITEM_* (the Fight menu uses the player's REAL equipped
+; weapons now). {WS_DMG, WS_CRIT, WS_FLAGS}; a zero WS_DMG means "not a weapon"
+; (WeaponStatsPtr falls back to FISTS). Melee weapons scale off STR, WSF_RANGED
+; ones off DEX — the player's stat bonus is added on top in battle.asm.
+WeaponStats::
+    db 0, 0, 0                      ; 0  ITEM_NONE
+    db 15, 12, 0                    ; 1  BAT    — heavy melee, big crit
+    db 11, 8, WSF_RANGED            ; 2  PISTOL — ranged (DEX)
+    db 9, 6, 0                      ; 3  KNIFE  — fast melee
+    db 0, 0, 0                      ; 4  VEST
+    db 0, 0, 0                      ; 5  HELMET
+    db 0, 0, 0                      ; 6  AMULET
+    db 0, 0, 0                      ; 7  WATCH
+    db 0, 0, 0                      ; 8  GRENADE (thrown from the Item menu)
+    db 0, 0, 0                      ; 9  MEDKIT
+    db 0, 0, 0                      ; 10 KEYCARD
+FistsStats::
+    db FISTS_DMG, FISTS_CRIT, 0     ; unarmed fallback
 
 ; --- Skills (2 equipped) -----------------------------------------------------
 ; One heal, one guaranteed hit — the defensive/offensive split from the design.

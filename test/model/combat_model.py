@@ -17,16 +17,25 @@ design calls out (docs/design/04 §4/§6) without an emulator:
 Keep in lockstep with battle.asm / battle_data.asm — change both together.
 """
 
-# --- constants (constants.inc) ----------------------------------------------
+# --- constants (constants.inc + items.asm) ----------------------------------
+# Slice 3: the player's REAL stats drive combat. A weapon's base damage gets the
+# relevant offence stat (STR for melee, DEX for ranged) >> PLY_ATK_SHIFT added;
+# an incoming bite is reduced by IMMunity >> PLY_DEF_SHIFT. These are cached at
+# battle entry from GetStat (items.asm). Modelled here at LEVEL 1 (StatBase);
+# higher levels only raise the bonuses, so the invariants below hold at any level.
 DMG_SHIFT = 2
-PLAYER_ATK = 12
-PLAYER_DEF = 6
+PLY_ATK_SHIFT = 2
+PLY_DEF_SHIFT = 2
+STAT_STR_L1, STAT_DEX_L1, STAT_IMM_L1 = 6, 4, 5   # StatBase[STR/DEX/IMM]
+PLY_MELEE = STAT_STR_L1 >> PLY_ATK_SHIFT          # +1 at level 1
+PLY_DEF = STAT_IMM_L1 >> PLY_DEF_SHIFT             # -1 at level 1
 ZONE_MISS, ZONE_HIT, ZONE_CRIT = 0, 1, 2   # air / body / head
 
-# --- data rows (battle_data.asm) --------------------------------------------
-WEAPONS = {            # name: (WO_DMG, WO_CRIT)
-    "KNIFE": (9, 6),
+# --- data rows (battle_data.asm WeaponStats, keyed by the equipped ITEM_*) ---
+WEAPONS = {            # name: (WS_DMG, WS_CRIT)
     "BAT": (15, 12),
+    "PISTOL": (11, 8),
+    "KNIFE": (9, 6),
 }
 SKILLS = {             # name: (kind, power, cooldown)
     "BANDAGE": ("heal", 30, 3),
@@ -45,8 +54,8 @@ def clampmin1(x):
 
 
 def player_damage(base, enemy_def):
-    """clampmin1(base + PLAYER_ATK>>2 - enemyDEF>>2) — CalcPlayerDamage."""
-    return clampmin1(base + (PLAYER_ATK >> DMG_SHIFT) - (enemy_def >> DMG_SHIFT))
+    """clampmin1(base + playerMelee - enemyDEF>>2) — CalcPlayerDamage."""
+    return clampmin1(base + PLY_MELEE - (enemy_def >> DMG_SHIFT))
 
 
 def weapon_lock(weapon, enemy_def, zone):
@@ -61,8 +70,8 @@ def weapon_lock(weapon, enemy_def, zone):
 
 
 def enemy_attack(atk):
-    """clampmin1(enemyATK - PLAYER_DEF>>2) — a melee foe's bite (BattleFoesTurn)."""
-    return clampmin1(atk - (PLAYER_DEF >> DMG_SHIFT))
+    """clampmin1(enemyATK - playerIMM) — a melee foe's bite (BattleFoesTurn)."""
+    return clampmin1(atk - PLY_DEF)
 
 
 def sat_sub(hp, dmg):

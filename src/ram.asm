@@ -372,8 +372,28 @@ wBattleQ::          ds BATTLEQ_CAP * 3 ; {addrHi, addrLo, value}
 ; melee. wEnemy* above mirror the TARGETED foe for the shared HP-bar/tests.
 SECTION "Battle Foes", WRAM0
 wFoes::             ds MAX_FOES * FOE_STRUCT
-wFoeCount::         ds 1
+wFoeCount::         ds 1               ; foes on screen (slots in use)
+wFoeReserve::       ds 1               ; zombies still waiting behind — a slot that
+                                       ; empties pulls one in until this hits 0
 wFoeTarget::        ds 1               ; foe the last shot resolved against
+wEncBiome::         ds 1               ; BIOME_* where the fight started (backdrop)
+; Player combat values, derived from the real party stats (GetStat) once at
+; battle entry — the engine runs in the battle bank where the BANK[1] stat tables
+; aren't mapped, so they're cached here by the ROM0 entry trampoline instead.
+wPlyLevel::         ds 1               ; cached wPartyLevel[0] (foe levels track it)
+wPlyMelee::         ds 1               ; STR >> PLY_ATK_SHIFT (melee damage bonus)
+wPlyRanged::        ds 1               ; DEX >> PLY_ATK_SHIFT (ranged damage bonus)
+wPlyDef::           ds 1               ; IMM >> PLY_DEF_SHIFT (bite reduction)
+wPlyCrit::          ds 1               ; ACC >> PLY_CRIT_SHIFT (crit damage bonus)
+wBattleItemMap::    ds 4               ; the ITEM_* offered in each Item-menu slot
+wSeedTier::         ds 1               ; start tier passed to SeedFoeSlot
+; SeedFoeSlot / ScaleFoeStats scratch (Rand clobbers registers, so results park
+; in RAM between the random rolls and the struct write).
+wSeedIdx::          ds 1
+wSeedHP::           ds 1
+wSeedATK::          ds 1
+wSeedDEF::          ds 1
+wSeedLv1::          ds 1
 wCrossY::           ds 1               ; crosshair screen Y (wCrossX = screen X now)
 wCrossPhase::       ds 1               ; orbit phase (indexes the sine LUT)
 wBattlePattern::    ds 1               ; PAT_CIRCLE / PAT_FIGURE8 (chosen on entry)
@@ -388,8 +408,11 @@ wFoeBH::            ds 1               ; height in tiles
 wFoeBHead::         ds 1               ; head rows (top band = crit on a hit)
 wFoeBOff::          ds 1               ; tier's first atlas tile (offset from FOE_ATLAS_BASE)
 wFoePalTmp::        ds 1               ; scratch: the foe's BG palette while painting
-wFoePipLvl::        ds 1               ; scratch: the foe's HP pip level (0..8)
 wBiteAcc::          ds 1               ; scratch: melee damage summed over the enemy turn
+wHpSum::            ds 2               ; scratch: Σ foe HP (16-bit) for the overall bar
+wHpMax::            ds 2               ; scratch: Σ foe MAXHP (16-bit)
+wBattleXP::         ds 2               ; XP earned this fight (Σ level*XP_PER_LEVEL),
+                                       ; granted to the party on a win
 
 SECTION "HRAM Vars", HRAM
 hVBlankFlag::       ds 1               ; set by the VBlank IRQ

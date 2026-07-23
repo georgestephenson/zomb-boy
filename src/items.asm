@@ -103,6 +103,16 @@ InitInventory::
     ld [hl+], a
     dec b
     jr nz, .setLvl
+    ; equip the player's starting loadout so the battle Fight menu (and defence)
+    ; use real gear out of the box — equipping references the bag, doesn't consume.
+    ld a, ITEM_BAT
+    ld [wPartyEquip + ESLOT_WEAPON1], a
+    ld a, ITEM_PISTOL
+    ld [wPartyEquip + ESLOT_WEAPON2], a
+    ld a, ITEM_VEST
+    ld [wPartyEquip + ESLOT_ARMOR], a
+    ld a, ITEM_AMULET
+    ld [wPartyEquip + ESLOT_ACCESSORY], a
     xor a, a
     ; clear the bag
     ld hl, wBag

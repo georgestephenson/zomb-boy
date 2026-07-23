@@ -191,43 +191,56 @@ scroll updates — so there's no seam or one-frame latency.
   restore bank 1 for the caller; the engine + its data + `battle_zombie_data.asm`
   all share that one `FRAGMENT "Battle"` bank so it reads its tables without
   switching.
-- **Up to `MAX_FOES` (4) zombies approach as scaled BG sprites — NOT OBJ sprites.**
-  Four 28×56-px zombies would need ~112 hardware sprites (past the 40-OAM /
+- **A RANDOM pack of zombies approaches as scaled BG sprites — NOT OBJ sprites.**
+  Big 28×56-px zombies would need ~112 hardware sprites (past the 40-OAM /
   10-per-scanline limit), so foes are drawn into the SCRN1 tilemap arena (rows
-  1..8), exactly like the scrapped enemy portrait was a BG block. One silhouette
+  2..8), exactly like the scrapped enemy portrait was a BG block. One silhouette
   is downscaled to `FOE_TIER_COUNT` (6) size tiers by `tools/gen-battle-zombies.py`
   → `BattleZombieTiles` (a 60-tile atlas that fits the VRAM gap the portrait
   vacated, `FOE_ATLAS_BASE` = 64) + `BattleZombieTiers` (per-tier {w,h,headrows,
-  offset}). All foes (and both types) share the ONE atlas, tinted by BG palette
-  (`PAL_BG_FOE0/1`, index 0 = arena paper so partial tiles have no halo). A foe is
-  a `FOE_STRUCT` (8-byte) record in `wFoes[]` ({type,maxhp,hp,atk,def,tier}); the
-  wEnemy* scratch mirrors the TARGETED foe for the HP bar + the poison test.
-- **Foes are drawn by `DrawArena` (VBlank, when `wArenaDirty`)**: it clears the
-  arena band to paper (bank 0 tile ids) then paints living foes far→near
-  (`PaintFoe`) so nearer/bigger ones occlude — plus a 1-cell HP pip above each and
-  the palette+flip attributes (bank 1, CGB). The **walk shuffle** is a whole-block
-  horizontal mirror (reversed columns + `OAMF_XFLIP` in the BG attribute) toggled
-  by `TickArenaAnim` every `FOE_FLIP_FRAMES`; DMG (no BG flip / per-cell palette)
-  shows static grey foes — that's inherent, like the rest of the engine.
+  offset}). All foes share the ONE atlas, tinted per type by BG palette
+  (`PAL_BG_FOE0/1`; index 0 = the arena sky so partial tiles have no halo). A foe
+  is a `FOE_STRUCT` (16-byte) record in `wFoes[]` ({type, **level**, maxhp, hp,
+  atk, def, tier, **spd, step, lane**}). `SetupZombieFoes` picks a random visible
+  count (`FOE_MIN`..`MAX_FOES`) + a random `wFoeReserve`; `SeedFoeSlot` seeds each
+  with a random type, a **level near the player's**, level-weighted random stats
+  (`ScaleFoeStats`/`ScaleStat`: base + (lvl-1)*grow + jitter), a random lane, and
+  a random approach speed. Killing a visible foe pulls a reserve into its slot
+  (`RefillIfDead`); win = all dead AND `wFoeReserve` 0 (`BattleWon`).
+- **The arena has a backdrop** (`DrawArena`, VBlank when `wArenaDirty`): a tinted
+  **sky** fill + a **ground** line (`ARENA_GROUND_TOP`), attrs on `PAL_BG_ARENA`
+  (slot 7, index 0 = sky = every foe's index 0, so no halo). It paints living
+  foes far→near (`PaintFoe`) so nearer/bigger occlude, then the **overall HP bar**
+  (`DrawSumBarDirect`, Σ hp / Σ maxhp — replaces per-foe pips) and the **name/level
+  plate** (`DrawEnemyPlateDirect`, "RED LV3 BLUE LV2"). The player's name + level
+  sit under their HP bar (`DrawPlayerPlate`). The **walk shuffle** is a whole-block
+  horizontal mirror (reversed columns + `OAMF_XFLIP`) toggled by `TickArenaAnim`;
+  DMG (no BG flip / per-cell palette) shows static grey foes — inherent.
 - **The free crosshair replaces the red/amber/green zone bar** (scrapped). It
-  orbits the arena in a circle or figure-eight (`CrossPathCircle`/`CrossPathFig8`,
-  precomputed by the tool so there's no runtime trig), advanced by `MoveCrosshair`.
-  A locks and `ResolveAimZombie` → `HitTestCrosshair`/`PointInBox` tests the
-  crosshair against each foe's on-screen box: a **body cell = HIT**, a **head-band
-  cell (`headrows`) = CRIT**, empty air = MISS (`ZONE_*` reused). `.aim` checks A
-  **before** stepping the crosshair, so the lock uses exactly the shown position
-  (and a test can pin `wCrossX/Y`, press A).
-- **Turn flow (mostly the slice-1 engine, kept):** BS_MENU → Fight → weapon
-  (crosshair) / skill; `BattleFoesTurn` is the enemy turn — each living foe below
-  `FOE_TIER_MAX` shuffles **one tier closer**, and any at melee (`FOE_TIER_MAX`,
-  or ANY survivor foe) **bites** (`enemy_attack`, summed in `wBiteAcc` because
-  `FoePtr` clobbers DE). Win = all foes dead (despawn the spotter + a grace
-  period); lose = `wHP` 0; flee = chance-based. `test/model/combat_model.py`
-  models the damage/zone math; `test/integration/test_battle.py` drives the whole
-  loop (pinning the crosshair onto a foe's body/head via a lockstep tier table).
-- **Zombie portraits were scrapped** (the old `ZombiePortraitTable` + red/blue
-  portrait art): `ShowEnemyPortrait` now only serves the survivor (persona) path;
-  `ZO_PORT` in the zombie table is vestigial.
+  orbits in a circle or figure-eight (`CrossPathCircle`/`CrossPathFig8`, precomputed
+  so there's no runtime trig), advanced by `MoveCrosshair`. A locks and
+  `ResolveAimZombie` → `HitTestCrosshair`/`PointInBox` tests the crosshair against
+  each foe's on-screen box: **body = HIT, head band = CRIT, air = MISS**. `.aim`
+  checks A **before** stepping the crosshair (a test can pin `wCrossX/Y`, press A).
+- **The player's REAL stats + gear drive combat** (docs task). `CachePlayerCombat`
+  (ROM0 trampoline, bank 1 mapped so `GetStat` works) snapshots melee (STR), ranged
+  (DEX), defence (IMM) and crit (ACC) bonuses into WRAM; `CalcPlayerDamage` adds the
+  offence bonus, a bite subtracts the defence, a crit adds the ACC bonus. The Fight
+  menu lists the **equipped weapons** (`EquippedWeaponName`/`WeaponStatsPtr` off
+  `wPartyEquip`; empty → FISTS); **Item** lists real bag consumables
+  (`EnterItemMenu`/`PickItem`: MEDKIT heals, GRENADE hits all); **Party** shows the
+  roster. A win grants XP (`AddKillXP` per kill → `AddPlayerXP` in `ExitBattleFinish`,
+  bank 1 mapped for `LevelXP`).
+- **Turn flow (the slice-1 engine, kept):** `BattleFoesTurn` — each living foe
+  below melee accumulates `FO_STEP += FO_SPD` and shuffles a tier closer when it
+  crosses `APPROACH_STEP` (so higher-speed foes close faster); any at melee (or a
+  survivor foe) bites (summed in `wBiteAcc` because `FoePtr` clobbers DE). Win =
+  despawn the spotter + a grace period; lose = `wHP` 0; flee = chance-based.
+  `test/model/combat_model.py` models the damage; `test/integration/test_battle.py`
+  drives the loop (foe box via a lockstep TIERS/lane table).
+- **Zombie portraits were scrapped** (`ZombiePortraitTable` + red/blue art):
+  `ShowEnemyPortrait` now only serves the survivor (persona) path; `ZO_PORT` is
+  vestigial.
 
 ### Dynamic spawning (entity.asm `UpdateSpawns` / npc.asm `SpawnNPC`)
 - **Encounters are procedural, not fixed.** `InitZombies`/`InitNPCs` still seed a
