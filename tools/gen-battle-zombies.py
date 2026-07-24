@@ -96,11 +96,15 @@ def base_image():
     # torso (rotten flesh) — a lumpy trunk, leaning
     _ellipse(img, 16, 30, 10, 13, 2)
     _rect(img, 8, 22, 24, 40, 2)
-    # legs
-    _rect(img, 10, 40, 14, 55, 2)
-    _rect(img, 18, 40, 22, 55, 2)
-    _rect(img, 9, 52, 15, 55, 2)      # left foot
-    _rect(img, 18, 52, 24, 55, 2)     # right foot
+    # legs — a mid-stride stance so the horizontal walk-flip actually reads as
+    # steps: one leg planted + forward (long, foot low and out to one side), the
+    # other lifted + trailing (shorter, foot raised and out the other side).
+    # Mirroring the whole sprite swaps the two -> the opposite step of the cycle.
+    _rect(img, 9, 39, 14, 55, 2)      # forward leg — planted, full length
+    _rect(img, 5, 53, 15, 55, 2)      # forward foot — juts forward-left, low
+    _rect(img, 18, 39, 23, 48, 2)     # trailing thigh — stops higher (knee up)
+    _rect(img, 19, 46, 24, 51, 2)     # trailing shin — kicked back
+    _rect(img, 20, 49, 27, 51, 2)     # trailing foot — juts back-right, raised
     # arms reaching out for you
     _rect(img, 1, 24, 8, 30, 2)       # left arm
     _rect(img, 0, 22, 4, 34, 2)       # left hand/claw
